@@ -115,7 +115,10 @@ body {
 
 /* Subtle 28px dot-grid, used behind hero/card surfaces. */
 .bg-dot-grid {
-  background-image: radial-gradient(color-mix(in oklab, var(--color-text) 7%, transparent) 1px, transparent 1px);
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--color-text) 7%, transparent) 1px,
+    transparent 1px
+  );
   background-size: 28px 28px;
 }
 

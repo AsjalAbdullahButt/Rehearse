@@ -1,34 +1,40 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useSyncExternalStore } from "react";
 
 import { cn } from "@/lib/utils";
 
-interface ViewTransitionDocument extends Document {
-  startViewTransition?: (callback: () => void) => { ready: Promise<void> };
+const emptySubscribe = () => () => {};
+
+/** True only after the client has hydrated, avoiding SSR/CSR theme mismatches. */
+function useHasMounted() {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
 }
 
 export function ThemeToggle({ className }: { className?: string }) {
   const { resolvedTheme, setTheme } = useTheme();
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  const mounted = useHasMounted();
 
   const toggleTheme = () => {
     const next = resolvedTheme === "dark" ? "light" : "dark";
-    const doc = document as ViewTransitionDocument;
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    if (!doc.startViewTransition || prefersReducedMotion) {
+    if (!document.startViewTransition || prefersReducedMotion) {
       setTheme(next);
       return;
     }
 
     const button = buttonRef.current;
-    const { x, y } =
-      button?.getBoundingClientRect() ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const { x, y } = button?.getBoundingClientRect() ?? {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    };
     const cx = button ? x + button.offsetWidth / 2 : x;
     const cy = button ? y + button.offsetHeight / 2 : y;
     const radius = Math.hypot(
@@ -36,7 +42,7 @@ export function ThemeToggle({ className }: { className?: string }) {
       Math.max(cy, window.innerHeight - cy),
     );
 
-    const transition = doc.startViewTransition(() => {
+    const transition = document.startViewTransition(() => {
       setTheme(next);
     });
 
@@ -63,9 +69,11 @@ export function ThemeToggle({ className }: { className?: string }) {
       ref={buttonRef}
       type="button"
       onClick={toggleTheme}
-      aria-label={mounted ? `Switch to ${resolvedTheme === "dark" ? "light" : "dark"} mode` : "Toggle theme"}
+      aria-label={
+        mounted ? `Switch to ${resolvedTheme === "dark" ? "light" : "dark"} mode` : "Toggle theme"
+      }
       className={cn(
-        "inline-flex size-10 items-center justify-center rounded-[var(--radius-pill)] border border-line bg-surface-2 text-text transition-colors duration-150 ease-[var(--ease-brand)] hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime",
+        "border-line bg-surface-2 text-text hover:bg-surface focus-visible:outline-lime inline-flex size-10 items-center justify-center rounded-[var(--radius-pill)] border transition-colors duration-150 ease-[var(--ease-brand)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
         className,
       )}
     >
@@ -78,10 +86,7 @@ export function ThemeToggle({ className }: { className?: string }) {
         </svg>
       ) : (
         <svg viewBox="0 0 24 24" fill="none" className="size-5" aria-hidden="true">
-          <path
-            d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"
-            fill="currentColor"
-          />
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" fill="currentColor" />
         </svg>
       )}
     </button>

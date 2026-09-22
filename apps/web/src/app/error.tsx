@@ -16,10 +16,10 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-ink px-6 py-24 text-center">
-      <span className="font-mono-metric text-sm tabular-nums text-coral">Error</span>
-      <h1 className="font-display text-3xl font-bold text-text">Something went wrong</h1>
-      <p className="max-w-sm text-sm text-muted">
+    <div className="bg-ink flex flex-1 flex-col items-center justify-center gap-4 px-6 py-24 text-center">
+      <span className="font-mono-metric text-coral text-sm tabular-nums">Error</span>
+      <h1 className="font-display text-text text-3xl font-bold">Something went wrong</h1>
+      <p className="text-muted max-w-sm text-sm">
         An unexpected error occurred. You can try again, and if it keeps happening let us know.
       </p>
       <Button variant="primary" onClick={reset}>
