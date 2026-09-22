@@ -36,16 +36,16 @@ function StepLabel({
 }) {
   const [start, end] = step.range;
   const pad = (end - start) * 0.12;
-  const opacity =
-    start === 0
-      ? useTransform(progress, [start, end - pad, end], [1, 1, 0.4])
-      : end === 1
-        ? useTransform(progress, [start, start + pad, end], [0.4, 1, 1])
-        : useTransform(
-            progress,
-            [start, start + pad, end - pad, end],
-            [0.4, 1, 1, 0.4],
-          );
+
+  // Compute all three shapes unconditionally (stable hook call order), then pick one.
+  const firstOpacity = useTransform(progress, [start, end - pad, end], [1, 1, 0.4]);
+  const lastOpacity = useTransform(progress, [start, start + pad, end], [0.4, 1, 1]);
+  const middleOpacity = useTransform(
+    progress,
+    [start, start + pad, end - pad, end],
+    [0.4, 1, 1, 0.4],
+  );
+  const opacity = start === 0 ? firstOpacity : end === 1 ? lastOpacity : middleOpacity;
 
   return (
     <motion.div style={{ opacity }} className="flex items-baseline gap-3">

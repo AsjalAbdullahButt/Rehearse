@@ -26,14 +26,15 @@ export function CountUp({
   useEffect(() => {
     if (!inView) return;
 
+    // Routed through the motionValue's own change event, never a direct setState call here.
+    const unsubscribe = rounded.on("change", (v) => setDisplay(v));
+
     if (reduce) {
-      setDisplay(value.toFixed(decimals));
-      return;
+      motionValue.set(value);
+      return unsubscribe;
     }
 
     const controls = animate(motionValue, value, { duration, ease: [0.16, 1, 0.3, 1] });
-    const unsubscribe = rounded.on("change", (v) => setDisplay(v));
-
     return () => {
       controls.stop();
       unsubscribe();
