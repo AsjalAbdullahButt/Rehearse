@@ -36,6 +36,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "N"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 include = ["app", "api", "tests"]
+extraPaths = ["."]
 venvPath = "."
 venv = ".venv"
 

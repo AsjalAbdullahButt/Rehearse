@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+  NEXT_PUBLIC_SITE_URL: http://localhost:3000
+  API_URL: http://localhost:8000
+  GROQ_API_KEY: ci-placeholder
+  SUPABASE_URL: https://example.supabase.co
+  SUPABASE_ANON_KEY: ci-placeholder-anon-key
+  ALLOWED_ORIGINS: http://localhost:3000
+
+jobs:
+  web:
+    name: Web (lint, typecheck, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.5.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter ./apps/web lint
+      - run: pnpm --filter ./apps/web typecheck
+      - run: pnpm --filter ./apps/web test
+      - run: pnpm --filter ./apps/web build
+
+  api:
+    name: API (lint, typecheck, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.1"
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: uv sync --locked
+
+      - name: Ruff check
+        working-directory: apps/api
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        working-directory: apps/api
+        run: uv run ruff format --check .
+
+      - name: Pyright
+        working-directory: apps/api
+        run: uv run pyright
+
+      - name: Pytest
+        working-directory: apps/api
+        run: uv run pytest
