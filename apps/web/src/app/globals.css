@@ -105,6 +105,26 @@
       opacity: 0;
     }
   }
+
+  --animate-caret-blink: caret-blink 1s step-end infinite;
+  --animate-beam-rotate: beam-rotate 6s linear infinite;
+
+  @keyframes caret-blink {
+    0%,
+    45% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes beam-rotate {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 }
 
 body {
@@ -120,6 +140,131 @@ body {
     transparent 1px
   );
   background-size: 28px 28px;
+}
+
+/* Coral squiggly underline for flagged filler words in transcripts. */
+.underline-filler {
+  text-decoration: underline;
+  text-decoration-color: var(--color-coral);
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+/*
+ * Aurora background blobs. Blur is applied once to a small, static element;
+ * only `transform` is animated so the browser never re-rasterizes the blur.
+ */
+.aurora-blob {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border-radius: 9999px;
+  filter: blur(36px);
+  opacity: 0.32;
+  will-change: transform;
+}
+
+@keyframes aurora-drift-a {
+  0%,
+  100% {
+    transform: scale(6) translate(0, 0);
+  }
+  50% {
+    transform: scale(6.4) translate(18px, 14px);
+  }
+}
+
+@keyframes aurora-drift-b {
+  0%,
+  100% {
+    transform: scale(5.5) translate(0, 0);
+  }
+  50% {
+    transform: scale(5.9) translate(-16px, 20px);
+  }
+}
+
+@keyframes aurora-drift-c {
+  0%,
+  100% {
+    transform: scale(7) translate(0, 0);
+  }
+  50% {
+    transform: scale(7.3) translate(14px, -16px);
+  }
+}
+
+.aurora-blob-1 {
+  background: var(--color-lime);
+  top: -8%;
+  left: 6%;
+  animation: aurora-drift-a 22s var(--ease-brand) infinite;
+}
+
+.aurora-blob-2 {
+  background: var(--color-violet);
+  top: 15%;
+  right: 2%;
+  animation: aurora-drift-b 26s var(--ease-brand) infinite;
+}
+
+.aurora-blob-3 {
+  background: var(--color-coral);
+  bottom: -12%;
+  left: 38%;
+  animation: aurora-drift-c 24s var(--ease-brand) infinite;
+}
+
+/* Rotating conic-gradient ring around the hero recorder card. */
+.beam-border {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    var(--color-lime) 12%,
+    transparent 26%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.7;
+  animation: var(--animate-beam-rotate);
+}
+
+/* Pulsing rings behind the mic orb. */
+.ripple-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1.5px solid var(--color-lime);
+  animation: ripple 2.4s var(--ease-brand) infinite;
+}
+
+/* One-shot CTA shimmer sweep — triggered on hover or periodically by JS, never looping on its own. */
+.cta-shimmer-sweep {
+  background: linear-gradient(115deg, transparent 35%, rgba(10, 11, 15, 0.35) 50%, transparent 65%);
+  background-size: 250% 100%;
+}
+
+@keyframes shimmer-sweep {
+  from {
+    background-position: 200% 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  to {
+    background-position: -100% 0;
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
