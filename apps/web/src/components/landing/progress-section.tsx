@@ -30,23 +30,23 @@ export function ProgressSection() {
   const path = buildPath(FILLER_TREND);
 
   return (
-    <section id="progress" className="relative border-t border-line bg-ink py-24">
+    <section id="progress" className="border-line bg-ink relative border-t py-24">
       <div className="mx-auto max-w-5xl px-6 sm:px-10">
         <div className="mb-12 flex flex-col gap-3 text-center">
-          <span className="mx-auto text-xs font-medium uppercase tracking-wide text-muted">
+          <span className="text-muted mx-auto text-xs font-medium tracking-wide uppercase">
             Progress
           </span>
-          <h2 className="font-display text-3xl font-bold tracking-[-0.02em] text-text sm:text-4xl">
+          <h2 className="font-display text-text text-3xl font-bold tracking-[-0.02em] sm:text-4xl">
             Watch yourself improve
           </h2>
-          <p className="mx-auto max-w-lg text-sm text-muted">
+          <p className="text-muted mx-auto max-w-lg text-sm">
             Every session is tracked — filler words, pace and STAR score, session over session.
           </p>
         </div>
 
         <Card className="grid gap-8 lg:grid-cols-[1fr_auto]">
           <div className="flex flex-col gap-3">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
+            <span className="text-muted text-xs font-medium tracking-wide uppercase">
               Filler words per session
             </span>
             <svg
@@ -70,29 +70,26 @@ export function ProgressSection() {
             </svg>
           </div>
 
-          <div className="flex flex-row gap-8 lg:flex-col lg:justify-center lg:border-l lg:border-line lg:pl-8">
+          <div className="lg:border-line flex flex-row gap-8 lg:flex-col lg:justify-center lg:border-l lg:pl-8">
             <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Sessions</span>
-              <CountUp
-                value={7}
-                className="font-mono-metric text-2xl tabular-nums text-text"
-              />
+              <span className="text-muted text-xs">Sessions</span>
+              <CountUp value={7} className="font-mono-metric text-text text-2xl tabular-nums" />
             </div>
             <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Avg. pace</span>
+              <span className="text-muted text-xs">Avg. pace</span>
               <CountUp
                 value={138}
                 suffix=" wpm"
-                className="font-mono-metric text-2xl tabular-nums text-text"
+                className="font-mono-metric text-text text-2xl tabular-nums"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted">Avg. score</span>
+              <span className="text-muted text-xs">Avg. score</span>
               <CountUp
                 value={7.8}
                 decimals={1}
                 suffix="/10"
-                className="font-mono-metric text-2xl tabular-nums text-mint"
+                className="font-mono-metric text-mint text-2xl tabular-nums"
               />
             </div>
           </div>

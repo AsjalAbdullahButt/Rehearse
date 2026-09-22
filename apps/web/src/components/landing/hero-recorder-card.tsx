@@ -70,9 +70,12 @@ export function HeroRecorderCard() {
     <div ref={containerRef}>
       <TiltCard className="w-full max-w-md overflow-hidden p-6 sm:p-7">
         <BeamBorder />
-        <div className="relative flex items-center justify-between" style={{ transform: "translateZ(20px)" }}>
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-coral">
-            <span className="size-2 rounded-full bg-coral" />
+        <div
+          className="relative flex items-center justify-between"
+          style={{ transform: "translateZ(20px)" }}
+        >
+          <span className="text-coral inline-flex items-center gap-1.5 text-xs font-medium">
+            <span className="bg-coral size-2 rounded-full" />
             REC
           </span>
           <span className="font-mono-metric text-sm tabular-nums">
@@ -95,7 +98,7 @@ export function HeroRecorderCard() {
         </div>
 
         <p
-          className="relative mt-6 min-h-[3.5rem] text-sm leading-relaxed text-muted"
+          className="text-muted relative mt-6 min-h-[3.5rem] text-sm leading-relaxed"
           style={{ transform: "translateZ(20px)" }}
         >
           &ldquo;
@@ -110,7 +113,7 @@ export function HeroRecorderCard() {
           {charsShown < TRANSCRIPT.length ? (
             <span
               aria-hidden="true"
-              className="ml-0.5 inline-block h-[1em] w-[2px] animate-[var(--animate-caret-blink)] bg-muted align-middle"
+              className="bg-muted ml-0.5 inline-block h-[1em] w-[2px] animate-[var(--animate-caret-blink)] align-middle"
             />
           ) : (
             "”"
@@ -133,8 +136,8 @@ function StatTile({
   tone: string;
 }) {
   return (
-    <div className="rounded-[var(--radius-tile)] border border-line bg-surface-2 p-3">
-      <div className="text-[11px] text-muted">{label}</div>
+    <div className="border-line bg-surface-2 rounded-[var(--radius-tile)] border p-3">
+      <div className="text-muted text-[11px]">{label}</div>
       <motion.div
         key={value}
         initial={{ scale: 1 }}
@@ -143,7 +146,7 @@ function StatTile({
         className={cn("font-mono-metric text-lg tabular-nums", tone)}
       >
         {value}
-        {unit ? <span className="ml-1 text-xs text-muted">{unit}</span> : null}
+        {unit ? <span className="text-muted ml-1 text-xs">{unit}</span> : null}
       </motion.div>
     </div>
   );

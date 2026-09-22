@@ -25,17 +25,21 @@ export function StarBars({ scores, max = 10 }: { scores: StarScore; max?: number
     <div className="flex flex-col gap-3">
       {(Object.keys(LABELS) as Array<keyof StarScore>).map((key, i) => (
         <div key={key} className="flex items-center gap-3">
-          <span className="w-6 font-mono-metric text-xs uppercase text-muted">{key}</span>
-          <div className="h-2 flex-1 overflow-hidden rounded-[var(--radius-pill)] bg-surface-2">
+          <span className="font-mono-metric text-muted w-6 text-xs uppercase">{key}</span>
+          <div className="bg-surface-2 h-2 flex-1 overflow-hidden rounded-[var(--radius-pill)]">
             <motion.div
-              className="h-full rounded-[var(--radius-pill)] bg-violet"
+              className="bg-violet h-full rounded-[var(--radius-pill)]"
               initial={{ width: 0 }}
               whileInView={{ width: `${(scores[key] / max) * 100}%` }}
               viewport={{ once: true, margin: "-10% 0px" }}
-              transition={{ duration: reduce ? 0 : 0.7, ease: brandEase, delay: reduce ? 0 : i * 0.08 }}
+              transition={{
+                duration: reduce ? 0 : 0.7,
+                ease: brandEase,
+                delay: reduce ? 0 : i * 0.08,
+              }}
             />
           </div>
-          <span className="w-10 text-right font-mono-metric text-xs tabular-nums text-muted">
+          <span className="font-mono-metric text-muted w-10 text-right text-xs tabular-nums">
             {scores[key]}/{max}
           </span>
           <span className="sr-only">{LABELS[key]}</span>

@@ -4,7 +4,13 @@ import { motion, useTransform, type MotionValue } from "motion/react";
 
 const STEPS = [
   { key: "speak", number: "01", label: "Speak", color: "var(--color-lime)", range: [0, 0.33] },
-  { key: "analyze", number: "02", label: "Analyze", color: "var(--color-violet)", range: [0.33, 0.66] },
+  {
+    key: "analyze",
+    number: "02",
+    label: "Analyze",
+    color: "var(--color-violet)",
+    range: [0.33, 0.66],
+  },
   { key: "improve", number: "03", label: "Improve", color: "var(--color-mint)", range: [0.66, 1] },
 ] as const;
 
@@ -13,9 +19,9 @@ export function StepRail({ progress }: { progress: MotionValue<number> }) {
 
   return (
     <div className="relative flex flex-col justify-center gap-10 pl-8">
-      <div className="absolute inset-y-0 left-0 w-px bg-line">
+      <div className="bg-line absolute inset-y-0 left-0 w-px">
         <motion.div
-          className="w-full origin-top bg-gradient-to-b from-lime via-violet to-mint"
+          className="from-lime via-violet to-mint w-full origin-top bg-gradient-to-b"
           style={{ scaleY: railScale, height: "100%" }}
         />
       </div>
@@ -52,7 +58,7 @@ function StepLabel({
       <span className="font-mono-metric text-sm" style={{ color: step.color }}>
         {step.number}
       </span>
-      <span className="font-display text-2xl font-bold text-text">{step.label}</span>
+      <span className="font-display text-text text-2xl font-bold">{step.label}</span>
     </motion.div>
   );
 }

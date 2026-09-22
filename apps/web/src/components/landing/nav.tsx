@@ -32,18 +32,16 @@ export function Nav() {
     <header
       className={cn(
         "sticky top-0 z-50 border-b transition-colors duration-300 ease-[var(--ease-brand)]",
-        scrolled
-          ? "border-line bg-ink/80 backdrop-blur-md"
-          : "border-transparent bg-transparent",
+        scrolled ? "border-line bg-ink/80 backdrop-blur-md" : "border-transparent bg-transparent",
       )}
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4 sm:px-10">
         <a
           href="#top"
           onClick={(e) => handleNavClick(e, "#top")}
-          className="flex items-center gap-2 font-display text-lg font-bold tracking-tight text-text"
+          className="font-display text-text flex items-center gap-2 text-lg font-bold tracking-tight"
         >
-          <span className="flex size-7 items-center justify-center rounded-full bg-lime text-lime-ink">
+          <span className="bg-lime text-lime-ink flex size-7 items-center justify-center rounded-full">
             <svg viewBox="0 0 24 24" fill="none" className="size-4" aria-hidden="true">
               <path
                 d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.93V21h2v-2.07A7 7 0 0019 12h-2z"
@@ -60,7 +58,7 @@ export function Nav() {
               key={link.href}
               href={link.href}
               onClick={(e) => handleNavClick(e, link.href)}
-              className="text-sm text-muted transition-colors hover:text-text"
+              className="text-muted hover:text-text text-sm transition-colors"
             >
               {link.label}
             </a>
@@ -71,14 +69,14 @@ export function Nav() {
           <ThemeToggle className="hidden sm:inline-flex" />
           <a
             href="/sign-in"
-            className="hidden text-sm text-muted transition-colors hover:text-text sm:inline"
+            className="text-muted hover:text-text hidden text-sm transition-colors sm:inline"
           >
             Sign in
           </a>
           <a
             href="#roles"
             onClick={(e) => handleNavClick(e, "#roles")}
-            className="inline-flex h-10 items-center justify-center rounded-[var(--radius-pill)] bg-lime px-5 text-sm font-medium text-lime-ink transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
+            className="bg-lime text-lime-ink inline-flex h-10 items-center justify-center rounded-[var(--radius-pill)] px-5 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
           >
             Start practicing
           </a>

@@ -73,7 +73,7 @@ export function MagneticButton({
       onHoverStart={triggerShimmer}
       style={disabled ? undefined : { x: springX, y: springY }}
       className={cn(
-        "relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-[var(--radius-pill)] bg-lime px-8 py-4 text-base font-medium text-lime-ink transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime",
+        "bg-lime text-lime-ink focus-visible:outline-lime relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-[var(--radius-pill)] px-8 py-4 text-base font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
         className,
       )}
     >

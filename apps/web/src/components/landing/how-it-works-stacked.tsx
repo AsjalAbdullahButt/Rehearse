@@ -37,13 +37,13 @@ export function HowItWorksStacked() {
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, margin: "-10% 0px" }}
-          className="flex flex-col gap-4 rounded-[var(--radius-card)] border border-line bg-surface p-6"
+          className="border-line bg-surface flex flex-col gap-4 rounded-[var(--radius-card)] border p-6"
         >
           <div className="flex items-baseline gap-3">
             <span className={`font-mono-metric text-sm ${step.color}`}>{step.number}</span>
-            <span className="font-display text-xl font-bold text-text">{step.label}</span>
+            <span className="font-display text-text text-xl font-bold">{step.label}</span>
           </div>
-          <p className="text-sm text-muted">{step.description}</p>
+          <p className="text-muted text-sm">{step.description}</p>
           {i === 0 ? (
             <div className="flex justify-center py-4">
               <MicOrb size={100} animate={false} />
@@ -51,7 +51,7 @@ export function HowItWorksStacked() {
           ) : null}
           {i === 1 ? <StarBars scores={{ s: 8, t: 7, a: 9, r: 6 }} /> : null}
           {i === 2 ? (
-            <span className="w-fit rounded-[var(--radius-pill)] bg-mint/15 px-3 py-1 text-xs text-mint">
+            <span className="bg-mint/15 text-mint w-fit rounded-[var(--radius-pill)] px-3 py-1 text-xs">
               Fillers removed · STAR structure added
             </span>
           ) : null}

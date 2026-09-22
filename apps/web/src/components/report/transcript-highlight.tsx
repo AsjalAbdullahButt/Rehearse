@@ -44,7 +44,7 @@ export function TranscriptHighlight({
           return (
             <span
               key={i}
-              className="mx-1 inline-flex items-center gap-1 rounded-[var(--radius-pill)] bg-amber/15 px-2 py-0.5 align-middle font-mono-metric text-xs text-amber"
+              className="bg-amber/15 font-mono-metric text-amber mx-1 inline-flex items-center gap-1 rounded-[var(--radius-pill)] px-2 py-0.5 align-middle text-xs"
             >
               ⏸ {part.seconds.toFixed(1)}s
             </span>
