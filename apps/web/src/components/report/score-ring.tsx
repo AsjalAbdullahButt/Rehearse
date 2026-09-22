@@ -57,13 +57,13 @@ export function ScoreRing({
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="font-mono-metric text-2xl tabular-nums text-text">
+          <span className="font-mono-metric text-text text-2xl tabular-nums">
             {score}
-            <span className="text-sm text-muted">/{max}</span>
+            <span className="text-muted text-sm">/{max}</span>
           </span>
         </div>
       </div>
-      {label ? <span className="text-xs text-muted">{label}</span> : null}
+      {label ? <span className="text-muted text-xs">{label}</span> : null}
     </div>
   );
 }

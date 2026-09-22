@@ -37,20 +37,16 @@ export function MicOrb({
       {isAnimating ? <RippleRings /> : null}
       <motion.div
         layoutId="mic-orb"
-        className="relative z-10 flex items-center justify-center rounded-full bg-lime shadow-[0_0_60px_rgba(212,255,90,0.35)]"
+        className="bg-lime relative z-10 flex items-center justify-center rounded-full shadow-[0_0_60px_rgba(212,255,90,0.35)]"
         style={orbStyle}
       >
         <div className="flex items-center gap-[3px]" aria-hidden="true">
           {BAR_HEIGHTS.map((h, i) => (
             <motion.span
               key={i}
-              className="w-[3px] rounded-full bg-lime-ink"
+              className="bg-lime-ink w-[3px] rounded-full"
               style={{ height: size * 0.32 * h }}
-              animate={
-                isAnimating
-                  ? { scaleY: [0.4, 1, 0.6, h + 0.2, 0.4] }
-                  : { scaleY: h }
-              }
+              animate={isAnimating ? { scaleY: [0.4, 1, 0.6, h + 0.2, 0.4] } : { scaleY: h }}
               transition={
                 isAnimating
                   ? { duration: 1.1, repeat: Infinity, delay: i * 0.08, ease: "easeInOut" }

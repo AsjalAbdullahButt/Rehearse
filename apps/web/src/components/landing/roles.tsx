@@ -34,16 +34,16 @@ export function Roles() {
   const reduce = useReducedMotion();
 
   return (
-    <section id="roles" className="relative border-t border-line bg-ink py-24">
+    <section id="roles" className="border-line bg-ink relative border-t py-24">
       <div className="mx-auto max-w-6xl px-6 sm:px-10">
         <div className="mb-12 flex flex-col gap-3 text-center">
-          <span className="mx-auto text-xs font-medium uppercase tracking-wide text-muted">
+          <span className="text-muted mx-auto text-xs font-medium tracking-wide uppercase">
             Question bank
           </span>
-          <h2 className="font-display text-3xl font-bold tracking-[-0.02em] text-text sm:text-4xl">
+          <h2 className="font-display text-text text-3xl font-bold tracking-[-0.02em] sm:text-4xl">
             Pick a role to start
           </h2>
-          <p className="mx-auto max-w-lg text-sm text-muted">
+          <p className="text-muted mx-auto max-w-lg text-sm">
             Every role has its own bank of behavioral, technical and situational questions.
           </p>
         </div>
@@ -60,7 +60,7 @@ export function Roles() {
             <motion.div
               key={role.slug}
               variants={reduce ? { hidden: { opacity: 0 }, visible: { opacity: 1 } } : tiltUp}
-              className="group relative overflow-hidden rounded-[var(--radius-tile)] border border-line bg-surface p-5 transition-colors duration-150 hover:border-lime/40"
+              className="group border-line bg-surface hover:border-lime/40 relative overflow-hidden rounded-[var(--radius-tile)] border p-5 transition-colors duration-150"
             >
               <span
                 aria-hidden="true"
@@ -70,7 +70,7 @@ export function Roles() {
                     "radial-gradient(160px circle at 50% 0%, color-mix(in oklab, var(--color-lime) 18%, transparent), transparent 70%)",
                 }}
               />
-              <span className="relative text-sm font-medium text-text">{role.name}</span>
+              <span className="text-text relative text-sm font-medium">{role.name}</span>
             </motion.div>
           ))}
         </motion.div>

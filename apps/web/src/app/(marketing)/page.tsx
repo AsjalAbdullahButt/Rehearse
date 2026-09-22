@@ -9,7 +9,7 @@ import { SampleReport } from "@/components/landing/sample-report";
 
 export default function MarketingHome() {
   return (
-    <div className="flex flex-1 flex-col bg-ink">
+    <div className="bg-ink flex flex-1 flex-col">
       <Nav />
       <Hero />
       <HowItWorks />

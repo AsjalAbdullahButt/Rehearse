@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  motion,
-  useMotionValue,
-  useReducedMotion,
-  useSpring,
-  useTransform,
-} from "motion/react";
+import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "motion/react";
 import type { PointerEvent, ReactNode } from "react";
 
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -27,7 +21,8 @@ export function TiltCard({ children, className }: { children: ReactNode; classNa
   const glareY = useTransform(my, (v) => `${v * 100}%`);
   const glareBackground = useTransform(
     [glareX, glareY],
-    ([x, y]) => `radial-gradient(420px circle at ${x} ${y}, rgba(255,255,255,0.12), transparent 60%)`,
+    ([x, y]) =>
+      `radial-gradient(420px circle at ${x} ${y}, rgba(255,255,255,0.12), transparent 60%)`,
   );
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -47,13 +42,9 @@ export function TiltCard({ children, className }: { children: ReactNode; classNa
       <motion.div
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
-        style={
-          disabled
-            ? undefined
-            : { rotateX, rotateY, transformStyle: "preserve-3d" as const }
-        }
+        style={disabled ? undefined : { rotateX, rotateY, transformStyle: "preserve-3d" as const }}
         className={cn(
-          "relative rounded-[var(--radius-card)] border border-line bg-surface",
+          "border-line bg-surface relative rounded-[var(--radius-card)] border",
           className,
         )}
       >

@@ -25,7 +25,7 @@ export function BeforeAfterToggle({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="inline-flex w-fit gap-1 rounded-[var(--radius-pill)] border border-line bg-surface-2 p-1">
+      <div className="border-line bg-surface-2 inline-flex w-fit gap-1 rounded-[var(--radius-pill)] border p-1">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
@@ -37,7 +37,7 @@ export function BeforeAfterToggle({
             {tab === key ? (
               <motion.span
                 layoutId="before-after-pill"
-                className="absolute inset-0 rounded-[var(--radius-pill)] bg-lime"
+                className="bg-lime absolute inset-0 rounded-[var(--radius-pill)]"
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
               />
             ) : null}
@@ -57,7 +57,7 @@ export function BeforeAfterToggle({
         >
           <TranscriptHighlight
             parts={tab === "before" ? before : after}
-            className="text-sm leading-relaxed text-text"
+            className="text-text text-sm leading-relaxed"
           />
         </motion.div>
       </AnimatePresence>

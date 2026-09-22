@@ -36,7 +36,7 @@ const AFTER_PARTS: TranscriptPart[] = [
 
 export function SampleReport() {
   return (
-    <section id="sample-report" className="relative border-t border-line bg-ink py-24">
+    <section id="sample-report" className="border-line bg-ink relative border-t py-24">
       <div className="mx-auto max-w-5xl px-6 sm:px-10">
         <motion.div
           variants={fadeUp}
@@ -45,15 +45,15 @@ export function SampleReport() {
           viewport={{ once: true, margin: "-10% 0px" }}
           className="mb-12 flex flex-col gap-3 text-center"
         >
-          <span className="mx-auto text-xs font-medium uppercase tracking-wide text-muted">
+          <span className="text-muted mx-auto text-xs font-medium tracking-wide uppercase">
             Sample report
           </span>
-          <h2 className="font-display text-3xl font-bold tracking-[-0.02em] text-text sm:text-4xl">
+          <h2 className="font-display text-text text-3xl font-bold tracking-[-0.02em] sm:text-4xl">
             See exactly what to fix
           </h2>
-          <p className="mx-auto max-w-lg text-sm text-muted">
-            Every answer gets a breakdown like this — filler words, pace, structure, and a
-            stronger version to learn from.
+          <p className="text-muted mx-auto max-w-lg text-sm">
+            Every answer gets a breakdown like this — filler words, pace, structure, and a stronger
+            version to learn from.
           </p>
         </motion.div>
 
@@ -64,7 +64,7 @@ export function SampleReport() {
           viewport={{ once: true, margin: "-10% 0px" }}
         >
           <Card className="grid gap-8 lg:grid-cols-[auto_1fr]">
-            <div className="flex flex-col items-center gap-6 lg:border-r lg:border-line lg:pr-8">
+            <div className="lg:border-line flex flex-col items-center gap-6 lg:border-r lg:pr-8">
               <ScoreRing score={7} label="Clarity" />
               <div className="grid grid-cols-3 gap-4 lg:grid-cols-1">
                 <Stat label="Filler words" value={4} />
@@ -75,14 +75,14 @@ export function SampleReport() {
 
             <div className="flex flex-col gap-6">
               <div>
-                <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted">
+                <h3 className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
                   STAR structure
                 </h3>
                 <StarBars scores={{ s: 8, t: 7, a: 9, r: 6 }} />
               </div>
 
               <div>
-                <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted">
+                <h3 className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
                   Answer
                 </h3>
                 <BeforeAfterToggle before={BEFORE_PARTS} after={AFTER_PARTS} />

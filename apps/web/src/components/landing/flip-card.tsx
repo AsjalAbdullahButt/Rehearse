@@ -20,20 +20,23 @@ export function FlipCard({ progress }: { progress: MotionValue<number> }) {
         {/* Front face — Speak */}
         <div
           style={{ backfaceVisibility: "hidden" }}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-[var(--radius-card)] border border-line bg-surface p-8"
+          className="border-line bg-surface absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-[var(--radius-card)] border p-8"
         >
-          <span className="text-xs font-medium text-muted">Recording your answer</span>
+          <span className="text-muted text-xs font-medium">Recording your answer</span>
           <MicOrb size={110} animate />
-          <span className="font-mono-metric text-sm tabular-nums text-muted">0:42 / 2:00</span>
+          <span className="font-mono-metric text-muted text-sm tabular-nums">0:42 / 2:00</span>
         </div>
 
         {/* Back face — Analyze → Improve */}
         <div
           style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
-          className="absolute inset-0 overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface p-8"
+          className="border-line bg-surface absolute inset-0 overflow-hidden rounded-[var(--radius-card)] border p-8"
         >
-          <motion.div style={{ opacity: analyzeOpacity }} className="absolute inset-0 flex flex-col justify-center gap-5 p-8">
-            <span className="text-xs font-medium text-muted">Analyzing your STAR structure</span>
+          <motion.div
+            style={{ opacity: analyzeOpacity }}
+            className="absolute inset-0 flex flex-col justify-center gap-5 p-8"
+          >
+            <span className="text-muted text-xs font-medium">Analyzing your STAR structure</span>
             <StarBarsScrollLinked fill={starFill} />
             <div className="grid grid-cols-3 gap-3 pt-2">
               <MiniStat label="Filler" value="4" tone="text-coral" />
@@ -46,12 +49,12 @@ export function FlipCard({ progress }: { progress: MotionValue<number> }) {
             style={{ opacity: improveOpacity }}
             className="absolute inset-0 flex flex-col justify-center gap-3 p-8"
           >
-            <span className="text-xs font-medium text-mint">Stronger answer ready</span>
-            <p className="text-sm leading-relaxed text-text">
-              &ldquo;I&apos;m a final-year CS student who has shipped three AI products end to
-              end, from data pipeline to deployed UI.&rdquo;
+            <span className="text-mint text-xs font-medium">Stronger answer ready</span>
+            <p className="text-text text-sm leading-relaxed">
+              &ldquo;I&apos;m a final-year CS student who has shipped three AI products end to end,
+              from data pipeline to deployed UI.&rdquo;
             </p>
-            <span className="w-fit rounded-[var(--radius-pill)] bg-mint/15 px-3 py-1 text-xs text-mint">
+            <span className="bg-mint/15 text-mint w-fit rounded-[var(--radius-pill)] px-3 py-1 text-xs">
               Fillers removed · STAR structure added
             </span>
           </motion.div>
@@ -67,10 +70,10 @@ function StarBarsScrollLinked({ fill }: { fill: MotionValue<number> }) {
     <div className="flex flex-col gap-2.5">
       {(Object.keys(target) as Array<keyof typeof target>).map((key) => (
         <div key={key} className="flex items-center gap-3">
-          <span className="w-4 font-mono-metric text-[11px] uppercase text-muted">{key}</span>
-          <div className="h-1.5 flex-1 overflow-hidden rounded-[var(--radius-pill)] bg-surface-2">
+          <span className="font-mono-metric text-muted w-4 text-[11px] uppercase">{key}</span>
+          <div className="bg-surface-2 h-1.5 flex-1 overflow-hidden rounded-[var(--radius-pill)]">
             <motion.div
-              className="h-full rounded-[var(--radius-pill)] bg-violet"
+              className="bg-violet h-full rounded-[var(--radius-pill)]"
               style={{ scaleX: fill, transformOrigin: "left" }}
             />
           </div>
@@ -82,8 +85,8 @@ function StarBarsScrollLinked({ fill }: { fill: MotionValue<number> }) {
 
 function MiniStat({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (
-    <div className="rounded-[var(--radius-tile)] border border-line bg-surface-2 p-2.5 text-center">
-      <div className="text-[10px] text-muted">{label}</div>
+    <div className="border-line bg-surface-2 rounded-[var(--radius-tile)] border p-2.5 text-center">
+      <div className="text-muted text-[10px]">{label}</div>
       <div className={`font-mono-metric text-sm tabular-nums ${tone}`}>{value}</div>
     </div>
   );

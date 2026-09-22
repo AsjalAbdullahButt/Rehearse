@@ -69,7 +69,7 @@ export function QuestionTicker({ className }: { className?: string }) {
             <span className="font-mono-metric text-lime">&ldquo;{question}&rdquo;</span>
             <span
               aria-hidden="true"
-              className="ml-1 inline-block h-[1em] w-[2px] animate-[var(--animate-caret-blink)] bg-lime align-middle"
+              className="bg-lime ml-1 inline-block h-[1em] w-[2px] animate-[var(--animate-caret-blink)] align-middle"
             />
           </div>
         ))}
