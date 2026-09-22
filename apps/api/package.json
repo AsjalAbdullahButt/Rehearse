@@ -1,0 +1,12 @@
+{
+  "name": "api",
+  "private": true,
+  "scripts": {
+    "dev": "uv run uvicorn app.main:app --reload --port 8000",
+    "lint": "uv run ruff check . && uv run ruff format --check .",
+    "format": "uv run ruff format .",
+    "typecheck": "uv run pyright",
+    "test": "uv run pytest",
+    "build": "uv export --no-hashes --no-dev --output-file requirements.txt"
+  }
+}

@@ -1,16 +1,55 @@
 [project]
 name = "rehearse-api"
 version = "0.1.0"
-description = "Add your description here"
-authors = [
-    { name = "AsjalAbdullahButt", email = "asjal.abdullah.butt@gmail.com" }
-]
+description = "Rehearse API — FastAPI backend for the AI mock interview coach"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.141.1",
+    "groq>=1.7.0",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pyjwt[crypto]>=2.14.0",
+    "python-multipart>=0.0.32",
+    "supabase>=2.31.0",
+    "uvicorn[standard]>=0.53.0",
+]
 
-[project.scripts]
-rehearse-api = "rehearse_api:main"
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.8",
+]
 
-[build-system]
-requires = ["uv_build>=0.12.1,<0.13.0"]
-build-backend = "uv_build"
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+include = ["app", "api", "tests"]
+venvPath = "."
+venv = ".venv"
+
+# Third-party test-client stubs (httpx/starlette) aren't fully strict-typed;
+# relax unknown-type reporting for tests only. App/API code stays fully strict.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.executionEnvironments]]
+root = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
