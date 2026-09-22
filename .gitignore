@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js
+apps/web/.next/
+apps/web/out/
+apps/web/next-env.d.ts
+apps/web/.vercel/
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Python / API
+apps/api/.venv/
+apps/api/__pycache__/
+apps/api/**/__pycache__/
+apps/api/.pytest_cache/
+apps/api/.ruff_cache/
+apps/api/.mypy_cache/
+apps/api/.pyright_cache/
+apps/api/requirements.txt
+apps/api/.vercel/
+*.pyc
+
+# Build outputs
+dist/
+build/
+
+# Testing
+coverage/
+apps/web/playwright-report/
+apps/web/test-results/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Supabase local
+supabase/.branches/
+supabase/.temp/
