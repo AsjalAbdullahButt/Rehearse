@@ -30,49 +30,49 @@ export default function StyleguidePage() {
   const [toggled, setToggled] = useState(true);
 
   return (
-    <div className="flex min-h-screen flex-col gap-12 bg-ink px-6 py-12 sm:px-10">
+    <div className="bg-ink flex min-h-screen flex-col gap-12 px-6 py-12 sm:px-10">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-text">
+          <h1 className="font-display text-text text-3xl font-bold tracking-tight">
             Rehearse styleguide
           </h1>
-          <p className="mt-1 text-sm text-muted">Design tokens and UI primitives, both themes.</p>
+          <p className="text-muted mt-1 text-sm">Design tokens and UI primitives, both themes.</p>
         </div>
         <ThemeToggle />
       </header>
 
       <section aria-labelledby="colors-heading" className="flex flex-col gap-4">
-        <h2 id="colors-heading" className="font-display text-xl font-bold text-text">
+        <h2 id="colors-heading" className="font-display text-text text-xl font-bold">
           Colors
         </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
           {COLOR_TOKENS.map((token) => (
             <div key={token.name} className="flex flex-col gap-2">
               <div
-                className="h-16 rounded-[var(--radius-tile)] border border-line"
+                className="border-line h-16 rounded-[var(--radius-tile)] border"
                 style={{ backgroundColor: `var(--${token.name})` }}
               />
-              <span className="text-xs text-muted">{token.label}</span>
+              <span className="text-muted text-xs">{token.label}</span>
             </div>
           ))}
         </div>
       </section>
 
       <section aria-labelledby="type-heading" className="flex flex-col gap-4">
-        <h2 id="type-heading" className="font-display text-xl font-bold text-text">
+        <h2 id="type-heading" className="font-display text-text text-xl font-bold">
           Type
         </h2>
         <div className="flex flex-col gap-3">
-          <p className="font-display text-5xl font-bold tracking-[-0.035em] text-text">
+          <p className="font-display text-text text-5xl font-bold tracking-[-0.035em]">
             Bricolage Grotesque
           </p>
-          <p className="text-lg text-text">Geist body text at a comfortable reading size.</p>
-          <p className="font-mono-metric text-2xl tabular-nums text-text">01:24 — JetBrains Mono</p>
+          <p className="text-text text-lg">Geist body text at a comfortable reading size.</p>
+          <p className="font-mono-metric text-text text-2xl tabular-nums">01:24 — JetBrains Mono</p>
         </div>
       </section>
 
       <section aria-labelledby="buttons-heading" className="flex flex-col gap-4">
-        <h2 id="buttons-heading" className="font-display text-xl font-bold text-text">
+        <h2 id="buttons-heading" className="font-display text-text text-xl font-bold">
           Buttons
         </h2>
         <div className="flex flex-wrap items-center gap-3">
@@ -86,7 +86,7 @@ export default function StyleguidePage() {
       </section>
 
       <section aria-labelledby="badges-heading" className="flex flex-col gap-4">
-        <h2 id="badges-heading" className="font-display text-xl font-bold text-text">
+        <h2 id="badges-heading" className="font-display text-text text-xl font-bold">
           Badges
         </h2>
         <div className="flex flex-wrap items-center gap-3">
@@ -99,12 +99,12 @@ export default function StyleguidePage() {
       </section>
 
       <section aria-labelledby="cards-heading" className="flex flex-col gap-4">
-        <h2 id="cards-heading" className="font-display text-xl font-bold text-text">
+        <h2 id="cards-heading" className="font-display text-text text-xl font-bold">
           Cards &amp; stats
         </h2>
         <div className="grid gap-4 sm:grid-cols-3">
           <Card>
-            <p className="text-sm text-muted">Standard card, 28px radius.</p>
+            <p className="text-muted text-sm">Standard card, 28px radius.</p>
           </Card>
           <Card tile>
             <Stat label="Filler words" value={4} unit="count" />
@@ -116,7 +116,7 @@ export default function StyleguidePage() {
       </section>
 
       <section aria-labelledby="controls-heading" className="flex flex-col gap-4">
-        <h2 id="controls-heading" className="font-display text-xl font-bold text-text">
+        <h2 id="controls-heading" className="font-display text-text text-xl font-bold">
           Controls
         </h2>
         <div className="flex items-center gap-6">

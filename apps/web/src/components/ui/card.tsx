@@ -12,7 +12,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={cn(
-          "border border-line bg-surface",
+          "border-line bg-surface border",
           tile ? "rounded-[var(--radius-tile)] p-4" : "rounded-[var(--radius-card)] p-6",
           className,
         )}

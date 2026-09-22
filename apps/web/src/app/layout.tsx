@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Geist, JetBrains_Mono } from "next/font/google";
+import type { ReactNode } from "react";
 
 import { SmoothScrollProvider } from "@/components/theme/smooth-scroll-provider";
 import { ThemeProvider } from "@/components/theme/theme-provider";
@@ -31,15 +32,20 @@ export const metadata: Metadata = {
     "Practice interviews out loud. Rehearse transcribes your answer, measures filler words, pace and pauses, scores STAR structure and clarity, and shows a stronger sample answer.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
       className={`${bricolage.variable} ${geist.variable} ${jetbrainsMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col font-body">
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+      <body className="font-body flex min-h-full flex-col">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          disableTransitionOnChange
+        >
           <SmoothScrollProvider>{children}</SmoothScrollProvider>
         </ThemeProvider>
       </body>

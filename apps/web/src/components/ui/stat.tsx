@@ -11,10 +11,10 @@ export interface StatProps extends HTMLAttributes<HTMLDivElement> {
 export function Stat({ label, value, unit, className, ...props }: StatProps) {
   return (
     <div className={cn("flex flex-col gap-1", className)} {...props}>
-      <span className="text-xs uppercase tracking-wide text-muted">{label}</span>
-      <span className="font-mono-metric text-2xl tabular-nums text-text">
+      <span className="text-muted text-xs tracking-wide uppercase">{label}</span>
+      <span className="font-mono-metric text-text text-2xl tabular-nums">
         {value}
-        {unit ? <span className="ml-1 text-sm text-muted">{unit}</span> : null}
+        {unit ? <span className="text-muted ml-1 text-sm">{unit}</span> : null}
       </span>
     </div>
   );
