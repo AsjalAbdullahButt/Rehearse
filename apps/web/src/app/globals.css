@@ -1,26 +1,131 @@
 @import "tailwindcss";
 
+/*
+ * Fallback tokens. Dark values come from the design spec (section 3).
+ * Light values are the documented fallback — replace with /design/landing-light
+ * extraction once that mockup is provided.
+ */
+.dark {
+  color-scheme: dark;
+
+  --ink: #0a0b0f;
+  --surface: #121419;
+  --surface-2: #1a1d24;
+  --line: #262a33;
+  --text: #f4f3ee;
+  --muted: #a1a3ad;
+
+  --lime: #d4ff5a;
+  --lime-ink: #0a0b0f;
+  --violet: #8c7bff;
+  --coral: #ff5a4e;
+  --amber: #ffb547;
+  --mint: #3ddc97;
+}
+
+.light {
+  color-scheme: light;
+
+  --ink: #f7f6f1;
+  --surface: #ffffff;
+  --surface-2: #f0efe9;
+  --line: #e3e1d9;
+  --text: #0a0b0f;
+  --muted: #565966;
+
+  /* Lime text on light fails contrast; use the darkened variant for text. */
+  --lime: #4f6b00;
+  --lime-ink: #0a0b0f;
+  --violet: #8c7bff;
+  --coral: #ff5a4e;
+  --amber: #ffb547;
+  --mint: #3ddc97;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --ink: #0a0b0f;
+  --surface: #121419;
+  --surface-2: #1a1d24;
+  --line: #262a33;
+  --text: #f4f3ee;
+  --muted: #a1a3ad;
+  --lime: #d4ff5a;
+  --lime-ink: #0a0b0f;
+  --violet: #8c7bff;
+  --coral: #ff5a4e;
+  --amber: #ffb547;
+  --mint: #3ddc97;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-ink: var(--ink);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --color-lime: var(--lime);
+  --color-lime-ink: var(--lime-ink);
+  --color-violet: var(--violet);
+  --color-coral: var(--coral);
+  --color-amber: var(--amber);
+  --color-mint: var(--mint);
+
+  --font-display: var(--font-bricolage), sans-serif;
+  --font-body: var(--font-geist), sans-serif;
+  --font-mono-metric: var(--font-jetbrains), monospace;
+
+  --radius-pill: 999px;
+  --radius-card: 28px;
+  --radius-tile: 14px;
+
+  --ease-brand: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-shimmer: shimmer 2.4s linear infinite;
+  --animate-ripple: ripple 2s var(--ease-brand) infinite;
+
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  @keyframes ripple {
+    0% {
+      transform: scale(0.9);
+      opacity: 0.6;
+    }
+    100% {
+      transform: scale(1.6);
+      opacity: 0;
+    }
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-ink);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+/* Subtle 28px dot-grid, used behind hero/card surfaces. */
+.bg-dot-grid {
+  background-image: radial-gradient(color-mix(in oklab, var(--color-text) 7%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
