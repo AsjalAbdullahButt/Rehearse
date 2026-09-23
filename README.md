@@ -4,20 +4,31 @@ An AI mock interview coach. Pick a role, answer a spoken question out loud, and 
 filler-word/pace/pause metrics, STAR and clarity scoring, a stronger sample answer, and progress
 tracking across sessions.
 
-> **Status:** Phase 1 (foundation) complete. See [AGENTS.md](./AGENTS.md) for stack, conventions
-> and current progress.
+> **Status:** Phase 2.5 (data & auth layer) complete. See [AGENTS.md](./AGENTS.md) for stack,
+> conventions and current progress.
 
 ## Stack
 
-Next.js (App Router) + TypeScript + Tailwind v4 · FastAPI (Python 3.12, `uv`) · Supabase
-(Postgres + Auth + RLS) · Groq (Whisper STT + Llama LLM). All on free tiers.
+Next.js (App Router) + TypeScript + Tailwind v4 · FastAPI (Python 3.12, `uv`) · MySQL 8 via
+SQLAlchemy 2 (async) + Alembic, with FastAPI-native JWT auth (argon2 password hashing) · Groq
+(Whisper STT + Llama LLM). All on free tiers.
 
 ## Prerequisites
 
 - Node.js 20+ and [pnpm](https://pnpm.io) (`npm install -g pnpm`)
 - Python 3.12 and [uv](https://docs.astral.sh/uv/) (`uv python pin 3.12` is already set in
   `apps/api`)
-- A [Supabase](https://supabase.com) project (free tier) and a [Groq](https://groq.com) API key
+- A MySQL 8 database and a [Groq](https://groq.com) API key. For local dev, run MySQL in Docker:
+
+  ```bash
+  docker run --name rehearse-mysql -e MYSQL_ROOT_PASSWORD=root \
+    -e MYSQL_DATABASE=rehearse -p 3306:3306 -d mysql:8
+  ```
+
+  For a free hosted database (staging/prod), use [Aiven's free MySQL plan](https://aiven.io/free-mysql-database)
+  (real MySQL 8, 1GB storage, no credit card). PlanetScale's free tier no longer exists and
+  Clever Cloud dropped its free tier in 2023 — check current offers before assuming either is
+  still free.
 
 ## Setup
 
@@ -28,16 +39,23 @@ pnpm install
 Copy the env templates and fill in real values:
 
 ```bash
-cp .env.example apps/web/.env.local   # NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, ...
-cp .env.example apps/api/.env         # GROQ_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, ...
+cp .env.example apps/web/.env.local   # NEXT_PUBLIC_SITE_URL, API_URL
+cp .env.example apps/api/.env         # GROQ_API_KEY, DATABASE_URL, JWT_SECRET, ...
 ```
 
-Apply the database schema and seed data to your Supabase project (via the SQL editor, or the
-Supabase CLI once linked):
+Generate a `JWT_SECRET`:
 
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
-supabase/migrations/0001_init.sql
-supabase/seed.sql
+
+Apply the database schema (Alembic, replacing the old Supabase SQL editor step) and seed the
+question bank:
+
+```bash
+cd apps/api
+uv run alembic upgrade head
+uv run python scripts/seed.py
 ```
 
 ## Development
@@ -48,8 +66,9 @@ pnpm dev:web        # web only
 pnpm dev:api        # api only
 ```
 
-The web app proxies `/api/py/*` to the FastAPI server in dev (see `apps/web/next.config.ts`), so
-the browser never needs CORS configured locally.
+The web app proxies `/api/py/*` to the FastAPI server in dev (see `apps/web/next.config.ts`); auth
+specifically goes through the Next.js route handlers under `apps/web/src/app/api/auth/*`, which
+proxy to the API server-side and set the session as httpOnly cookies (never `localStorage`).
 
 Visit `/styleguide` for a live render of every design token and UI primitive in both themes.
 
@@ -66,10 +85,16 @@ cd apps/api
 uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest
 ```
 
+CI also runs `alembic upgrade head` against a real MySQL 8 service container — pytest itself runs
+against an in-memory SQLite DB for speed (the models use dialect-agnostic SQLAlchemy types so this
+works), so the MySQL-specific surface (utf8mb4, `CHECK` constraint enforcement) is only proven by
+that CI step, not by `pytest` locally.
+
 Always verify with a production build before calling something done:
 
 ```bash
 pnpm --filter ./apps/web build && pnpm --filter ./apps/web start
+cd apps/api && uv run uvicorn app.main:app
 ```
 
 ## Project structure
@@ -79,4 +104,6 @@ complete target structure.
 
 ## Deployment
 
-Two Vercel projects (web root `apps/web`, API root `apps/api`) — details land in Phase 6.
+Two Vercel projects (web root `apps/web`, API root `apps/api`) — details land in Phase 6. The
+MySQL host is provisioned separately (Aiven or equivalent) and its connection string is set as
+`DATABASE_URL` on the API project.
