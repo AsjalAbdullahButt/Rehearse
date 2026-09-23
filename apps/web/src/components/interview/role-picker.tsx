@@ -4,44 +4,14 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { DIFFICULTY_OPTIONS, ROLE_OPTIONS } from "@/lib/interview/types";
+import { OptionPill } from "@/components/ui/option-pill";
+import { DIFFICULTY_OPTIONS, ROLE_OPTIONS, TIME_CAP_OPTIONS } from "@/lib/interview/types";
 import type { Difficulty, Role } from "@/lib/interview/types";
-import { cn } from "@/lib/utils";
-
-const TIME_CAP_OPTIONS = [60, 120, 180, 300];
 
 export interface RolePickerValue {
   role: Role;
   difficulty: Difficulty;
   timeCapS: number;
-}
-
-function OptionPill<T extends string>({
-  value,
-  label,
-  selected,
-  onSelect,
-}: {
-  value: T;
-  label: string;
-  selected: boolean;
-  onSelect: (value: T) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(value)}
-      aria-pressed={selected}
-      className={cn(
-        "focus-visible:outline-lime rounded-[var(--radius-pill)] border px-4 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
-        selected
-          ? "bg-lime text-lime-ink border-lime"
-          : "border-line bg-surface-2 text-text hover:bg-surface",
-      )}
-    >
-      {label}
-    </button>
-  );
 }
 
 export function RolePicker({
@@ -55,7 +25,7 @@ export function RolePicker({
 }) {
   const [role, setRole] = useState<Role | null>(initialRole ?? null);
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
-  const [timeCapS, setTimeCapS] = useState(120);
+  const [timeCapS, setTimeCapS] = useState<number>(120);
 
   return (
     <Card className="mx-auto flex w-full max-w-2xl flex-col gap-8">

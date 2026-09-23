@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { proxyAuthedRequest } from "@/lib/interview/proxy";
+import { proxyAuthedRequest } from "@/lib/auth/proxy";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = request.nextUrl;

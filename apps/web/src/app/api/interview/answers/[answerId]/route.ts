@@ -1,6 +1,6 @@
 import type { NextResponse } from "next/server";
 
-import { proxyAuthedRequest } from "@/lib/interview/proxy";
+import { proxyAuthedRequest } from "@/lib/auth/proxy";
 
 export async function GET(
   _request: Request,

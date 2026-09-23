@@ -1,31 +1,35 @@
 // Direct server-side reads for Server Components — these call the API straight, skipping the
-// /api/interview/* route handlers (those exist for client components, which can't attach the
-// httpOnly cookie's bearer token themselves).
+// /api/* route handlers (those exist for client components, which can't attach the httpOnly
+// cookie's bearer token themselves).
 
 import { apiFetch, type UserPublic } from "@/lib/auth/api";
 import { getValidAccessToken } from "@/lib/auth/session";
-import type { AnswerReport } from "@/lib/interview/types";
+import type { AnswerReport, ProgressOut, Profile } from "@/lib/interview/types";
 
-export async function fetchCurrentUser(): Promise<UserPublic | null> {
+async function fetchFromApi<T>(path: string): Promise<T | null> {
   const accessToken = await getValidAccessToken();
   if (!accessToken) return null;
 
-  const response = await apiFetch("/v1/auth/me", {
+  const response = await apiFetch(path, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!response.ok) return null;
 
-  return (await response.json()) as UserPublic;
+  return (await response.json()) as T;
 }
 
-export async function fetchAnswerReport(answerId: string): Promise<AnswerReport | null> {
-  const accessToken = await getValidAccessToken();
-  if (!accessToken) return null;
+export function fetchCurrentUser(): Promise<UserPublic | null> {
+  return fetchFromApi<UserPublic>("/v1/auth/me");
+}
 
-  const response = await apiFetch(`/v1/answers/${encodeURIComponent(answerId)}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!response.ok) return null;
+export function fetchAnswerReport(answerId: string): Promise<AnswerReport | null> {
+  return fetchFromApi<AnswerReport>(`/v1/answers/${encodeURIComponent(answerId)}`);
+}
 
-  return (await response.json()) as AnswerReport;
+export function fetchProgress(): Promise<ProgressOut | null> {
+  return fetchFromApi<ProgressOut>("/v1/progress");
+}
+
+export function fetchProfile(): Promise<Profile | null> {
+  return fetchFromApi<Profile>("/v1/profile");
 }

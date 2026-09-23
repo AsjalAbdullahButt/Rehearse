@@ -1,5 +1,7 @@
 // Mirrors apps/api/app/models/enums.py and apps/api/app/schemas/{question,session,feedback,
-// transcription,answer}.py — the wire shapes the interview proxy routes forward verbatim.
+// transcription,answer,progress,profile}.py — the wire shapes the /api/* proxy routes forward
+// verbatim. Despite the folder name, this covers the whole authenticated product domain
+// (questions/sessions/answers/progress/profile), not just the recording flow specifically.
 
 export type Role =
   | "software-engineer"
@@ -31,6 +33,10 @@ export const DIFFICULTY_OPTIONS: { slug: Difficulty; name: string }[] = [
   { slug: "medium", name: "Medium" },
   { slug: "hard", name: "Hard" },
 ];
+
+// Mirrors apps/api/app/models/profile.py's ANSWER_CAP_CHOICES — shared between the per-session
+// override in RolePicker and the persisted default in Settings.
+export const TIME_CAP_OPTIONS = [60, 120, 180, 300] as const;
 
 export interface Question {
   id: string;
@@ -88,3 +94,29 @@ export interface AnswerReport {
   feedback: LLMFeedback;
   created_at: string;
 }
+
+export interface ProgressRow {
+  session_id: string;
+  role: string;
+  difficulty: Difficulty;
+  started_at: string;
+  answer_count: number;
+  avg_wpm: number | null;
+  avg_filler_count: number | null;
+  avg_clarity: number | null;
+  avg_star: number | null;
+}
+
+export interface ProgressOut {
+  sessions: ProgressRow[];
+}
+
+export interface Profile {
+  display_name: string | null;
+  target_role: string | null;
+  answer_cap_s: number;
+  voice_name: string | null;
+  voice_rate: number;
+}
+
+export type ProfileUpdate = Partial<Profile>;
