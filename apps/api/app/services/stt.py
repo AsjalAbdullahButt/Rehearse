@@ -67,6 +67,8 @@ async def transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
     words = [WordTiming(word=w["word"], start=w["start"], end=w["end"]) for w in words_raw]
 
     duration_raw = extra.get("duration")
-    duration_s = float(duration_raw) if duration_raw is not None else (words[-1].end if words else 0.0)
+    duration_s = (
+        float(duration_raw) if duration_raw is not None else (words[-1].end if words else 0.0)
+    )
 
     return TranscriptionResult(transcript=response.text, words=words, duration_s=duration_s)

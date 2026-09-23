@@ -27,13 +27,17 @@ async def _complete(messages: list[ChatCompletionMessageParam]) -> str:
         )
     except APIStatusError as exc:
         raise ApiError(
-            "llm_failed", "The feedback model is unavailable.", status_code=status.HTTP_502_BAD_GATEWAY
+            "llm_failed",
+            "The feedback model is unavailable.",
+            status_code=status.HTTP_502_BAD_GATEWAY,
         ) from exc
 
     content = response.choices[0].message.content
     if not content:
         raise ApiError(
-            "llm_failed", "The model returned an empty response.", status_code=status.HTTP_502_BAD_GATEWAY
+            "llm_failed",
+            "The model returned an empty response.",
+            status_code=status.HTTP_502_BAD_GATEWAY,
         )
     return content
 

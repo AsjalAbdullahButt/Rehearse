@@ -24,6 +24,7 @@ apps/api/.mypy_cache/
 apps/api/.pyright_cache/
 apps/api/requirements.txt
 apps/api/.vercel/
+apps/api/*.db
 *.pyc
 
 # Build outputs
