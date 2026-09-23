@@ -4,7 +4,7 @@ An AI mock interview coach. Pick a role, answer a spoken question out loud, and 
 filler-word/pace/pause metrics, STAR and clarity scoring, a stronger sample answer, and progress
 tracking across sessions.
 
-> **Status:** Phase 3 (backend core — STT, metrics, LLM, endpoints) complete. See
+> **Status:** Phase 4 (auth'd product UI — the interview flow) complete. See
 > [AGENTS.md](./AGENTS.md) for stack, conventions and current progress.
 
 ## Stack
@@ -71,6 +71,13 @@ specifically goes through the Next.js route handlers under `apps/web/src/app/api
 proxy to the API server-side and set the session as httpOnly cookies (never `localStorage`).
 
 Visit `/styleguide` for a live render of every design token and UI primitive in both themes.
+
+Sign in, then visit `/interview` to run the real mock-interview flow end to end (needs a real
+`GROQ_API_KEY` to get past the transcription step — with a placeholder key it'll fail cleanly
+with a 502 once you submit a recording, which is the expected behavior, not a bug). This
+project's dev environment has no browser to test `MediaRecorder`/`getUserMedia`/
+`speechSynthesis` in, so that part of the flow needs a real browser to verify — see AGENTS.md's
+Phase 4 status note.
 
 To test the interview-answer pipeline (STT → metrics → LLM feedback) without the web UI, once
 `GROQ_API_KEY` is set to a real key:

@@ -10,6 +10,7 @@ from app.core.auth import (
     issue_access_token,
     verify_password,
 )
+from app.core.config import get_settings
 from app.core.errors import ApiError
 
 
@@ -27,11 +28,14 @@ def test_password_hash_rejects_wrong_password() -> None:
 
 
 def test_decode_token_rejects_expired_token() -> None:
-    settings_secret = "test-only-secret-do-not-use-in-production"
+    # Signed with the actually-configured secret (not a hardcoded literal) so this test is
+    # correct under whatever JWT_SECRET the environment sets — a hardcoded value here would
+    # mask the real expiry check behind a spurious signature mismatch whenever the two diverge.
+    settings = get_settings()
     expired = jwt.encode(
         {"sub": "user-1", "type": "access", "iat": 0, "exp": 1},
-        settings_secret,
-        algorithm="HS256",
+        settings.jwt_secret.get_secret_value(),
+        algorithm=settings.jwt_algorithm,
     )
 
     with pytest.raises(ApiError) as exc_info:
