@@ -34,7 +34,6 @@ build/
 coverage/
 apps/web/playwright-report/
 apps/web/test-results/
-apps/web/screenshots/
 
 # Logs
 *.log
