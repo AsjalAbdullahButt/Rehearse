@@ -1,18 +1,52 @@
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("GROQ_API_KEY", "test-groq-key")
-os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
-os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("JWT_SECRET", "test-only-secret-do-not-use-in-production")
 os.environ.setdefault("ALLOWED_ORIGINS", "http://localhost:3000")
 
 
+@pytest_asyncio.fixture
+async def db_session() -> AsyncIterator[AsyncSession]:
+    """A fresh in-memory SQLite DB per test. Models use dialect-agnostic SQLAlchemy types
+    (generic JSON/Enum/DECIMAL, not MySQL-native ones) specifically so this works; the real
+    MySQL-specific surface (utf8mb4, CHECK enforcement) is exercised by `alembic upgrade head`
+    against a real MySQL service container in CI, not here."""
+    from app.models import Base
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        yield session
+
+    await engine.dispose()
+
+
 @pytest.fixture
-def client() -> Iterator[TestClient]:
+def client(db_session: AsyncSession) -> Iterator[TestClient]:
+    from app.db import get_db
     from app.main import create_app
 
-    with TestClient(create_app()) as test_client:
+    app = create_app()
+
+    async def _override_get_db() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_get_db
+
+    with TestClient(app) as test_client:
         yield test_client

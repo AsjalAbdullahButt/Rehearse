@@ -4,13 +4,13 @@ from typing import Any
 
 from sqlalchemy import (
     DECIMAL,
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     SmallInteger,
     String,
     Text,
@@ -27,9 +27,7 @@ class Answer(Base):
         Index("ix_answers_user_id_created_at", "user_id", "created_at"),
     )
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     session_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
     )
