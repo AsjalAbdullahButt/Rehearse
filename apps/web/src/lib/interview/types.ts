@@ -13,6 +13,25 @@ export type Role =
 
 export type Difficulty = "easy" | "medium" | "hard";
 
+// Shared between the landing page's Roles grid and the interview role picker, so the two
+// never drift out of sync on labels or slugs.
+export const ROLE_OPTIONS: { slug: Role; name: string }[] = [
+  { slug: "software-engineer", name: "Software Engineer" },
+  { slug: "frontend", name: "Frontend" },
+  { slug: "backend", name: "Backend" },
+  { slug: "data-scientist", name: "Data Scientist" },
+  { slug: "ml-engineer", name: "ML Engineer" },
+  { slug: "product-manager", name: "Product Manager" },
+  { slug: "ui-ux-designer", name: "UI/UX Designer" },
+  { slug: "hr-general", name: "HR / General" },
+];
+
+export const DIFFICULTY_OPTIONS: { slug: Difficulty; name: string }[] = [
+  { slug: "easy", name: "Easy" },
+  { slug: "medium", name: "Medium" },
+  { slug: "hard", name: "Hard" },
+];
+
 export interface Question {
   id: string;
   role: Role;

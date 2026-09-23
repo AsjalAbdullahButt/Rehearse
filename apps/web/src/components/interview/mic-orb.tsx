@@ -14,10 +14,14 @@ const BAR_HEIGHTS = [0.45, 0.85, 0.6, 1, 0.5];
 export function MicOrb({
   size = 140,
   animate = true,
+  recording = false,
   className,
 }: {
   size?: number;
   animate?: boolean;
+  /** Swaps the orb from lime (idle/ambient) to coral (live recording). Defaults to false, so
+   * the landing page's decorative usage is unaffected. */
+  recording?: boolean;
   className?: string;
 }) {
   const reduce = useReducedMotion();
@@ -37,14 +41,19 @@ export function MicOrb({
       {isAnimating ? <RippleRings /> : null}
       <motion.div
         layoutId="mic-orb"
-        className="bg-lime relative z-10 flex items-center justify-center rounded-full shadow-[0_0_60px_rgba(212,255,90,0.35)]"
+        className={cn(
+          "relative z-10 flex items-center justify-center rounded-full",
+          recording
+            ? "bg-coral shadow-[0_0_60px_rgba(255,90,78,0.35)]"
+            : "bg-lime shadow-[0_0_60px_rgba(212,255,90,0.35)]",
+        )}
         style={orbStyle}
       >
         <div className="flex items-center gap-[3px]" aria-hidden="true">
           {BAR_HEIGHTS.map((h, i) => (
             <motion.span
               key={i}
-              className="bg-lime-ink w-[3px] rounded-full"
+              className={cn("w-[3px] rounded-full", recording ? "bg-ink" : "bg-lime-ink")}
               style={{ height: size * 0.32 * h }}
               animate={isAnimating ? { scaleY: [0.4, 1, 0.6, h + 0.2, 0.4] } : { scaleY: h }}
               transition={

@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
 import { Aurora } from "@/components/effects/aurora";
 import { MagneticButton } from "@/components/effects/magnetic-button";
 import { QuestionTicker } from "@/components/effects/question-ticker";
@@ -8,6 +10,7 @@ import { HeroRecorderCard } from "@/components/landing/hero-recorder-card";
 import { useSmoothScrollTo } from "@/hooks/use-smooth-scroll-to";
 
 export function Hero() {
+  const router = useRouter();
   const scrollTo = useSmoothScrollTo();
 
   return (
@@ -36,7 +39,7 @@ export function Hero() {
           </p>
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
-            <MagneticButton onClick={() => scrollTo("#roles")}>
+            <MagneticButton onClick={() => router.push("/interview")}>
               <svg viewBox="0 0 24 24" fill="none" className="size-4" aria-hidden="true">
                 <path
                   d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.93V21h2v-2.07A7 7 0 0019 12h-2z"

@@ -1,12 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
 import { Aurora } from "@/components/effects/aurora";
 import { MagneticButton } from "@/components/effects/magnetic-button";
 import { MicOrb } from "@/components/interview/mic-orb";
-import { useSmoothScrollTo } from "@/hooks/use-smooth-scroll-to";
 
 export function FinalCta() {
-  const scrollTo = useSmoothScrollTo();
+  const router = useRouter();
 
   return (
     <section className="border-line bg-ink relative overflow-hidden border-t py-28">
@@ -20,7 +21,9 @@ export function FinalCta() {
           Pick a role, answer out loud, and see exactly what to improve — in your next practice
           session.
         </p>
-        <MagneticButton onClick={() => scrollTo("#roles")}>Start a mock interview</MagneticButton>
+        <MagneticButton onClick={() => router.push("/interview")}>
+          Start a mock interview
+        </MagneticButton>
       </div>
     </section>
   );
