@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
-from app.routers import auth, health
+from app.routers import answers, auth, health, progress, questions, sessions
 
 
 def create_app() -> FastAPI:
@@ -25,6 +25,10 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix="/v1", tags=["health"])
     app.include_router(auth.router, prefix="/v1", tags=["auth"])
+    app.include_router(questions.router, prefix="/v1", tags=["questions"])
+    app.include_router(sessions.router, prefix="/v1", tags=["sessions"])
+    app.include_router(answers.router, prefix="/v1", tags=["answers"])
+    app.include_router(progress.router, prefix="/v1", tags=["progress"])
 
     return app
 

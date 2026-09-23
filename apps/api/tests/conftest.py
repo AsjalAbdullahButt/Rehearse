@@ -1,5 +1,6 @@
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -50,3 +51,19 @@ def client(db_session: AsyncSession) -> Iterator[TestClient]:
 
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def register_user(client: TestClient) -> Callable[..., dict[str, Any]]:
+    """Registers a user through the real endpoint (not a DB shortcut) and returns the token
+    pair + user body, so tests exercise the same path a real client would."""
+
+    def _register(
+        email: str = "user@example.com", password: str = "correct-horse-battery-staple"
+    ) -> dict[str, Any]:
+        response = client.post("/v1/auth/register", json={"email": email, "password": password})
+        assert response.status_code == 201
+        body: dict[str, Any] = response.json()
+        return body
+
+    return _register

@@ -63,7 +63,9 @@ def count_long_pauses(words: list[WordTiming]) -> int:
         return 0
 
     long_pauses = 0
-    for previous, current in zip(words, words[1:], strict=True):
+    # words[1:] is deliberately one element shorter than words — that's what makes this a
+    # pairwise (current, next) walk, so strict=False here, not a mismatch to fix.
+    for previous, current in zip(words, words[1:], strict=False):
         if current.start - previous.end > LONG_PAUSE_THRESHOLD_S:
             long_pauses += 1
     return long_pauses

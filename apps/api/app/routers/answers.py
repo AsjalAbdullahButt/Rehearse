@@ -1,0 +1,113 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.auth import get_current_user
+from app.core.config import get_settings
+from app.core.errors import ApiError
+from app.db import get_db
+from app.models.user import User
+from app.schemas.answer import AnswerReport
+from app.services import feedback as feedback_service
+from app.services import llm, repo, stt
+
+router = APIRouter()
+
+MAX_AUDIO_BYTES = 4 * 1024 * 1024
+ALLOWED_AUDIO_CONTENT_TYPES = {"audio/webm", "audio/ogg"}
+DURATION_CAP_GRACE_S = 10
+
+
+@router.post("/answers", response_model=AnswerReport, status_code=status.HTTP_201_CREATED)
+async def create_answer(
+    session_id: Annotated[str, Form()],
+    question_id: Annotated[str, Form()],
+    time_cap_s: Annotated[int, Form()],
+    audio: Annotated[UploadFile, File()],
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AnswerReport:
+    settings = get_settings()
+
+    session = await repo.get_session_for_user(db, session_id=session_id, user_id=user.id)
+    if session is None:
+        raise ApiError(
+            "session_not_found", "Session not found.", status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    question = await repo.get_question_by_id(db, question_id=question_id)
+    if question is None:
+        raise ApiError(
+            "question_not_found", "Question not found.", status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    answers_today = await repo.count_answers_today(db, user_id=user.id)
+    if answers_today >= settings.daily_answer_limit:
+        raise ApiError(
+            "rate_limited",
+            f"Daily limit of {settings.daily_answer_limit} answers reached.",
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    if audio.content_type not in ALLOWED_AUDIO_CONTENT_TYPES:
+        raise ApiError(
+            "unsupported_media_type",
+            "Audio must be webm or ogg.",
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        )
+
+    audio_bytes = await audio.read()
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise ApiError(
+            "payload_too_large",
+            "Audio file exceeds the 4MB limit.",
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+        )
+
+    # Transcribed in memory and never written to disk or persisted — only the resulting text
+    # (and what's derived from it) gets stored.
+    transcription = await stt.transcribe(audio_bytes, audio.filename or "answer.webm")
+
+    if transcription.duration_s > time_cap_s + DURATION_CAP_GRACE_S:
+        raise ApiError(
+            "duration_exceeds_cap",
+            "Recording exceeds the configured time cap.",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+    if not transcription.transcript.strip():
+        raise ApiError(
+            "empty_transcript",
+            "No speech was detected in the recording.",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
+    llm_feedback = await llm.generate_feedback(
+        role=session.role, question_text=question.text, transcript=transcription.transcript
+    )
+
+    answer = feedback_service.build_answer(
+        session_id=session.id,
+        user_id=user.id,
+        question_id=question.id,
+        question_text=question.text,
+        transcription=transcription,
+        feedback=llm_feedback,
+    )
+    saved = await repo.create_answer(db, answer=answer)
+    return feedback_service.to_answer_report(saved)
+
+
+@router.get("/answers/{answer_id}", response_model=AnswerReport)
+async def get_answer(
+    answer_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AnswerReport:
+    answer = await repo.get_answer_for_user(db, answer_id=answer_id, user_id=user.id)
+    if answer is None:
+        raise ApiError(
+            "answer_not_found", "Answer not found.", status_code=status.HTTP_404_NOT_FOUND
+        )
+    return feedback_service.to_answer_report(answer)

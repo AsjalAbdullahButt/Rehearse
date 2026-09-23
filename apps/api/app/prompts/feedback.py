@@ -9,7 +9,9 @@ application and are not part of your job.
 
 Return ONLY a JSON object with exactly this shape, no other text:
 {{
-  "star": {{"situation": <0-10 int>, "task": <0-10 int>, "action": <0-10 int>, "result": <0-10 int>}},
+  "star": {{
+    "situation": <0-10 int>, "task": <0-10 int>, "action": <0-10 int>, "result": <0-10 int>
+  }},
   "clarity": <0-10 int, how clear and well-structured the answer is>,
   "on_topic": <true or false, whether the answer actually addresses the question asked>,
   "rambling_notes": "<1-2 sentence note on repetition or padding, or an empty string if none>",
@@ -23,7 +25,9 @@ in that case score situation/task/action/result based on how well the answer cov
 goal, approach, and outcome respectively."""
 
 
-def build_messages(*, role: str, question_text: str, transcript: str) -> list[ChatCompletionMessageParam]:
+def build_messages(
+    *, role: str, question_text: str, transcript: str
+) -> list[ChatCompletionMessageParam]:
     return [
         {"role": "system", "content": SYSTEM_PROMPT_TEMPLATE.format(role=role)},
         {
