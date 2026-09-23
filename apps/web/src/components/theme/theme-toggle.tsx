@@ -1,20 +1,10 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { useRef, useSyncExternalStore } from "react";
+import { useRef } from "react";
 
+import { useHasMounted } from "@/hooks/use-has-mounted";
 import { cn } from "@/lib/utils";
-
-const emptySubscribe = () => () => {};
-
-/** True only after the client has hydrated, avoiding SSR/CSR theme mismatches. */
-function useHasMounted() {
-  return useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false,
-  );
-}
 
 export function ThemeToggle({ className }: { className?: string }) {
   const { resolvedTheme, setTheme } = useTheme();

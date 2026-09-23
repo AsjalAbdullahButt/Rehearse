@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
-from app.routers import answers, auth, health, progress, questions, sessions
+from app.routers import answers, auth, health, profile, progress, questions, sessions
 
 
 def create_app() -> FastAPI:
@@ -17,7 +17,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.allowed_origins_list,
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PATCH"],
         allow_headers=["Authorization", "Content-Type"],
     )
 
@@ -29,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router, prefix="/v1", tags=["sessions"])
     app.include_router(answers.router, prefix="/v1", tags=["answers"])
     app.include_router(progress.router, prefix="/v1", tags=["progress"])
+    app.include_router(profile.router, prefix="/v1", tags=["profile"])
 
     return app
 

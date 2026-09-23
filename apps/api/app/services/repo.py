@@ -3,6 +3,7 @@ user_id here — MySQL has no Postgres-RLS equivalent, so this module is the onl
 cross-user data leak can be caught before it ships. See tests/test_cross_user_authorization.py."""
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +42,29 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+# ─── profiles ────────────────────────────────────────────────────────────
+
+
+async def get_profile(db: AsyncSession, *, user_id: str) -> Profile | None:
+    return await db.get(Profile, user_id)
+
+
+async def update_profile(db: AsyncSession, *, user_id: str, updates: dict[str, Any]) -> Profile:
+    profile = await db.get(Profile, user_id)
+    if profile is None:
+        # Every user gets a profile row at registration (create_user above) — this only
+        # guards against that invariant somehow not holding, not an expected path.
+        profile = Profile(id=user_id)
+        db.add(profile)
+
+    for field, value in updates.items():
+        setattr(profile, field, value)
+
+    await db.commit()
+    await db.refresh(profile)
+    return profile
 
 
 # ─── refresh tokens ──────────────────────────────────────────────────────
