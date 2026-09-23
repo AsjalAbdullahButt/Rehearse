@@ -16,9 +16,18 @@ clarity scoring, a stronger sample answer, and progress tracking across sessions
 - **Web:** Next.js (App Router, RSC) + React 19 + TypeScript strict, Tailwind CSS v4
   (CSS-first `@theme` tokens in `globals.css`), `motion` + `lenis`, `next-themes`
 - **API:** FastAPI on Vercel Python functions, managed with `uv`, Python 3.12, fully type-hinted
-- **Auth/DB:** Supabase (Postgres + Auth + RLS) via `@supabase/ssr`
+- **DB:** MySQL 8 (utf8mb4) via SQLAlchemy 2.x (async, `aiomysql`), migrations via Alembic
+- **Auth:** FastAPI-native JWT (short-lived access token + rotating refresh token, `argon2`
+  password hashing). The web app stores the access/refresh tokens in httpOnly cookies set by
+  Next.js route handlers (`apps/web/src/app/api/auth/*`) that proxy to the API — never
+  `localStorage`. Email + password only for v1; Google OAuth is a post-Phase-6 stretch goal (see
+  Phase 2.5 report in git history for the tradeoff).
+- **Authorization:** no RLS equivalent on MySQL — every session/answer read or write is scoped to
+  `user_id` explicitly in `apps/api/app/services/repo.py`. Treat a missing `user_id` filter there
+  as a cross-user data leak, not a style nit.
 - **STT/LLM:** Groq (`whisper-large-v3-turbo`, Llama via JSON mode + Pydantic validation)
-- **Free tiers only:** Vercel Hobby, Supabase Free, Groq free API
+- **Free tiers only:** Vercel Hobby, Groq free API, [Aiven free-tier MySQL](https://aiven.io/free-mysql-database)
+  (or local Docker MySQL 8 for dev)
 
 ## Hard rules
 
@@ -30,6 +39,14 @@ clarity scoring, a stronger sample answer, and progress tracking across sessions
   (`apps/api/app/services/metrics.py`, arriving in Phase 3).
 - Secrets only in env vars, validated at startup: `apps/web/src/lib/env.ts` (zod) and
   `apps/api/app/core/config.py` (pydantic-settings). Never commit `.env`/`.env.local`.
+  `DATABASE_URL` and `JWT_SECRET` are `SecretStr` in `config.py` so they never leak into logs,
+  `repr()`, or error messages.
+- Every MySQL-backed endpoint that touches another user's rows needs an explicit ownership
+  check (`WHERE user_id = :current_user_id`, via `app/services/repo.py`) — see Auth/DB above.
+- No duplicate files or duplicate logic. Check whether an existing module already does the job
+  before adding a new one (client, util, repo function, etc.).
+- All SQL access goes through SQLAlchemy's ORM or parameterized `text()` — never string-format
+  or f-string user input into SQL.
 - Colors, fonts, radii, motion timings are CSS variables / Tailwind `@theme` tokens
   (`apps/web/src/app/globals.css`). Components reference tokens, not hex values.
 - Every animation respects `prefers-reduced-motion` (see the global media query in
@@ -49,14 +66,23 @@ See the master spec (section 2) for the full target layout. Highlights:
   ScoreRing/StarBars/TranscriptHighlight/BeforeAfterToggle, shared between the landing sample
   report and the real report page (Phase 4); `interview` has `MicOrb`, shared between the hero
   and the future `/interview` page via `layoutId="mic-orb"`.
-- `apps/web/src/lib/{env,motion,utils,supabase/}` — env validation, shared motion tokens, `cn()`,
-  Supabase client/server/middleware helpers.
-- `apps/api/app/{core,routers,schemas,services,prompts}` — `core` has config/errors/logging
-  (auth + rate_limit land in Phase 3 alongside Supabase JWT verification); `routers` are thin,
-  `services` hold the STT/metrics/LLM/feedback/repo logic.
+- `apps/web/src/lib/{env,motion,utils,auth/}` — env validation, shared motion tokens, `cn()`,
+  `auth/` has the JWT decode helper, session-cookie helpers, and the server-side fetch wrapper
+  used by the Next.js route handlers that talk to the API.
+- `apps/web/src/app/api/auth/{register,login,refresh,logout}/route.ts` — proxy to the API's
+  `/v1/auth/*` endpoints and set the session as httpOnly cookies. `proxy.ts` (Next middleware)
+  gates `APP_PREFIXES` on cookie presence/expiry as a UX-only redirect; the real authorization
+  boundary is always `get_current_user` on the API side.
+- `apps/api/app/models/` — SQLAlchemy models (`User`, `Profile`, `Question`, `InterviewSession`,
+  `Answer`, `RefreshToken`); `apps/api/app/db.py` — async engine/session factory; `apps/api/alembic/`
+  — migrations, `alembic upgrade head` builds the schema.
+- `apps/api/app/{core,routers,schemas,services,prompts}` — `core` has config/errors/logging/auth
+  (JWT issue/verify, password hashing, `get_current_user`); `routers` are thin; `services/repo.py`
+  holds every DB query, each one scoped to the caller's `user_id`; STT/metrics/LLM/feedback
+  services arrive in Phase 3.
 - `apps/api/api/index.py` — Vercel entry point (`from app.main import app`).
-- `supabase/migrations/0001_init.sql` + `supabase/seed.sql` — schema, RLS policies, and the
-  96-question seed bank (12 per role × 8 roles).
+- `apps/api/scripts/seed.py` — the 96-question seed bank (12 per role × 8 roles), idempotent
+  per role.
 
 ## Commands
 
@@ -126,6 +152,17 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   toggle with a sliding `layoutId` pill), roles grid, self-drawing progress chart with count-up
   stats, final CTA, footer. `MicOrb` carries `layoutId="mic-orb"` / `viewTransitionName` for the
   future landing → `/interview` morph, but nothing routes there yet — see gaps below.
+- **Phase 2.5 (Data & auth layer rebuild):** done. Replaced Supabase (Postgres + Auth + RLS) with
+  MySQL 8 + SQLAlchemy 2 async + Alembic, and FastAPI-native JWT auth (argon2 password hashing,
+  rotating refresh tokens tracked in a `refresh_tokens` table for revocation). `/v1/auth/{register,
+  login,refresh,logout,me}` implemented and tested, including a cross-user authorization regression
+  suite (`apps/api/tests/test_cross_user_authorization.py`) standing in for the RLS that no longer
+  exists. Web: real email/password sign-in form, Next.js route handlers proxy to the API and set
+  the session as httpOnly cookies, `proxy.ts` middleware gates guarded routes on cookie
+  presence/expiry. DB host: Aiven's free-tier MySQL 8 for staging/prod, local Docker MySQL 8 for
+  dev. Auth scope: email + password only for v1 — Google OAuth is a post-Phase-6 stretch goal (not
+  built; would need `authlib` OAuth wiring and a new callback route). `supabase/` directory and
+  all `@supabase/*` dependencies removed from both apps.
 - **Phases 3–6:** not started. See the master spec for scope.
 
 ## Known gaps / deliberate scope cuts from Phase 2
@@ -136,11 +173,12 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   inline styles — treat them as close, not pixel-exact.
 - **No light-mode mockup.** `.light` in `globals.css` is still the spec's documented fallback,
   unverified against a real design.
-- **`/interview` and `/sign-in` don't exist as real product pages yet** (that's Phase 4). The nav's
-  "Sign in" link points at a minimal honest placeholder (`app/(auth)/sign-in/page.tsx`) so it
-  isn't a dead link. Both hero and final CTAs currently smooth-scroll to `#roles` instead of
-  navigating away, for the same reason — role cards are informational only, not yet clickable.
-  `MicOrb`'s shared-element setup is ready for Phase 4 but unused until a second route exists.
+- **`/sign-in` is now a real, working email/password auth form** (Phase 2.5), but
+  **`/interview`, `/report/[answerId]`, `/progress`, `/settings` still don't exist** (that's
+  Phases 4–5) — `proxy.ts` will redirect to `/sign-in` for all of them today. Hero and final CTAs
+  still smooth-scroll to `#roles` instead of navigating away, since role cards are informational
+  only until the interview flow exists. `MicOrb`'s shared-element setup is ready for Phase 4 but
+  unused until a second route exists.
 - **GitHub footer link** points at this repo's own real remote
   (`github.com/AsjalAbdullahButt/Rehearse`); no LinkedIn link was added since no real profile URL
   was available and the rules here forbid inventing one.
