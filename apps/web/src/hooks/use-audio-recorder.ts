@@ -29,7 +29,9 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const onStoppedRef = useRef(onStopped);
-  onStoppedRef.current = onStopped;
+  useEffect(() => {
+    onStoppedRef.current = onStopped;
+  });
 
   const releaseResources = useCallback(() => {
     for (const track of streamRef.current?.getTracks() ?? []) {

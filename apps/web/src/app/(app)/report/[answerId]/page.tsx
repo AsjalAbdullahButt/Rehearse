@@ -8,11 +8,7 @@ import { Stat } from "@/components/ui/stat";
 import { fetchAnswerReport } from "@/lib/interview/server";
 import { toTranscriptParts } from "@/lib/interview/transcript";
 
-export default async function ReportPage({
-  params,
-}: {
-  params: Promise<{ answerId: string }>;
-}) {
+export default async function ReportPage({ params }: { params: Promise<{ answerId: string }> }) {
   const { answerId } = await params;
   const report = await fetchAnswerReport(answerId);
 
