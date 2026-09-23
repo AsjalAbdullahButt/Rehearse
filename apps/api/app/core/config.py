@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,9 +13,12 @@ class Settings(BaseSettings):
     groq_stt_model: str = Field(default="whisper-large-v3-turbo", alias="GROQ_STT_MODEL")
     groq_llm_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_LLM_MODEL")
 
-    supabase_url: str = Field(alias="SUPABASE_URL")
-    supabase_anon_key: str = Field(alias="SUPABASE_ANON_KEY")
-    supabase_jwt_secret: str | None = Field(default=None, alias="SUPABASE_JWT_SECRET")
+    database_url: SecretStr = Field(alias="DATABASE_URL")
+
+    jwt_secret: SecretStr = Field(alias="JWT_SECRET")
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    jwt_access_ttl_min: int = Field(default=15, alias="JWT_ACCESS_TTL_MIN")
+    jwt_refresh_ttl_days: int = Field(default=30, alias="JWT_REFRESH_TTL_DAYS")
 
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")
     daily_answer_limit: int = Field(default=30, alias="DAILY_ANSWER_LIMIT")

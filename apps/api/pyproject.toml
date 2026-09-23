@@ -4,18 +4,23 @@ version = "0.1.0"
 description = "Rehearse API — FastAPI backend for the AI mock interview coach"
 requires-python = ">=3.12"
 dependencies = [
+    "aiomysql>=0.2.0",
+    "alembic>=1.14.0",
+    "argon2-cffi>=23.1.0",
+    "email-validator>=2.2.0",
     "fastapi>=0.141.1",
     "groq>=1.7.0",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
     "pyjwt[crypto]>=2.14.0",
     "python-multipart>=0.0.32",
-    "supabase>=2.31.0",
+    "sqlalchemy[asyncio]>=2.0.36",
     "uvicorn[standard]>=0.53.0",
 ]
 
 [dependency-groups]
 dev = [
+    "aiosqlite>=0.20.0",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
