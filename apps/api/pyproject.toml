@@ -36,6 +36,9 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+# FastAPI's DI system relies on function calls (Depends(...)) as argument defaults —
+# this is the framework's own idiom, not a real mutable-default hazard.
+ignore = ["B008"]
 
 [tool.pyright]
 pythonVersion = "3.12"

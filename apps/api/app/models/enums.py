@@ -1,7 +1,7 @@
 import enum
 
 
-class Role(str, enum.Enum):
+class Role(enum.StrEnum):
     SOFTWARE_ENGINEER = "software-engineer"
     FRONTEND = "frontend"
     BACKEND = "backend"
@@ -12,13 +12,13 @@ class Role(str, enum.Enum):
     HR_GENERAL = "hr-general"
 
 
-class Difficulty(str, enum.Enum):
+class Difficulty(enum.StrEnum):
     EASY = "easy"
     MEDIUM = "medium"
     HARD = "hard"
 
 
-class Category(str, enum.Enum):
+class Category(enum.StrEnum):
     BEHAVIORAL = "behavioral"
     TECHNICAL = "technical"
     SITUATIONAL = "situational"

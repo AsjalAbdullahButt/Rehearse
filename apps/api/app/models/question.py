@@ -11,9 +11,7 @@ from app.models.enums import Category, Difficulty, Role
 class Question(Base):
     __tablename__ = "questions"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     # native_enum=False stores role/difficulty/category as VARCHAR + CHECK rather than a
     # MySQL-native ENUM column, so the same model works against SQLite in tests and adding
     # a new role later is an INSERT into the seed data, not an ALTER TYPE.
