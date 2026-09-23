@@ -1,6 +1,7 @@
 from app.schemas.transcription import WordTiming
 from app.services.metrics import (
     assess_rambling,
+    build_transcript_parts,
     compute_wpm,
     count_fillers,
     count_long_pauses,
@@ -94,3 +95,53 @@ def test_assess_rambling_flags_well_past_the_grace_window() -> None:
 def test_assess_rambling_boundary_is_strictly_greater_than() -> None:
     assert assess_rambling(150.0) is None  # exactly at 120 + 30 grace, not over it
     assert assess_rambling(150.01) == "rambling"
+
+
+def test_build_transcript_parts_marks_single_word_fillers() -> None:
+    words = [_word("So", 0.0, 0.2), _word("um,", 0.3, 0.5), _word("I", 0.6, 0.7)]
+
+    parts = build_transcript_parts(words)
+
+    assert [(p.type, p.text) for p in parts] == [
+        ("text", "So "),
+        ("filler", "um, "),
+        ("text", "I"),
+    ]
+
+
+def test_build_transcript_parts_strips_punctuation_before_matching() -> None:
+    # "um," must still match the filler list even though the raw token has a trailing comma —
+    # Whisper attaches punctuation to word tokens.
+    words = [_word("um,", 0.0, 0.2)]
+
+    assert build_transcript_parts(words)[0].type == "filler"
+
+
+def test_build_transcript_parts_inserts_a_pause_part_for_a_long_gap() -> None:
+    words = [_word("I", 0.0, 0.2), _word("paused", 3.0, 3.5)]
+
+    parts = build_transcript_parts(words)
+
+    assert [(p.type, p.seconds) for p in parts] == [
+        ("text", None),
+        ("pause", 2.8),
+        ("text", None),
+    ]
+
+
+def test_build_transcript_parts_no_pause_for_a_short_gap() -> None:
+    words = [_word("I", 0.0, 0.2), _word("continued", 0.5, 0.8)]
+
+    parts = build_transcript_parts(words)
+
+    assert [p.type for p in parts] == ["text", "text"]
+
+
+def test_build_transcript_parts_returns_empty_list_for_no_words() -> None:
+    assert build_transcript_parts([]) == []
+
+
+def test_build_transcript_parts_last_word_has_no_trailing_space() -> None:
+    words = [_word("done", 0.0, 0.2)]
+
+    assert build_transcript_parts(words)[0].text == "done"

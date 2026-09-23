@@ -34,9 +34,11 @@ clarity scoring, a stronger sample answer, and progress tracking across sessions
 - TypeScript `strict`. No `any`, no `@ts-ignore`, no unused code, no leftover `console.log`
   (ESLint's `no-console` allows `warn`/`error` only).
 - Python fully type-hinted, `pyright` strict mode on `app/`/`api/` (tests dir is relaxed for
-  third-party stub gaps — see `apps/api/pyproject.toml`). Every LLM output is validated with
-  Pydantic; the LLM never emits filler counts, WPM, or pauses — those are computed in code
-  (`apps/api/app/services/metrics.py`, arriving in Phase 3).
+  third-party stub gaps — see `apps/api/pyproject.toml`; `scripts/` is not pyright-checked,
+  matching how the old `supabase/` folder never was). Every LLM output is validated with
+  Pydantic (`app/schemas/feedback.py`); the LLM never emits filler counts, WPM, or pauses —
+  those are computed in code (`apps/api/app/services/metrics.py`), retried once on validation
+  failure with the error fed back, 502 on a second failure.
 - Secrets only in env vars, validated at startup: `apps/web/src/lib/env.ts` (zod) and
   `apps/api/app/core/config.py` (pydantic-settings). Never commit `.env`/`.env.local`.
   `DATABASE_URL` and `JWT_SECRET` are `SecretStr` in `config.py` so they never leak into logs,
@@ -77,12 +79,19 @@ See the master spec (section 2) for the full target layout. Highlights:
   `Answer`, `RefreshToken`); `apps/api/app/db.py` — async engine/session factory; `apps/api/alembic/`
   — migrations, `alembic upgrade head` builds the schema.
 - `apps/api/app/{core,routers,schemas,services,prompts}` — `core` has config/errors/logging/auth
-  (JWT issue/verify, password hashing, `get_current_user`); `routers` are thin; `services/repo.py`
-  holds every DB query, each one scoped to the caller's `user_id`; STT/metrics/LLM/feedback
-  services arrive in Phase 3.
+  (JWT issue/verify, password hashing, `get_current_user`); `routers` are thin
+  (`questions`/`sessions`/`answers`/`progress`, all `/v1`, auth-required); `services/repo.py`
+  holds every DB query, each one scoped to the caller's `user_id`; `services/stt.py` (Groq
+  Whisper, verbose_json, one retry on 429/5xx), `services/metrics.py` (pure, 100%-tested filler/
+  WPM/pause/rambling functions — see Hard rules), `services/llm.py` (Groq Llama JSON mode,
+  temperature 0.3, one retry on Pydantic validation failure), `services/feedback.py` (the single
+  place that splits an `LLMFeedback` + computed metrics into the persisted `Answer` row, and
+  joins them back for the API response — see its docstring before adding a second place that
+  does this). `app/prompts/feedback.py` holds the STAR-scoring system prompt.
 - `apps/api/api/index.py` — Vercel entry point (`from app.main import app`).
 - `apps/api/scripts/seed.py` — the 96-question seed bank (12 per role × 8 roles), idempotent
-  per role.
+  per role. `apps/api/scripts/try_answer.py` — posts a sample audio file to `POST /v1/answers`
+  against a running API, without the web UI.
 
 ## Commands
 
@@ -163,7 +172,22 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   dev. Auth scope: email + password only for v1 — Google OAuth is a post-Phase-6 stretch goal (not
   built; would need `authlib` OAuth wiring and a new callback route). `supabase/` directory and
   all `@supabase/*` dependencies removed from both apps.
-- **Phases 3–6:** not started. See the master spec for scope.
+- **Phase 3 (Backend core — STT, metrics, LLM, endpoints):** done. `GET /v1/questions`
+  (role required, difficulty optional, active-only), `POST /v1/sessions`, `GET /v1/sessions`,
+  `POST /v1/answers` (multipart: `audio`, `session_id`, `question_id`, `time_cap_s` →
+  `AnswerReport`), `GET /v1/answers/{id}`, `GET /v1/progress` (per-session aggregates, computed
+  in Python rather than dialect-specific JSON-column SQL). Answers upload validation: rejects
+  >4MB, rejects non-webm/ogg, rejects a transcribed duration that exceeds `time_cap_s` + 10s
+  grace, rejects a silent/empty transcript, 30/user/day rate limit (`429`, counted from
+  `answers.created_at` directly — no separate counter table). Audio is transcribed in memory
+  and never persisted. STT/LLM calls are mocked in tests (`monkeypatch` on `stt.transcribe` /
+  `llm.generate_feedback`) — **the actual live Groq STT/LLM integration is unverified against
+  real credentials**, since this environment has no `GROQ_API_KEY`; `scripts/try_answer.py` is
+  the way to smoke-test it for real. `services/metrics.py` is pure and 100% unit-tested
+  (`tests/test_metrics.py`), including the boundary cases (`>2.0s` pause threshold, rambling
+  grace window). The Phase 2.5 CORS tightening (`GET`/`POST`, `Authorization`/`Content-Type`)
+  already covered multipart POST, so no further change was needed here.
+- **Phases 4–6:** not started. See the master spec for scope.
 
 ## Known gaps / deliberate scope cuts from Phase 2
 

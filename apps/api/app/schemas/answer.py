@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.schemas.feedback import LLMFeedback
+from app.schemas.transcription import TranscriptPart
 
 
 class AnswerReport(BaseModel):
@@ -11,6 +12,7 @@ class AnswerReport(BaseModel):
     question_id: str | None
     question_text: str
     transcript: str
+    transcript_parts: list[TranscriptPart]
     duration_s: float
     wpm: float
     filler_count: int
