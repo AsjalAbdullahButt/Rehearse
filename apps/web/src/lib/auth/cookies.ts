@@ -43,7 +43,10 @@ export function buildSessionCookies(tokens: TokenPair): [SessionCookie, SessionC
     {
       name: ACCESS_TOKEN_COOKIE,
       value: tokens.access_token,
-      options: { ...BASE_COOKIE_OPTIONS, maxAge: maxAgeFromExp(tokens.access_token, FALLBACK_ACCESS_TTL_S) },
+      options: {
+        ...BASE_COOKIE_OPTIONS,
+        maxAge: maxAgeFromExp(tokens.access_token, FALLBACK_ACCESS_TTL_S),
+      },
     },
     {
       name: REFRESH_TOKEN_COOKIE,

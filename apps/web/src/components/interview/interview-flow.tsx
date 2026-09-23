@@ -17,14 +17,11 @@ type FlowState =
   | { stage: "setup" }
   | { stage: "starting" }
   | { stage: "ready"; session: InterviewSession; question: Question; timeCapS: number }
-  | { stage: "recording"; session: InterviewSession; question: Question; timeCapS: number }
   | { stage: "analyzing"; session: InterviewSession; question: Question }
   | { stage: "error"; message: string };
 
 async function parseErrorMessage(response: Response): Promise<string> {
-  const body = (await response.json().catch(() => null)) as
-    | { error?: { message?: string } }
-    | null;
+  const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
   return body?.error?.message ?? "Something went wrong. Please try again.";
 }
 
@@ -68,8 +65,11 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
     }
   }
 
+  // Called by useAudioRecorder's internal MediaRecorder "stop" event, not from a render/effect
+  // — an ordinary async event callback, so setState here isn't the cascading-render pattern
+  // the newer react-hooks rules warn about.
   async function handleStopped(blob: Blob) {
-    if (state.stage !== "recording") return;
+    if (state.stage !== "ready") return;
     const { session, question, timeCapS } = state;
     setState({ stage: "analyzing", session, question });
 
@@ -97,19 +97,15 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
   }
 
   const recorder = useAudioRecorder(handleStopped);
-
-  // The recorder's own status is the source of truth for "did the mic actually start" — flow
-  // state follows it, rather than optimistically flipping to "recording" on button click.
-  useEffect(() => {
-    if (recorder.status === "recording" && state.stage === "ready") {
-      setState({
-        stage: "recording",
-        session: state.session,
-        question: state.question,
-        timeCapS: state.timeCapS,
-      });
-    }
-  }, [recorder.status, state]);
+  // Recording is derived from the recorder's own status rather than mirrored into a separate
+  // FlowState stage — one less place for the two to fall out of sync, and it sidesteps ever
+  // needing a setState-in-effect to keep them aligned.
+  const isRecording = state.stage === "ready" && recorder.status === "recording";
+  // recorder.status flips to "stopped" synchronously the instant .stop() is called, but the
+  // MediaRecorder's own "stop" event (which triggers handleStopped → stage "analyzing") fires
+  // asynchronously a moment later. Without this, the idle "Start recording" button would flash
+  // back on screen during that gap.
+  const isFinalizing = state.stage === "ready" && recorder.status === "stopped";
 
   const readyQuestionText = state.stage === "ready" ? state.question.text : null;
   useEffect(() => {
@@ -123,10 +119,9 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
     return () => window.speechSynthesis.cancel();
   }, [readyQuestionText]);
 
-  const isRecording = state.stage === "recording";
-  const remaining = useCountdown(isRecording ? state.timeCapS : 0, isRecording, () => {
-    recorder.stop();
-  });
+  const remaining = useCountdown(state.stage === "ready" ? state.timeCapS : 0, isRecording, () =>
+    recorder.stop(),
+  );
 
   if (state.stage === "setup") {
     return (
@@ -165,7 +160,7 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
     );
   }
 
-  // stage is "ready" or "recording" from here
+  // stage is "ready" from here
   const { question } = state;
 
   return (
@@ -190,6 +185,8 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
               Stop recording
             </Button>
           </>
+        ) : isFinalizing ? (
+          <p className="text-muted text-sm">Finishing up…</p>
         ) : (
           <>
             {recorder.error ? <p className="text-coral text-sm">{recorder.error}</p> : null}
