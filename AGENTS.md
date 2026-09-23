@@ -60,21 +60,45 @@ clarity scoring, a stronger sample answer, and progress tracking across sessions
 See the master spec (section 2) for the full target layout. Highlights:
 
 - `apps/web/src/app/` — route groups: `(marketing)` (landing), `(auth)`, `(app)` (auth-guarded
-  product), plus `styleguide/` (dev-only token/primitive showcase).
+  product: `layout.tsx` fetches the current user server-side and redirects to `/sign-in` if
+  there isn't one — belt-and-suspenders on top of `proxy.ts`'s cookie-presence gate; `interview/
+  page.tsx` and `report/[answerId]/page.tsx` live here), plus `styleguide/` (dev-only
+  token/primitive showcase).
 - `apps/web/src/components/{ui,effects,landing,interview,report,theme}` — `ui` is
-  token-driven primitives (Button, Card, Badge, Stat, Toggle, Tooltip); `effects` holds reusable
-  motion pieces (Aurora, TiltCard, WordReveal, MagneticButton, CountUp, QuestionTicker,
+  token-driven primitives (Button, Card, Badge, Input, Stat, Toggle, Tooltip); `effects` holds
+  reusable motion pieces (Aurora, TiltCard, WordReveal, MagneticButton, CountUp, QuestionTicker,
   BeamBorder, RippleRings); `landing` composes the full landing page sections; `report` holds
   ScoreRing/StarBars/TranscriptHighlight/BeforeAfterToggle, shared between the landing sample
-  report and the real report page (Phase 4); `interview` has `MicOrb`, shared between the hero
-  and the future `/interview` page via `layoutId="mic-orb"`.
-- `apps/web/src/lib/{env,motion,utils,auth/}` — env validation, shared motion tokens, `cn()`,
-  `auth/` has the JWT decode helper, session-cookie helpers, and the server-side fetch wrapper
-  used by the Next.js route handlers that talk to the API.
-- `apps/web/src/app/api/auth/{register,login,refresh,logout}/route.ts` — proxy to the API's
-  `/v1/auth/*` endpoints and set the session as httpOnly cookies. `proxy.ts` (Next middleware)
-  gates `APP_PREFIXES` on cookie presence/expiry as a UX-only redirect; the real authorization
-  boundary is always `get_current_user` on the API side.
+  report and the real `/report/[answerId]` page; `interview` has `MicOrb` (shared between the
+  hero and `/interview` via `layoutId="mic-orb"`; takes an optional `recording` prop that swaps
+  it lime→coral, defaulted off so the landing usage is unaffected), `RolePicker`,
+  `InterviewFlow` (the recording state machine), and `Waveform` (real mic input via
+  `AnalyserNode`, not the landing's canned bar animation).
+- `apps/web/src/hooks/{use-audio-recorder,use-countdown}.ts` — `use-audio-recorder` wraps
+  `getUserMedia`/`MediaRecorder` (webm/opus @32kbps)/`AnalyserNode`; `use-countdown` ticks a
+  cap down and fires once on expiry. Both were written to satisfy the newer
+  `react-hooks/refs` and `react-hooks/set-state-in-effect` lint rules (React Compiler-era):
+  refs are updated via a no-deps `useEffect`, never during render, and state resets on a prop
+  flip happen as a guarded update during render (React's documented pattern), never inside an
+  effect body.
+- `apps/web/src/lib/{env,motion,utils,auth/,interview/}` — env validation, shared motion
+  tokens (also `formatTime`/`getTimerTone` — the countdown color rule, amber ≤30s / coral ≤10s,
+  shared between the landing demo timer and the real recorder), `cn()`; `auth/` has the JWT
+  decode helper, session-cookie helpers (`buildSessionCookies` is the single source both a
+  `NextResponse` and the mutable `cookies()` store apply), `session.ts` (`getValidAccessToken`
+  — refreshes transparently if the access-token cookie is expired), and the server-side fetch
+  wrapper the route handlers use; `interview/` has the wire types mirroring the API's Pydantic
+  schemas, `server.ts` (direct API reads for Server Components), `proxy.ts`
+  (`proxyAuthedRequest` — the one place client-facing `/api/interview/*` routes attach the
+  bearer token and forward), and `transcript.ts` (maps the API's flat `TranscriptPart` shape
+  into `TranscriptHighlight`'s discriminated union).
+- `apps/web/src/app/api/{auth,interview}/**/route.ts` — every one of these proxies
+  server-side to the FastAPI `/v1/*` API and never runs in the browser; `auth/*` sets the
+  session as httpOnly cookies, `interview/*` attaches the bearer token read from those cookies
+  (`answers/route.ts` forwards the browser's multipart `FormData` — including the audio
+  `Blob` — unchanged). `proxy.ts` (Next middleware) gates `APP_PREFIXES` on cookie
+  presence/expiry as a UX-only redirect; the real authorization boundary is always
+  `get_current_user` on the API side.
 - `apps/api/app/models/` — SQLAlchemy models (`User`, `Profile`, `Question`, `InterviewSession`,
   `Answer`, `RefreshToken`); `apps/api/app/db.py` — async engine/session factory; `apps/api/alembic/`
   — migrations, `alembic upgrade head` builds the schema.
@@ -88,6 +112,11 @@ See the master spec (section 2) for the full target layout. Highlights:
   place that splits an `LLMFeedback` + computed metrics into the persisted `Answer` row, and
   joins them back for the API response — see its docstring before adding a second place that
   does this). `app/prompts/feedback.py` holds the STAR-scoring system prompt.
+  `metrics.build_transcript_parts` rebuilds the transcript into text/filler/pause segments for
+  the report page's word-level highlighting (`AnswerReport.transcript_parts`) — the single
+  source of truth for what's a filler, so the web app never re-implements that heuristic in
+  TypeScript (only single-word fillers are flagged there, not the multi-word phrases
+  `count_fillers` also matches — see its docstring).
 - `apps/api/api/index.py` — Vercel entry point (`from app.main import app`).
 - `apps/api/scripts/seed.py` — the 96-question seed bank (12 per role × 8 roles), idempotent
   per role. `apps/api/scripts/try_answer.py` — posts a sample audio file to `POST /v1/answers`
@@ -187,7 +216,33 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   (`tests/test_metrics.py`), including the boundary cases (`>2.0s` pause threshold, rambling
   grace window). The Phase 2.5 CORS tightening (`GET`/`POST`, `Authorization`/`Content-Type`)
   already covered multipart POST, so no further change was needed here.
-- **Phases 4–6:** not started. See the master spec for scope.
+- **Phase 4 (Auth'd product UI — interview flow):** done. `(app)/layout.tsx` guards the whole
+  route group; `/interview` is a client-side state machine (setup → starting → ready →
+  analyzing → error, with "recording" derived from the recorder's own status rather than
+  mirrored into a fifth stage) that creates a session, fetches a random question for the
+  chosen role/difficulty, speaks it via `speechSynthesis`, records webm/opus through
+  `MediaRecorder`, shows a real `AnalyserNode`-driven waveform and a countdown (amber@30s/
+  coral@10s/auto-stop@0:00, reusing the landing demo's exact thresholds and color tokens), and
+  uploads to `POST /v1/answers` through the `/api/interview/answers` proxy; `/report/[answerId]`
+  renders the real `AnswerReport` through the existing `ScoreRing`/`StarBars`/
+  `TranscriptHighlight`/`BeforeAfterToggle` components (star scores remapped `situation/task/
+  action/result` → `s/t/a/r`, "after" is the LLM's `sample_answer` as a single "added" part).
+  Closed the Phase 2.5 gap note: the Roles grid cards and the Hero/FinalCta "Start a mock
+  interview" CTAs now route to `/interview` (`?role=<slug>` from the grid) instead of
+  smooth-scrolling to `#roles` — unauthenticated visitors land on `/sign-in?next=/interview`
+  via the existing middleware, no new gating logic needed. **Known limitation, stated
+  plainly:** `MicOrb`'s `layoutId`/`viewTransitionName` plumbing is wired on both the hero and
+  `/interview`, but Next.js's App Router doesn't wrap client-side navigations in the View
+  Transitions API by default — that requires an experimental runtime flag
+  (`app-page-experimental`) this repo deliberately does not enable, given the stability risk of
+  an experimental rendering runtime versus the payoff of one decorative cross-page morph. So
+  today the navigation is a normal (non-animated) route change, not the shared-element
+  transition the component is built for. Also unverified end-to-end: the real
+  `MediaRecorder`/`getUserMedia`/`speechSynthesis` browser APIs — this environment has no
+  browser to test them in. Verified instead: full request pipeline (multipart forwarding, auth,
+  cookie refresh, ownership checks, error propagation) over real HTTP against a running
+  Next.js + FastAPI stack, up through a real (expected) Groq failure from a fake API key.
+- **Phases 5–6:** not started. See the master spec for scope.
 
 ## Known gaps / deliberate scope cuts from Phase 2
 
@@ -197,12 +252,9 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   inline styles — treat them as close, not pixel-exact.
 - **No light-mode mockup.** `.light` in `globals.css` is still the spec's documented fallback,
   unverified against a real design.
-- **`/sign-in` is now a real, working email/password auth form** (Phase 2.5), but
-  **`/interview`, `/report/[answerId]`, `/progress`, `/settings` still don't exist** (that's
-  Phases 4–5) — `proxy.ts` will redirect to `/sign-in` for all of them today. Hero and final CTAs
-  still smooth-scroll to `#roles` instead of navigating away, since role cards are informational
-  only until the interview flow exists. `MicOrb`'s shared-element setup is ready for Phase 4 but
-  unused until a second route exists.
+- **`/sign-in`, `/interview`, and `/report/[answerId]` are real, working pages now** (Phases 2.5
+  and 4). **`/progress` and `/settings` still don't exist** (Phase 5) — `proxy.ts` still
+  redirects to `/sign-in` for those two today.
 - **GitHub footer link** points at this repo's own real remote
   (`github.com/AsjalAbdullahButt/Rehearse`); no LinkedIn link was added since no real profile URL
   was available and the rules here forbid inventing one.
