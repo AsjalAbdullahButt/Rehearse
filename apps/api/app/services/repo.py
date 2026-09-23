@@ -4,16 +4,18 @@ cross-user data leak can be caught before it ships. See tests/test_cross_user_au
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
 from app.models.base import utcnow
-from app.models.enums import Difficulty
+from app.models.enums import Difficulty, Role
 from app.models.interview_session import InterviewSession
 from app.models.profile import Profile
+from app.models.question import Question
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.schemas.progress import ProgressRow
 
 # ─── users ───────────────────────────────────────────────────────────────
 
@@ -68,6 +70,24 @@ async def revoke_refresh_token(db: AsyncSession, *, token_hash: str) -> None:
     if row is not None:
         row.revoked_at = utcnow()
         await db.commit()
+
+
+# ─── questions ───────────────────────────────────────────────────────────
+
+
+async def list_questions(
+    db: AsyncSession, *, role: Role, difficulty: Difficulty | None = None
+) -> list[Question]:
+    query = select(Question).where(Question.role == role, Question.is_active.is_(True))
+    if difficulty is not None:
+        query = query.where(Question.difficulty == difficulty)
+
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_question_by_id(db: AsyncSession, *, question_id: str) -> Question | None:
+    return await db.get(Question, question_id)
 
 
 # ─── sessions ────────────────────────────────────────────────────────────
@@ -125,3 +145,56 @@ async def list_answers_for_user(db: AsyncSession, *, user_id: str) -> list[Answe
         select(Answer).where(Answer.user_id == user_id).order_by(Answer.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def count_answers_today(db: AsyncSession, *, user_id: str) -> int:
+    """Backs the 30-answers/user/day rate limit. Counted from the `answers` table directly
+    rather than a separate counter, so there's nothing to keep in sync or reset."""
+    start_of_day = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    result = await db.execute(
+        select(func.count())
+        .select_from(Answer)
+        .where(Answer.user_id == user_id, Answer.created_at >= start_of_day)
+    )
+    return result.scalar_one()
+
+
+# ─── progress ────────────────────────────────────────────────────────────
+
+
+def _avg(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 2) if values else None
+
+
+async def get_progress_for_user(db: AsyncSession, *, user_id: str) -> list[ProgressRow]:
+    """Per-session aggregates, computed in Python rather than a dialect-specific JSON-column
+    SQL query (MySQL's `->>` vs SQLite's `json_extract` in tests) — this project's scale
+    doesn't need the query to do it, and the aggregation itself is a handful of pure-Python
+    averages over each session's already-small answer list."""
+    sessions = await list_sessions_for_user(db, user_id=user_id)
+
+    rows: list[ProgressRow] = []
+    for session in sessions:
+        answers_result = await db.execute(select(Answer).where(Answer.session_id == session.id))
+        answers = list(answers_result.scalars().all())
+
+        star_averages = [
+            (star["situation"] + star["task"] + star["action"] + star["result"]) / 4
+            for answer in answers
+            if (star := answer.star) is not None
+        ]
+
+        rows.append(
+            ProgressRow(
+                session_id=session.id,
+                role=session.role,
+                difficulty=session.difficulty,
+                started_at=session.started_at,
+                answer_count=len(answers),
+                avg_wpm=_avg([float(a.wpm) for a in answers]),
+                avg_filler_count=_avg([float(a.filler_count) for a in answers]),
+                avg_clarity=_avg([float(a.clarity) for a in answers if a.clarity is not None]),
+                avg_star=_avg(star_averages),
+            )
+        )
+    return rows
