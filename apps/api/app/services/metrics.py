@@ -4,7 +4,7 @@ calls an LLM — filler counts, WPM, and pauses must never be guessed by a model
 
 import re
 
-from app.schemas.transcription import WordTiming
+from app.schemas.transcription import TranscriptPart, WordTiming
 
 # Single tokens matched by whole-word, case-insensitive comparison against the lowercased
 # transcript. Multi-word phrases matched as substrings separately below, since word-boundary
@@ -69,6 +69,32 @@ def count_long_pauses(words: list[WordTiming]) -> int:
         if current.start - previous.end > LONG_PAUSE_THRESHOLD_S:
             long_pauses += 1
     return long_pauses
+
+
+def build_transcript_parts(words: list[WordTiming]) -> list[TranscriptPart]:
+    """Rebuilds the transcript as text/filler/pause parts for the report page's word-level
+    highlighting — the single source of truth for what's a filler/pause, so the web app never
+    re-implements this heuristic in TypeScript.
+
+    Only single-word fillers are flagged here, not the multi-word phrases count_fillers also
+    matches (e.g. "you know") — highlighting a phrase split across two separate Whisper word
+    tokens isn't worth the complexity for a display-only heuristic. This means the highlighted
+    word count can differ slightly from filler_count/filler_breakdown on transcripts that lean
+    on phrase fillers; that's a known, accepted gap between the two."""
+    parts: list[TranscriptPart] = []
+
+    for index, word in enumerate(words):
+        if index > 0:
+            gap = word.start - words[index - 1].end
+            if gap > LONG_PAUSE_THRESHOLD_S:
+                parts.append(TranscriptPart(type="pause", seconds=round(gap, 1)))
+
+        cleaned = word.word.strip().lower().strip(".,!?;:")
+        part_type = "filler" if cleaned in _SINGLE_WORD_FILLERS else "text"
+        suffix = "" if index == len(words) - 1 else " "
+        parts.append(TranscriptPart(type=part_type, text=f"{word.word}{suffix}"))
+
+    return parts
 
 
 def assess_rambling(duration_s: float) -> str | None:

@@ -7,7 +7,7 @@ without both directions of this module breaking."""
 from app.models.answer import Answer
 from app.schemas.answer import AnswerReport
 from app.schemas.feedback import LLMFeedback, StarScores
-from app.schemas.transcription import TranscriptionResult
+from app.schemas.transcription import TranscriptionResult, WordTiming
 from app.services import metrics
 
 
@@ -49,6 +49,7 @@ def build_answer(
 
 def to_answer_report(answer: Answer) -> AnswerReport:
     feedback_blob = answer.feedback or {}
+    words = [WordTiming.model_validate(word) for word in answer.words]
 
     return AnswerReport(
         id=answer.id,
@@ -56,6 +57,7 @@ def to_answer_report(answer: Answer) -> AnswerReport:
         question_id=answer.question_id,
         question_text=answer.question_text,
         transcript=answer.transcript,
+        transcript_parts=metrics.build_transcript_parts(words),
         duration_s=float(answer.duration_s),
         wpm=float(answer.wpm),
         filler_count=answer.filler_count,

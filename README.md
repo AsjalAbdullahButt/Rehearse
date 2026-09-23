@@ -4,8 +4,8 @@ An AI mock interview coach. Pick a role, answer a spoken question out loud, and 
 filler-word/pace/pause metrics, STAR and clarity scoring, a stronger sample answer, and progress
 tracking across sessions.
 
-> **Status:** Phase 2.5 (data & auth layer) complete. See [AGENTS.md](./AGENTS.md) for stack,
-> conventions and current progress.
+> **Status:** Phase 3 (backend core — STT, metrics, LLM, endpoints) complete. See
+> [AGENTS.md](./AGENTS.md) for stack, conventions and current progress.
 
 ## Stack
 
@@ -71,6 +71,14 @@ specifically goes through the Next.js route handlers under `apps/web/src/app/api
 proxy to the API server-side and set the session as httpOnly cookies (never `localStorage`).
 
 Visit `/styleguide` for a live render of every design token and UI primitive in both themes.
+
+To test the interview-answer pipeline (STT → metrics → LLM feedback) without the web UI, once
+`GROQ_API_KEY` is set to a real key:
+
+```bash
+cd apps/api
+uv run python scripts/try_answer.py path/to/answer.webm --role backend --difficulty medium
+```
 
 ## Quality gates
 
