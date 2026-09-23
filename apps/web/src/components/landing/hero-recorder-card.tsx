@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { BeamBorder } from "@/components/effects/beam-border";
 import { TiltCard } from "@/components/effects/tilt-card";
 import { MicOrb } from "@/components/interview/mic-orb";
-import { cn } from "@/lib/utils";
+import { cn, formatTime, getTimerTone } from "@/lib/utils";
 
 const TRANSCRIPT = "So umm, I'm a final-year CS student who builds AI products end to end…";
 const FILLER_REVEAL_AT = TRANSCRIPT.indexOf("umm") + "umm".length;
@@ -15,12 +15,6 @@ const END_SECONDS = 90; // 1:30
 const TOTAL_SECONDS_CAP = 120; // 2:00
 const TYPE_INTERVAL_MS = 85;
 const LOOP_PAUSE_MS = 1600;
-
-function formatTime(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60);
-  const s = Math.floor(totalSeconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 export function HeroRecorderCard() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -60,7 +54,7 @@ export function HeroRecorderCard() {
   const elapsedSeconds = Math.round(START_SECONDS + progress * (END_SECONDS - START_SECONDS));
   const remaining = TOTAL_SECONDS_CAP - elapsedSeconds;
   const fillerCount = charsShown >= FILLER_REVEAL_AT ? 4 : 3;
-  const timerTone = remaining <= 10 ? "text-coral" : remaining <= 30 ? "text-amber" : "text-text";
+  const timerTone = getTimerTone(remaining);
 
   const typedText = TRANSCRIPT.slice(0, charsShown);
   const fillerStart = TRANSCRIPT.indexOf("umm");

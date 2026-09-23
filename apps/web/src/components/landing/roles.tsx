@@ -1,19 +1,10 @@
 "use client";
 
 import { motion, useReducedMotion, type Variants } from "motion/react";
+import Link from "next/link";
 
+import { ROLE_OPTIONS } from "@/lib/interview/types";
 import { brandEase } from "@/lib/motion";
-
-const ROLES = [
-  { slug: "software-engineer", name: "Software Engineer" },
-  { slug: "frontend", name: "Frontend" },
-  { slug: "backend", name: "Backend" },
-  { slug: "data-scientist", name: "Data Scientist" },
-  { slug: "ml-engineer", name: "ML Engineer" },
-  { slug: "product-manager", name: "Product Manager" },
-  { slug: "ui-ux-designer", name: "UI/UX Designer" },
-  { slug: "hr-general", name: "HR / General" },
-] as const;
 
 const tiltUp: Variants = {
   hidden: { opacity: 0, y: 40, rotateX: 12 },
@@ -56,11 +47,11 @@ export function Roles() {
           style={{ perspective: 1000 }}
           className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4"
         >
-          {ROLES.map((role) => (
+          {ROLE_OPTIONS.map((role) => (
             <motion.div
               key={role.slug}
               variants={reduce ? { hidden: { opacity: 0 }, visible: { opacity: 1 } } : tiltUp}
-              className="group border-line bg-surface hover:border-lime/40 relative overflow-hidden rounded-[var(--radius-tile)] border p-5 transition-colors duration-150"
+              className="group border-line bg-surface hover:border-lime/40 focus-within:border-lime/40 relative overflow-hidden rounded-[var(--radius-tile)] border p-5 transition-colors duration-150"
             >
               <span
                 aria-hidden="true"
@@ -71,6 +62,11 @@ export function Roles() {
                 }}
               />
               <span className="text-text relative text-sm font-medium">{role.name}</span>
+              <Link
+                href={`/interview?role=${role.slug}`}
+                className="focus-visible:outline-lime absolute inset-0 rounded-[var(--radius-tile)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                aria-label={`Start a ${role.name} mock interview`}
+              />
             </motion.div>
           ))}
         </motion.div>
