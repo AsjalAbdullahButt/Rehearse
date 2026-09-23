@@ -34,9 +34,17 @@ export class ApiRequestError extends Error {
  * proxy through this so the API's own CORS origin list only ever needs to trust the Next.js
  * server, not arbitrary browsers. */
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  // A FormData body (the multipart answer upload) must NOT get an explicit Content-Type —
+  // fetch needs to generate its own boundary parameter, which setting the header by hand
+  // would clobber.
+  const isFormData = init?.body instanceof FormData;
+  const headers = isFormData
+    ? { ...init?.headers }
+    : { "Content-Type": "application/json", ...init?.headers };
+
   return fetch(`${env.API_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers,
     cache: "no-store",
   });
 }

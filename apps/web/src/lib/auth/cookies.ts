@@ -28,15 +28,38 @@ export interface TokenPair {
   refresh_token: string;
 }
 
+export interface SessionCookie {
+  name: string;
+  value: string;
+  options: typeof BASE_COOKIE_OPTIONS & { maxAge: number };
+}
+
+/** Pure: computes the two session cookies for a token pair. Kept separate from any single
+ * cookie jar so both a NextResponse (register/login/refresh/logout routes) and the mutable
+ * `cookies()` store (the session-refresh helper used by authenticated proxy routes) can apply
+ * the same values without duplicating the maxAge-from-exp logic. */
+export function buildSessionCookies(tokens: TokenPair): [SessionCookie, SessionCookie] {
+  return [
+    {
+      name: ACCESS_TOKEN_COOKIE,
+      value: tokens.access_token,
+      options: { ...BASE_COOKIE_OPTIONS, maxAge: maxAgeFromExp(tokens.access_token, FALLBACK_ACCESS_TTL_S) },
+    },
+    {
+      name: REFRESH_TOKEN_COOKIE,
+      value: tokens.refresh_token,
+      options: {
+        ...BASE_COOKIE_OPTIONS,
+        maxAge: maxAgeFromExp(tokens.refresh_token, FALLBACK_REFRESH_TTL_S),
+      },
+    },
+  ];
+}
+
 export function setSessionCookies(response: NextResponse, tokens: TokenPair): void {
-  response.cookies.set(ACCESS_TOKEN_COOKIE, tokens.access_token, {
-    ...BASE_COOKIE_OPTIONS,
-    maxAge: maxAgeFromExp(tokens.access_token, FALLBACK_ACCESS_TTL_S),
-  });
-  response.cookies.set(REFRESH_TOKEN_COOKIE, tokens.refresh_token, {
-    ...BASE_COOKIE_OPTIONS,
-    maxAge: maxAgeFromExp(tokens.refresh_token, FALLBACK_REFRESH_TTL_S),
-  });
+  for (const cookie of buildSessionCookies(tokens)) {
+    response.cookies.set(cookie.name, cookie.value, cookie.options);
+  }
 }
 
 export function clearSessionCookies(response: NextResponse): void {
