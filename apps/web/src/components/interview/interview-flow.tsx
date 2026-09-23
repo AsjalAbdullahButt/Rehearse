@@ -1,0 +1,204 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import { MicOrb } from "@/components/interview/mic-orb";
+import { RolePicker, type RolePickerValue } from "@/components/interview/role-picker";
+import { Waveform } from "@/components/interview/waveform";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useAudioRecorder } from "@/hooks/use-audio-recorder";
+import { useCountdown } from "@/hooks/use-countdown";
+import type { AnswerReport, InterviewSession, Question, Role } from "@/lib/interview/types";
+import { formatTime, getTimerTone } from "@/lib/utils";
+
+type FlowState =
+  | { stage: "setup" }
+  | { stage: "starting" }
+  | { stage: "ready"; session: InterviewSession; question: Question; timeCapS: number }
+  | { stage: "recording"; session: InterviewSession; question: Question; timeCapS: number }
+  | { stage: "analyzing"; session: InterviewSession; question: Question }
+  | { stage: "error"; message: string };
+
+async function parseErrorMessage(response: Response): Promise<string> {
+  const body = (await response.json().catch(() => null)) as
+    | { error?: { message?: string } }
+    | null;
+  return body?.error?.message ?? "Something went wrong. Please try again.";
+}
+
+export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
+  const router = useRouter();
+  const [state, setState] = useState<FlowState>({ stage: "setup" });
+
+  async function handleRoleSubmit(value: RolePickerValue) {
+    setState({ stage: "starting" });
+    try {
+      const sessionResponse = await fetch("/api/interview/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: value.role, difficulty: value.difficulty }),
+      });
+      if (!sessionResponse.ok) {
+        setState({ stage: "error", message: await parseErrorMessage(sessionResponse) });
+        return;
+      }
+      const session = (await sessionResponse.json()) as InterviewSession;
+
+      const query = new URLSearchParams({ role: value.role, difficulty: value.difficulty });
+      const questionsResponse = await fetch(`/api/interview/questions?${query.toString()}`);
+      if (!questionsResponse.ok) {
+        setState({ stage: "error", message: await parseErrorMessage(questionsResponse) });
+        return;
+      }
+      const questions = (await questionsResponse.json()) as Question[];
+      if (questions.length === 0) {
+        setState({ stage: "error", message: "No questions are available for that role yet." });
+        return;
+      }
+      const question = questions[Math.floor(Math.random() * questions.length)]!;
+
+      setState({ stage: "ready", session, question, timeCapS: value.timeCapS });
+    } catch {
+      setState({
+        stage: "error",
+        message: "Couldn't reach the server. Check your connection and try again.",
+      });
+    }
+  }
+
+  async function handleStopped(blob: Blob) {
+    if (state.stage !== "recording") return;
+    const { session, question, timeCapS } = state;
+    setState({ stage: "analyzing", session, question });
+
+    try {
+      const formData = new FormData();
+      formData.set("session_id", session.id);
+      formData.set("question_id", question.id);
+      formData.set("time_cap_s", String(timeCapS));
+      formData.set("audio", blob, "answer.webm");
+
+      const response = await fetch("/api/interview/answers", { method: "POST", body: formData });
+      if (!response.ok) {
+        setState({ stage: "error", message: await parseErrorMessage(response) });
+        return;
+      }
+
+      const report = (await response.json()) as AnswerReport;
+      router.push(`/report/${report.id}`);
+    } catch {
+      setState({
+        stage: "error",
+        message: "Couldn't reach the server. Check your connection and try again.",
+      });
+    }
+  }
+
+  const recorder = useAudioRecorder(handleStopped);
+
+  // The recorder's own status is the source of truth for "did the mic actually start" — flow
+  // state follows it, rather than optimistically flipping to "recording" on button click.
+  useEffect(() => {
+    if (recorder.status === "recording" && state.stage === "ready") {
+      setState({
+        stage: "recording",
+        session: state.session,
+        question: state.question,
+        timeCapS: state.timeCapS,
+      });
+    }
+  }, [recorder.status, state]);
+
+  const readyQuestionText = state.stage === "ready" ? state.question.text : null;
+  useEffect(() => {
+    if (!readyQuestionText) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    const utterance = new SpeechSynthesisUtterance(readyQuestionText);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+
+    return () => window.speechSynthesis.cancel();
+  }, [readyQuestionText]);
+
+  const isRecording = state.stage === "recording";
+  const remaining = useCountdown(isRecording ? state.timeCapS : 0, isRecording, () => {
+    recorder.stop();
+  });
+
+  if (state.stage === "setup") {
+    return (
+      <div className="flex flex-1 items-center justify-center px-6 py-16">
+        <RolePicker initialRole={initialRole} isSubmitting={false} onSubmit={handleRoleSubmit} />
+      </div>
+    );
+  }
+
+  if (state.stage === "starting") {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16">
+        <MicOrb size={100} animate />
+        <p className="text-muted text-sm">Preparing your question…</p>
+      </div>
+    );
+  }
+
+  if (state.stage === "error") {
+    return (
+      <div className="flex flex-1 items-center justify-center px-6 py-16">
+        <Card className="flex max-w-sm flex-col items-center gap-4 text-center">
+          <p className="text-text text-sm">{state.message}</p>
+          <Button onClick={() => setState({ stage: "setup" })}>Try again</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (state.stage === "analyzing") {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16">
+        <MicOrb size={100} animate />
+        <p className="text-muted text-sm">Analyzing your answer…</p>
+      </div>
+    );
+  }
+
+  // stage is "ready" or "recording" from here
+  const { question } = state;
+
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-16">
+      <Card className="flex w-full max-w-xl flex-col items-center gap-8 text-center">
+        <p className="text-muted text-xs font-medium tracking-wide uppercase">
+          {isRecording ? "Recording" : "Your question"}
+        </p>
+        <h1 className="font-display text-text text-xl font-bold text-balance sm:text-2xl">
+          {question.text}
+        </h1>
+
+        <MicOrb size={140} animate recording={isRecording} />
+
+        {isRecording ? (
+          <>
+            <Waveform analyser={recorder.analyser} />
+            <span className="font-mono-metric text-2xl tabular-nums">
+              <span className={getTimerTone(remaining)}>{formatTime(remaining)}</span>
+            </span>
+            <Button variant="secondary" onClick={() => recorder.stop()}>
+              Stop recording
+            </Button>
+          </>
+        ) : (
+          <>
+            {recorder.error ? <p className="text-coral text-sm">{recorder.error}</p> : null}
+            <Button size="lg" onClick={() => recorder.start()}>
+              Start recording
+            </Button>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
