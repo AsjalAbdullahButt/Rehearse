@@ -4,7 +4,27 @@
  * Fallback tokens. Dark values come from the design spec (section 3).
  * Light values are the documented fallback — replace with /design/landing-light
  * extraction once that mockup is provided.
+ *
+ * The :not() guard on the pre-hydration fallback keeps it from ever competing
+ * with .dark/.light on specificity — it only applies when neither is present
+ * (no-JS, or before next-themes' blocking script sets the class).
  */
+:root:not(.light):not(.dark) {
+  color-scheme: dark;
+  --ink: #0a0b0f;
+  --surface: #121419;
+  --surface-2: #1a1d24;
+  --line: #262a33;
+  --text: #f4f3ee;
+  --muted: #a1a3ad;
+  --lime: #d4ff5a;
+  --lime-ink: #0a0b0f;
+  --violet: #8c7bff;
+  --coral: #ff5a4e;
+  --amber: #ffb547;
+  --mint: #3ddc97;
+}
+
 .dark {
   color-scheme: dark;
 
@@ -35,22 +55,6 @@
 
   /* Lime text on light fails contrast; use the darkened variant for text. */
   --lime: #4f6b00;
-  --lime-ink: #0a0b0f;
-  --violet: #8c7bff;
-  --coral: #ff5a4e;
-  --amber: #ffb547;
-  --mint: #3ddc97;
-}
-
-:root {
-  color-scheme: dark;
-  --ink: #0a0b0f;
-  --surface: #121419;
-  --surface-2: #1a1d24;
-  --line: #262a33;
-  --text: #f4f3ee;
-  --muted: #a1a3ad;
-  --lime: #d4ff5a;
   --lime-ink: #0a0b0f;
   --violet: #8c7bff;
   --coral: #ff5a4e;

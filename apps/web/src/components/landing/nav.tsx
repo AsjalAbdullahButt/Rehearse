@@ -65,8 +65,8 @@ export function Nav() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
-          <ThemeToggle className="hidden sm:inline-flex" />
+        <div className="flex items-center gap-2 sm:gap-3">
+          <ThemeToggle />
           <a
             href="/sign-in"
             className="text-muted hover:text-text hidden text-sm transition-colors sm:inline"
@@ -76,7 +76,7 @@ export function Nav() {
           <a
             href="#roles"
             onClick={(e) => handleNavClick(e, "#roles")}
-            className="bg-lime text-lime-ink inline-flex h-10 items-center justify-center rounded-[var(--radius-pill)] px-5 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
+            className="bg-lime text-lime-ink inline-flex h-10 items-center justify-center rounded-[var(--radius-pill)] px-4 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110 sm:px-5"
           >
             Start practicing
           </a>

@@ -26,6 +26,7 @@ export function HowItWorks() {
       ref={sectionRef}
       className={usePinnedStory ? "relative h-[300vh]" : "relative"}
     >
+      <h2 className="sr-only">How Rehearse works</h2>
       {usePinnedStory ? (
         <div className="bg-ink sticky top-0 flex h-screen items-center overflow-hidden">
           <div className="mx-auto grid w-full max-w-6xl grid-cols-[minmax(0,280px)_1fr] items-center gap-16 px-6 sm:px-10">
