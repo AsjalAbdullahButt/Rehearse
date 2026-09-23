@@ -59,7 +59,7 @@ export function SignInForm() {
 
   return (
     <div className="flex w-full flex-col gap-6">
-      <div className="flex justify-center gap-1 rounded-[var(--radius-pill)] border border-line bg-surface-2 p-1 text-sm">
+      <div className="border-line bg-surface-2 flex justify-center gap-1 rounded-[var(--radius-pill)] border p-1 text-sm">
         <button
           type="button"
           onClick={() => setMode("login")}

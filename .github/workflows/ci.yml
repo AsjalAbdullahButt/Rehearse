@@ -6,8 +6,6 @@ on:
   pull_request:
 
 env:
-  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
   NEXT_PUBLIC_SITE_URL: http://localhost:3000
   API_URL: http://localhost:8000
   GROQ_API_KEY: ci-placeholder
@@ -39,8 +37,21 @@ jobs:
       - run: pnpm --filter ./apps/web build
 
   api:
-    name: API (lint, typecheck, test)
+    name: API (lint, typecheck, test, migrate)
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: rehearse_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - uses: actions/checkout@v4
 
@@ -67,3 +78,12 @@ jobs:
       - name: Pytest
         working-directory: apps/api
         run: uv run pytest
+
+      # DATABASE_URL here overrides the SQLite one set at workflow level (used by pytest) —
+      # this is the one place the schema is proven against real MySQL 8, not just SQLite's
+      # approximation of it.
+      - name: Alembic upgrade head (MySQL)
+        working-directory: apps/api
+        env:
+          DATABASE_URL: mysql+aiomysql://root:root@127.0.0.1:3306/rehearse_ci
+        run: uv run alembic upgrade head
