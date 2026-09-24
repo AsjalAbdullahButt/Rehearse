@@ -10,15 +10,25 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import { useCountdown } from "@/hooks/use-countdown";
+import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import type { AnswerReport, InterviewSession, Question, Role } from "@/lib/interview/types";
 import { formatTime, getTimerTone } from "@/lib/utils";
+
+interface PendingSubmission {
+  session: InterviewSession;
+  question: Question;
+  timeCapS: number;
+  blob: Blob;
+}
 
 type FlowState =
   | { stage: "setup" }
   | { stage: "starting" }
   | { stage: "ready"; session: InterviewSession; question: Question; timeCapS: number }
   | { stage: "analyzing"; session: InterviewSession; question: Question }
-  | { stage: "error"; message: string };
+  // `retry` is only set for a failed upload (the recording still exists and can be resent);
+  // a setup-time failure (e.g. session creation) has nothing to retry but "start over".
+  | { stage: "error"; message: string; retry?: PendingSubmission };
 
 async function parseErrorMessage(response: Response): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -27,6 +37,7 @@ async function parseErrorMessage(response: Response): Promise<string> {
 
 export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
   const router = useRouter();
+  const handleSessionExpiry = useSessionExpiry();
   const [state, setState] = useState<FlowState>({ stage: "setup" });
 
   async function handleRoleSubmit(value: RolePickerValue) {
@@ -37,6 +48,7 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: value.role, difficulty: value.difficulty }),
       });
+      if (await handleSessionExpiry(sessionResponse)) return;
       if (!sessionResponse.ok) {
         setState({ stage: "error", message: await parseErrorMessage(sessionResponse) });
         return;
@@ -45,6 +57,7 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
 
       const query = new URLSearchParams({ role: value.role, difficulty: value.difficulty });
       const questionsResponse = await fetch(`/api/interview/questions?${query.toString()}`);
+      if (await handleSessionExpiry(questionsResponse)) return;
       if (!questionsResponse.ok) {
         setState({ stage: "error", message: await parseErrorMessage(questionsResponse) });
         return;
@@ -65,12 +78,11 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
     }
   }
 
-  // Called by useAudioRecorder's internal MediaRecorder "stop" event, not from a render/effect
-  // — an ordinary async event callback, so setState here isn't the cascading-render pattern
-  // the newer react-hooks rules warn about.
-  async function handleStopped(blob: Blob) {
-    if (state.stage !== "ready") return;
-    const { session, question, timeCapS } = state;
+  // Shared by the initial submit and a retry after a failed upload — a retry resends the same
+  // recording rather than discarding it, since the user's answer must survive a transient
+  // network/STT/LLM failure, not force a full re-record.
+  async function submitAnswer(submission: PendingSubmission) {
+    const { session, question, timeCapS, blob } = submission;
     setState({ stage: "analyzing", session, question });
 
     try {
@@ -81,8 +93,13 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
       formData.set("audio", blob, "answer.webm");
 
       const response = await fetch("/api/interview/answers", { method: "POST", body: formData });
+      if (await handleSessionExpiry(response)) return;
       if (!response.ok) {
-        setState({ stage: "error", message: await parseErrorMessage(response) });
+        setState({
+          stage: "error",
+          message: await parseErrorMessage(response),
+          retry: submission,
+        });
         return;
       }
 
@@ -91,9 +108,19 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
     } catch {
       setState({
         stage: "error",
-        message: "Couldn't reach the server. Check your connection and try again.",
+        message: "Couldn't reach the server. Your recording is saved — try again.",
+        retry: submission,
       });
     }
+  }
+
+  // Called by useAudioRecorder's internal MediaRecorder "stop" event, not from a render/effect
+  // — an ordinary async event callback, so setState here isn't the cascading-render pattern
+  // the newer react-hooks rules warn about.
+  async function handleStopped(blob: Blob) {
+    if (state.stage !== "ready") return;
+    const { session, question, timeCapS } = state;
+    await submitAnswer({ session, question, timeCapS, blob });
   }
 
   const recorder = useAudioRecorder(handleStopped);
@@ -141,11 +168,22 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
   }
 
   if (state.stage === "error") {
+    const { retry } = state;
     return (
       <div className="flex flex-1 items-center justify-center px-6 py-16">
         <Card className="flex max-w-sm flex-col items-center gap-4 text-center">
-          <p className="text-text text-sm">{state.message}</p>
-          <Button onClick={() => setState({ stage: "setup" })}>Try again</Button>
+          <p role="alert" className="text-text text-sm">
+            {state.message}
+          </p>
+          <div className="flex gap-3">
+            {retry ? <Button onClick={() => void submitAnswer(retry)}>Retry upload</Button> : null}
+            <Button
+              variant={retry ? "secondary" : "primary"}
+              onClick={() => setState({ stage: "setup" })}
+            >
+              {retry ? "Start over" : "Try again"}
+            </Button>
+          </div>
         </Card>
       </div>
     );
@@ -181,6 +219,15 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
             <span className="font-mono-metric text-2xl tabular-nums">
               <span className={getTimerTone(remaining)}>{formatTime(remaining)}</span>
             </span>
+            <span aria-live="polite" className="sr-only">
+              {remaining === 30
+                ? "30 seconds remaining."
+                : remaining === 10
+                  ? "10 seconds remaining."
+                  : remaining === 0
+                    ? "Time's up."
+                    : ""}
+            </span>
             <Button variant="secondary" onClick={() => recorder.stop()}>
               Stop recording
             </Button>
@@ -189,7 +236,11 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
           <p className="text-muted text-sm">Finishing up…</p>
         ) : (
           <>
-            {recorder.error ? <p className="text-coral text-sm">{recorder.error}</p> : null}
+            {recorder.error ? (
+              <p role="alert" className="text-coral max-w-xs text-sm">
+                {recorder.error.message}
+              </p>
+            ) : null}
             <Button size="lg" onClick={() => recorder.start()}>
               Start recording
             </Button>

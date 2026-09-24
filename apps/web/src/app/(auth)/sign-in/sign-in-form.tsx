@@ -23,6 +23,7 @@ export function SignInForm() {
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,8 +102,11 @@ export function SignInForm() {
           <span className="text-muted">Email</span>
           <Input
             type="email"
+            inputMode="email"
             required
             autoComplete="email"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "sign-in-form-error" : undefined}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
@@ -110,18 +114,32 @@ export function SignInForm() {
 
         <label className="flex flex-col gap-1.5 text-left text-sm">
           <span className="text-muted">Password</span>
-          <Input
-            type="password"
-            required
-            minLength={8}
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
+          <div className="relative">
+            <Input
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={8}
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "sign-in-form-error" : undefined}
+              className="pr-16"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((current) => !current)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+              className="text-muted hover:text-text focus-visible:outline-lime absolute inset-y-0 right-3 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
         </label>
 
         {error && (
-          <p role="alert" className="text-coral text-sm">
+          <p id="sign-in-form-error" role="alert" className="text-coral text-sm">
             {error}
           </p>
         )}
