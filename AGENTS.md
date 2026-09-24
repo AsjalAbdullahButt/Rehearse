@@ -271,6 +271,24 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   each page instead handles its own *expected* fetch failures inline, e.g. `/progress`'s
   "couldn't load" state, which a thrown-error boundary wouldn't catch since nothing throws).
 - **Phase 6:** not started. See the master spec for scope.
+- **Post-Phase-5 hardening pass:** in progress, tracked against a separate "UX polish +
+  production hardening" master prompt (not the phase spec above). Completed so far: **A** (UI/UX
+  audit of the auth'd flow — mic-permission recovery copy, `aria-live` countdown announcements,
+  answer-upload retry that preserves the recording instead of discarding it, a shared toast
+  system + session-expiry redirect, sign-in password toggle, report-specific not-found/loading
+  states); **B** (fixed an N+1 in `get_progress_for_user`, added `limit`/`offset` pagination to
+  `GET /sessions`/`GET /progress`, added `GET /v1/health/ready`, gave the LLM call the same
+  timeout+retry policy STT already had via new `services/groq_retry.py`); **C** (explicit MySQL
+  pool sizing in `db.py` for serverless — indexes/audio-non-persistence/naive-UTC/migration
+  downgrade were all already correct); **D** (added `POST /v1/auth/logout-all`; cookie
+  flags/JWT/argon2/refresh-token revocation were all already correct; no password-reset flow
+  still a named, unbuilt gap); **F** (slowapi in-memory rate limiting on login/register/answers,
+  429s carry `Retry-After`; explicitly instance-local, not shared across concurrent Vercel
+  invocations); **I** (in-process TTL cache for `GET /v1/questions`; `GET /progress` caching
+  skipped as unnecessary once B's N+1 fix landed); **H** (`docs/runbook.md`, `vercel.json`'s
+  `maxDuration` raised to Hobby's 60s cap). Not started: **E** (CI/CD deploy stage, dependency/
+  static-analysis scanning, branch protection) and **G** (Sentry, structured logging, request
+  IDs) — both need external accounts/credentials this environment doesn't have.
 
 ## Known gaps / deliberate scope cuts from Phase 2
 

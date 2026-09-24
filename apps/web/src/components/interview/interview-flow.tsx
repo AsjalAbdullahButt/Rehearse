@@ -30,9 +30,19 @@ type FlowState =
   // a setup-time failure (e.g. session creation) has nothing to retry but "start over".
   | { stage: "error"; message: string; retry?: PendingSubmission };
 
-async function parseErrorMessage(response: Response): Promise<string> {
-  const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-  return body?.error?.message ?? "Something went wrong. Please try again.";
+interface ParsedApiError {
+  message: string;
+  code: string | null;
+}
+
+async function parseApiError(response: Response): Promise<ParsedApiError> {
+  const body = (await response.json().catch(() => null)) as {
+    error?: { code?: string; message?: string };
+  } | null;
+  return {
+    message: body?.error?.message ?? "Something went wrong. Please try again.",
+    code: body?.error?.code ?? null,
+  };
 }
 
 export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
@@ -50,7 +60,7 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
       });
       if (await handleSessionExpiry(sessionResponse)) return;
       if (!sessionResponse.ok) {
-        setState({ stage: "error", message: await parseErrorMessage(sessionResponse) });
+        setState({ stage: "error", message: (await parseApiError(sessionResponse)).message });
         return;
       }
       const session = (await sessionResponse.json()) as InterviewSession;
@@ -59,7 +69,7 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
       const questionsResponse = await fetch(`/api/interview/questions?${query.toString()}`);
       if (await handleSessionExpiry(questionsResponse)) return;
       if (!questionsResponse.ok) {
-        setState({ stage: "error", message: await parseErrorMessage(questionsResponse) });
+        setState({ stage: "error", message: (await parseApiError(questionsResponse)).message });
         return;
       }
       const questions = (await questionsResponse.json()) as Question[];
@@ -95,11 +105,11 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
       const response = await fetch("/api/interview/answers", { method: "POST", body: formData });
       if (await handleSessionExpiry(response)) return;
       if (!response.ok) {
-        setState({
-          stage: "error",
-          message: await parseErrorMessage(response),
-          retry: submission,
-        });
+        const { message, code } = await parseApiError(response);
+        // A rate limit (daily cap or burst) won't clear by immediately retrying the same
+        // request — offering "Retry upload" here would just trip it again.
+        const retry = code === "rate_limited" ? undefined : submission;
+        setState({ stage: "error", message, retry });
         return;
       }
 
