@@ -1,5 +1,3 @@
-import { notFound } from "next/navigation";
-
 import { BeforeAfterToggle } from "@/components/report/before-after-toggle";
 import { ScoreRing } from "@/components/report/score-ring";
 import { StarBars } from "@/components/report/star-bars";
@@ -13,7 +11,16 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
   const report = await fetchAnswerReport(answerId);
 
   if (!report) {
-    notFound();
+    return (
+      <div className="flex flex-1 items-center justify-center px-6 py-16">
+        <Card className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <h1 className="font-display text-text text-xl font-bold">Report not found</h1>
+          <p className="text-muted text-sm">
+            This report doesn&apos;t exist, or it isn&apos;t associated with your account.
+          </p>
+        </Card>
+      </div>
+    );
   }
 
   const { feedback } = report;

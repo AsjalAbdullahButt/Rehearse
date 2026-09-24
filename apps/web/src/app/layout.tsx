@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { SmoothScrollProvider } from "@/components/theme/smooth-scroll-provider";
 import { ThemeProvider } from "@/components/theme/theme-provider";
+import { ToastProvider } from "@/components/ui/toast";
 
 import "./globals.css";
 
@@ -46,7 +47,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           enableSystem={false}
           disableTransitionOnChange
         >
-          <SmoothScrollProvider>{children}</SmoothScrollProvider>
+          <SmoothScrollProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </SmoothScrollProvider>
         </ThemeProvider>
       </body>
     </html>

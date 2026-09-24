@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { OptionPill } from "@/components/ui/option-pill";
 import { useHasMounted } from "@/hooks/use-has-mounted";
+import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import { useSpeechVoices } from "@/hooks/use-speech-voices";
 import type { Profile } from "@/lib/interview/types";
 import { TIME_CAP_OPTIONS } from "@/lib/interview/types";
@@ -16,6 +17,7 @@ type SaveStatus = "idle" | "saving" | "saved" | "error";
 export function SettingsForm({ initialProfile }: { initialProfile: Profile }) {
   const { theme, setTheme } = useTheme();
   const voices = useSpeechVoices();
+  const handleSessionExpiry = useSessionExpiry();
 
   // next-themes reports `theme` as undefined until after hydration — rendering the theme
   // pills before then would mismatch server vs. client output.
@@ -38,6 +40,7 @@ export function SettingsForm({ initialProfile }: { initialProfile: Profile }) {
           voice_rate: voiceRate,
         }),
       });
+      if (await handleSessionExpiry(response)) return;
       setStatus(response.ok ? "saved" : "error");
     } catch {
       setStatus("error");

@@ -3,10 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type RecorderStatus = "idle" | "recording" | "stopped";
+export type RecorderErrorKind = "permission-denied" | "no-device" | "unavailable";
+
+export interface RecorderError {
+  kind: RecorderErrorKind;
+  message: string;
+}
 
 export interface AudioRecorder {
   status: RecorderStatus;
-  error: string | null;
+  error: RecorderError | null;
   analyser: AnalyserNode | null;
   start: () => Promise<void>;
   stop: () => void;
@@ -16,12 +22,31 @@ const PREFERRED_MIME_TYPE = "audio/webm;codecs=opus";
 const FALLBACK_MIME_TYPE = "audio/webm";
 const AUDIO_BITS_PER_SECOND = 32_000;
 
+const RECORDER_ERROR_MESSAGES: Record<RecorderErrorKind, string> = {
+  "permission-denied":
+    "Microphone access is blocked. Click the lock or camera icon in your browser's address bar, allow the microphone, then try again.",
+  "no-device": "No microphone was found. Connect one and try again.",
+  unavailable: "Microphone access is unavailable on this device or browser.",
+};
+
+function recorderErrorKind(error: unknown): RecorderErrorKind {
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+      return "permission-denied";
+    }
+    if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+      return "no-device";
+    }
+  }
+  return "unavailable";
+}
+
 /** Wraps getUserMedia + MediaRecorder + an AnalyserNode for live level visualization. Audio
  * never leaves this hook except as the single Blob handed to `onStopped` — nothing here
  * writes it to disk or a URL that could persist it. */
 export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder {
   const [status, setStatus] = useState<RecorderStatus>("idle");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RecorderError | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -83,8 +108,9 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
       mediaRecorderRef.current = recorder;
       recorder.start();
       setStatus("recording");
-    } catch {
-      setError("Microphone access was denied or is unavailable.");
+    } catch (caughtError) {
+      const kind = recorderErrorKind(caughtError);
+      setError({ kind, message: RECORDER_ERROR_MESSAGES[kind] });
       setStatus("idle");
     }
   }, [releaseResources]);
