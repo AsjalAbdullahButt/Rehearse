@@ -4,8 +4,9 @@ An AI mock interview coach. Pick a role, answer a spoken question out loud, and 
 filler-word/pace/pause metrics, STAR and clarity scoring, a stronger sample answer, and progress
 tracking across sessions.
 
-> **Status:** Phase 4 (auth'd product UI — the interview flow) complete. See
-> [AGENTS.md](./AGENTS.md) for stack, conventions and current progress.
+> **Status:** Phase 5 (progress, settings, polish) complete — the full product loop (sign up →
+> interview → report → progress → settings) works end to end. See [AGENTS.md](./AGENTS.md) for
+> stack, conventions and current progress.
 
 ## Stack
 
@@ -77,7 +78,8 @@ Sign in, then visit `/interview` to run the real mock-interview flow end to end 
 with a 502 once you submit a recording, which is the expected behavior, not a bug). This
 project's dev environment has no browser to test `MediaRecorder`/`getUserMedia`/
 `speechSynthesis` in, so that part of the flow needs a real browser to verify — see AGENTS.md's
-Phase 4 status note.
+Phase 4 status note. `/progress` and `/settings` need no `GROQ_API_KEY` to try — they only
+touch `GET`/`PATCH /v1/profile` and `GET /v1/progress`.
 
 To test the interview-answer pipeline (STT → metrics → LLM feedback) without the web UI, once
 `GROQ_API_KEY` is set to a real key:

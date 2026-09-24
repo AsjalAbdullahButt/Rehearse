@@ -74,37 +74,47 @@ See the master spec (section 2) for the full target layout. Highlights:
   it lime→coral, defaulted off so the landing usage is unaffected), `RolePicker`,
   `InterviewFlow` (the recording state machine), and `Waveform` (real mic input via
   `AnalyserNode`, not the landing's canned bar animation).
-- `apps/web/src/hooks/{use-audio-recorder,use-countdown}.ts` — `use-audio-recorder` wraps
-  `getUserMedia`/`MediaRecorder` (webm/opus @32kbps)/`AnalyserNode`; `use-countdown` ticks a
-  cap down and fires once on expiry. Both were written to satisfy the newer
-  `react-hooks/refs` and `react-hooks/set-state-in-effect` lint rules (React Compiler-era):
-  refs are updated via a no-deps `useEffect`, never during render, and state resets on a prop
-  flip happen as a guarded update during render (React's documented pattern), never inside an
-  effect body.
+- `apps/web/src/hooks/` — `use-audio-recorder` wraps `getUserMedia`/`MediaRecorder` (webm/opus
+  @32kbps)/`AnalyserNode`; `use-countdown` ticks a cap down and fires once on expiry;
+  `use-speech-voices` lists `speechSynthesis.getVoices()` (populated async via the
+  `voiceschanged` event); `use-has-mounted` (`useSyncExternalStore`-based — see below) is for
+  any value genuinely unknown until after hydration, e.g. `next-themes`' `theme`. All were
+  written to satisfy the newer `react-hooks/refs` and `react-hooks/set-state-in-effect` lint
+  rules (React Compiler-era): refs are updated via a no-deps `useEffect`, never during render;
+  state resets on a prop flip happen as a guarded update during render (React's documented
+  pattern), never inside an effect body; and "has this mounted yet" is `useSyncExternalStore`
+  with a server/client snapshot pair, never a `useState`+`useEffect(() => setX(true), [])` pair
+  (that shape is exactly what the rule flags) — `ThemeToggle` and `SettingsForm` both use
+  `use-has-mounted` for this rather than each rolling their own.
 - `apps/web/src/lib/{env,motion,utils,auth/,interview/}` — env validation, shared motion
   tokens (also `formatTime`/`getTimerTone` — the countdown color rule, amber ≤30s / coral ≤10s,
   shared between the landing demo timer and the real recorder), `cn()`; `auth/` has the JWT
   decode helper, session-cookie helpers (`buildSessionCookies` is the single source both a
   `NextResponse` and the mutable `cookies()` store apply), `session.ts` (`getValidAccessToken`
-  — refreshes transparently if the access-token cookie is expired), and the server-side fetch
-  wrapper the route handlers use; `interview/` has the wire types mirroring the API's Pydantic
-  schemas, `server.ts` (direct API reads for Server Components), `proxy.ts`
-  (`proxyAuthedRequest` — the one place client-facing `/api/interview/*` routes attach the
-  bearer token and forward), and `transcript.ts` (maps the API's flat `TranscriptPart` shape
-  into `TranscriptHighlight`'s discriminated union).
-- `apps/web/src/app/api/{auth,interview}/**/route.ts` — every one of these proxies
+  — refreshes transparently if the access-token cookie is expired), and `proxy.ts`
+  (`proxyAuthedRequest` — the one place every authed `/api/*` route handler attaches the bearer
+  token and forwards; not interview-specific despite living next to session/cookie code, since
+  `/api/profile` needs it too); `interview/` has the wire types mirroring the API's Pydantic
+  schemas (despite the folder name, this covers the whole product domain — questions, sessions,
+  answers, progress, profile — not just the recording flow), `server.ts` (direct API reads for
+  Server Components, one `fetchFromApi<T>` helper underneath `fetchCurrentUser`/
+  `fetchAnswerReport`/`fetchProgress`/`fetchProfile`), and `transcript.ts` (maps the API's flat
+  `TranscriptPart` shape into `TranscriptHighlight`'s discriminated union).
+- `apps/web/src/app/api/{auth,interview,profile}/**/route.ts` — every one of these proxies
   server-side to the FastAPI `/v1/*` API and never runs in the browser; `auth/*` sets the
-  session as httpOnly cookies, `interview/*` attaches the bearer token read from those cookies
-  (`answers/route.ts` forwards the browser's multipart `FormData` — including the audio
-  `Blob` — unchanged). `proxy.ts` (Next middleware) gates `APP_PREFIXES` on cookie
-  presence/expiry as a UX-only redirect; the real authorization boundary is always
+  session as httpOnly cookies, the rest attach the bearer token read from those cookies via
+  `proxyAuthedRequest` (`interview/answers/route.ts` forwards the browser's multipart
+  `FormData` — including the audio `Blob` — unchanged). `proxy.ts` (Next middleware, at
+  `src/proxy.ts` — not to be confused with `lib/auth/proxy.ts` above) gates `APP_PREFIXES` on
+  cookie presence/expiry as a UX-only redirect; the real authorization boundary is always
   `get_current_user` on the API side.
 - `apps/api/app/models/` — SQLAlchemy models (`User`, `Profile`, `Question`, `InterviewSession`,
   `Answer`, `RefreshToken`); `apps/api/app/db.py` — async engine/session factory; `apps/api/alembic/`
   — migrations, `alembic upgrade head` builds the schema.
 - `apps/api/app/{core,routers,schemas,services,prompts}` — `core` has config/errors/logging/auth
   (JWT issue/verify, password hashing, `get_current_user`); `routers` are thin
-  (`questions`/`sessions`/`answers`/`progress`, all `/v1`, auth-required); `services/repo.py`
+  (`questions`/`sessions`/`answers`/`progress`/`profile`, all `/v1`, auth-required);
+  `services/repo.py`
   holds every DB query, each one scoped to the caller's `user_id`; `services/stt.py` (Groq
   Whisper, verbose_json, one retry on 429/5xx), `services/metrics.py` (pure, 100%-tested filler/
   WPM/pause/rambling functions — see Hard rules), `services/llm.py` (Groq Llama JSON mode,
@@ -242,7 +252,25 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   browser to test them in. Verified instead: full request pipeline (multipart forwarding, auth,
   cookie refresh, ownership checks, error propagation) over real HTTP against a running
   Next.js + FastAPI stack, up through a real (expected) Groq failure from a fake API key.
-- **Phases 5–6:** not started. See the master spec for scope.
+- **Phase 5 (Progress, settings, polish):** done. Backend: `GET`/`PATCH /v1/profile` (new —
+  no endpoint existed for the `profiles` table before this; PATCH uses `exclude_unset` so an
+  omitted field is left alone, not reset to null; `answer_cap_s`/`voice_rate` validated against
+  the same `ANSWER_CAP_CHOICES`/range the DB `CHECK` constraints enforce). Web: `/progress`
+  renders `GET /v1/progress` as a per-session card list — real data only, an honest "No
+  sessions yet" empty state, and a distinct "couldn't load" state for a failed fetch (no
+  carried-over numbers from the landing demo chart, which stays marketing-only per the rules
+  above); `/settings` persists default time cap + interviewer voice (listed via
+  `speechSynthesis.getVoices()`, with a "preview voice" button) + speaking rate to the profile,
+  plus a theme control (in addition to the existing header `ThemeToggle`, since the spec lists
+  theme as a Settings item specifically). Extracted `OptionPill` out of `RolePicker` into
+  `components/ui/` once Settings needed the same pill-select pattern for time cap and theme.
+  Added a nav bar (Interview/Progress/Settings links) to `(app)/layout.tsx`'s header — it only
+  had the logo and sign-out before, with nowhere to navigate to the new pages. Added a shared
+  `(app)/loading.tsx` Suspense fallback (the existing root `not-found.tsx`/`error.tsx` already
+  covered 404s/thrown errors app-wide from Phase 1, so no new error boundary was needed there —
+  each page instead handles its own *expected* fetch failures inline, e.g. `/progress`'s
+  "couldn't load" state, which a thrown-error boundary wouldn't catch since nothing throws).
+- **Phase 6:** not started. See the master spec for scope.
 
 ## Known gaps / deliberate scope cuts from Phase 2
 
@@ -252,9 +280,11 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   inline styles — treat them as close, not pixel-exact.
 - **No light-mode mockup.** `.light` in `globals.css` is still the spec's documented fallback,
   unverified against a real design.
-- **`/sign-in`, `/interview`, and `/report/[answerId]` are real, working pages now** (Phases 2.5
-  and 4). **`/progress` and `/settings` still don't exist** (Phase 5) — `proxy.ts` still
-  redirects to `/sign-in` for those two today.
+- **All four guarded product pages now exist and are real** (`/interview`, `/report/[answerId]`,
+  `/progress`, `/settings` — Phases 2.5, 4, 5). `display_name`/`target_role` on `Profile` are
+  modeled and returned by `GET /v1/profile` but have no UI to set them yet — not in the Phase 5
+  spec's "time cap, voice, theme" scope, left for whenever a real need for them shows up rather
+  than building settings UI ahead of a use case.
 - **GitHub footer link** points at this repo's own real remote
   (`github.com/AsjalAbdullahButt/Rehearse`); no LinkedIn link was added since no real profile URL
   was available and the rules here forbid inventing one.
