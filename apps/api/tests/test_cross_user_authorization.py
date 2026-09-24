@@ -2,9 +2,12 @@
 reads or writes a session/answer must be scoped to the caller's user_id — this test exists
 because a forgotten filter here is a direct cross-user data leak, not a soft bug."""
 
+from datetime import timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
+from app.models.base import utcnow
 from app.models.enums import Difficulty
 from app.services import repo
 
@@ -116,3 +119,23 @@ async def test_list_answers_only_returns_the_callers_own_rows(db_session: AsyncS
 
     assert len(a_answers) == 1
     assert all(answer.user_id == user_a_id for answer in a_answers)
+
+
+async def test_logout_all_does_not_revoke_another_users_refresh_token(
+    db_session: AsyncSession,
+) -> None:
+    user_a_id = await _make_user(db_session, "a@example.com")
+    user_b_id = await _make_user(db_session, "b@example.com")
+    expires_at = utcnow() + timedelta(days=1)
+
+    await repo.store_refresh_token(
+        db_session, user_id=user_a_id, token_hash="hash-a", expires_at=expires_at
+    )
+    await repo.store_refresh_token(
+        db_session, user_id=user_b_id, token_hash="hash-b", expires_at=expires_at
+    )
+
+    await repo.revoke_all_refresh_tokens(db_session, user_id=user_a_id)
+
+    assert await repo.get_active_refresh_token(db_session, token_hash="hash-a") is None
+    assert await repo.get_active_refresh_token(db_session, token_hash="hash-b") is not None
