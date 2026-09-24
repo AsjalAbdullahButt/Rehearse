@@ -78,6 +78,56 @@ async def test_progress_aggregates_answers_per_session(
     assert row["avg_star"] == 7.0
 
 
+async def test_progress_keeps_each_sessions_answers_separate(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    """Regression test for the batched-query rewrite of get_progress_for_user: answers must
+    stay grouped by their own session_id, not bleed into another session's averages."""
+    user = register_user()
+
+    session_ids = [
+        client.post(
+            "/v1/sessions",
+            json={"role": "backend", "difficulty": "medium"},
+            headers=_auth_headers(user),
+        ).json()["id"]
+        for _ in range(2)
+    ]
+
+    db_session.add_all(
+        [
+            Answer(
+                session_id=session_ids[0],
+                user_id=user["user"]["id"],
+                question_text="Q1",
+                transcript="A1",
+                duration_s=60,
+                wpm=100,
+                filler_count=0,
+            ),
+            Answer(
+                session_id=session_ids[1],
+                user_id=user["user"]["id"],
+                question_text="Q2",
+                transcript="A2",
+                duration_s=60,
+                wpm=200,
+                filler_count=0,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = client.get("/v1/progress", headers=_auth_headers(user))
+
+    assert response.status_code == 200
+    rows_by_session = {row["session_id"]: row for row in response.json()["sessions"]}
+    assert rows_by_session[session_ids[0]]["avg_wpm"] == 100.0
+    assert rows_by_session[session_ids[1]]["avg_wpm"] == 200.0
+
+
 async def test_progress_only_includes_the_callers_own_sessions(
     client: TestClient, register_user: Callable[..., dict[str, Any]]
 ) -> None:

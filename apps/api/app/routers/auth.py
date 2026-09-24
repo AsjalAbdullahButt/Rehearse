@@ -112,6 +112,15 @@ async def logout(body: LogoutRequest, db: AsyncSession = Depends(get_db)) -> Non
     await repo.revoke_refresh_token(db, token_hash=hash_token(body.refresh_token))
 
 
+@router.post("/auth/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_all(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> None:
+    """Revokes every refresh token the current user has issued (every device/browser), not
+    just the one presented — for a reported compromise or a "sign out everywhere" action."""
+    await repo.revoke_all_refresh_tokens(db, user_id=user.id)
+
+
 @router.get("/auth/me", response_model=UserPublic)
 async def me(user: User = Depends(get_current_user)) -> UserPublic:
     return UserPublic(id=user.id, email=user.email)

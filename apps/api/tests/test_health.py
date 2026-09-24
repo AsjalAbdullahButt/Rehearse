@@ -10,6 +10,13 @@ def test_health_returns_ok(client: TestClient) -> None:
     assert isinstance(body["version"], str)
 
 
+def test_readiness_returns_ready_when_db_is_reachable(client: TestClient) -> None:
+    response = client.get("/v1/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+
+
 def test_unknown_route_returns_structured_error(client: TestClient) -> None:
     response = client.get("/v1/does-not-exist")
 

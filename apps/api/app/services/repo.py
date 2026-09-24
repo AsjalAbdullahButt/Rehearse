@@ -2,10 +2,11 @@
 user_id here — MySQL has no Postgres-RLS equivalent, so this module is the only place a
 cross-user data leak can be caught before it ships. See tests/test_cross_user_authorization.py."""
 
+from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
@@ -96,6 +97,18 @@ async def revoke_refresh_token(db: AsyncSession, *, token_hash: str) -> None:
         await db.commit()
 
 
+async def revoke_all_refresh_tokens(db: AsyncSession, *, user_id: str) -> None:
+    """Backs "log out everywhere": revokes every still-active refresh token for a user in one
+    statement, e.g. after a reported compromise (there's no password-reset flow yet to pair
+    this with — see the known-gaps note in AGENTS.md)."""
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=utcnow())
+    )
+    await db.commit()
+
+
 # ─── questions ───────────────────────────────────────────────────────────
 
 
@@ -138,11 +151,15 @@ async def get_session_for_user(
     return result.scalar_one_or_none()
 
 
-async def list_sessions_for_user(db: AsyncSession, *, user_id: str) -> list[InterviewSession]:
+async def list_sessions_for_user(
+    db: AsyncSession, *, user_id: str, limit: int = 20, offset: int = 0
+) -> list[InterviewSession]:
     result = await db.execute(
         select(InterviewSession)
         .where(InterviewSession.user_id == user_id)
         .order_by(InterviewSession.started_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return list(result.scalars().all())
 
@@ -190,17 +207,27 @@ def _avg(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 2) if values else None
 
 
-async def get_progress_for_user(db: AsyncSession, *, user_id: str) -> list[ProgressRow]:
+async def get_progress_for_user(
+    db: AsyncSession, *, user_id: str, limit: int = 20, offset: int = 0
+) -> list[ProgressRow]:
     """Per-session aggregates, computed in Python rather than a dialect-specific JSON-column
     SQL query (MySQL's `->>` vs SQLite's `json_extract` in tests) — this project's scale
     doesn't need the query to do it, and the aggregation itself is a handful of pure-Python
-    averages over each session's already-small answer list."""
-    sessions = await list_sessions_for_user(db, user_id=user_id)
+    averages over each session's already-small answer list. Answers for every session on the
+    page are fetched in one batched query (not one query per session) to avoid an N+1."""
+    sessions = await list_sessions_for_user(db, user_id=user_id, limit=limit, offset=offset)
+    if not sessions:
+        return []
+
+    session_ids = [session.id for session in sessions]
+    answers_result = await db.execute(select(Answer).where(Answer.session_id.in_(session_ids)))
+    answers_by_session: dict[str, list[Answer]] = defaultdict(list)
+    for answer in answers_result.scalars().all():
+        answers_by_session[answer.session_id].append(answer)
 
     rows: list[ProgressRow] = []
     for session in sessions:
-        answers_result = await db.execute(select(Answer).where(Answer.session_id == session.id))
-        answers = list(answers_result.scalars().all())
+        answers = answers_by_session[session.id]
 
         star_averages = [
             (star["situation"] + star["task"] + star["action"] + star["result"]) / 4

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -24,8 +26,10 @@ async def create_session(
 
 @router.get("/sessions", response_model=list[SessionOut])
 async def list_sessions(
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[SessionOut]:
-    sessions = await repo.list_sessions_for_user(db, user_id=user.id)
+    sessions = await repo.list_sessions_for_user(db, user_id=user.id, limit=limit, offset=offset)
     return [SessionOut.model_validate(session) for session in sessions]

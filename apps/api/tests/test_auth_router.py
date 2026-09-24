@@ -102,3 +102,32 @@ def test_logout_revokes_refresh_token(client: TestClient) -> None:
 
     reuse_response = client.post("/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert reuse_response.status_code == 401
+
+
+def test_logout_all_requires_auth(client: TestClient) -> None:
+    response = client.post("/v1/auth/logout-all")
+
+    assert response.status_code == 401
+
+
+def test_logout_all_revokes_every_refresh_token(client: TestClient) -> None:
+    body = _register(client)
+    access_token = body["access_token"]
+    first_refresh_token = body["refresh_token"]
+
+    # A second login issues a second, independent refresh token for the same user/device.
+    second_login = client.post(
+        "/v1/auth/login",
+        json={"email": "user@example.com", "password": "correct-horse-battery-staple"},
+    )
+    second_refresh_token = second_login.json()["refresh_token"]
+
+    response = client.post(
+        "/v1/auth/logout-all", headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert response.status_code == 204
+
+    first_reuse = client.post("/v1/auth/refresh", json={"refresh_token": first_refresh_token})
+    assert first_reuse.status_code == 401
+    second_reuse = client.post("/v1/auth/refresh", json={"refresh_token": second_refresh_token})
+    assert second_reuse.status_code == 401

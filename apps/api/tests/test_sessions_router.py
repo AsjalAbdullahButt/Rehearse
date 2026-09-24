@@ -55,3 +55,18 @@ def test_list_sessions_only_returns_the_callers_own_sessions(
     body = response.json()
     assert len(body) == 1
     assert body[0]["role"] == "backend"
+
+
+def test_list_sessions_respects_limit(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+    for role in ("backend", "frontend", "mobile"):
+        client.post(
+            "/v1/sessions", json={"role": role, "difficulty": "easy"}, headers=_auth_headers(user)
+        )
+
+    response = client.get("/v1/sessions?limit=2", headers=_auth_headers(user))
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
