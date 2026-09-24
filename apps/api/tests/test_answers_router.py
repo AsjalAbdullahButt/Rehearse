@@ -301,6 +301,28 @@ async def test_create_answer_enforces_the_daily_rate_limit(
     assert response.json()["error"]["code"] == "rate_limited"
 
 
+async def test_create_answer_enforces_the_per_minute_burst_limit(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    """Separate from the 30/day cap above: even a user nowhere near that cap gets stopped by
+    a tighter per-minute burst limit, since each call costs real Groq usage."""
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    responses = [
+        _post_answer(client, session_id=session_id, question_id=question_id, user=user)
+        for _ in range(7)
+    ]
+
+    assert [r.status_code for r in responses[:6]] == [201] * 6
+    assert responses[6].status_code == 429
+    assert responses[6].json()["error"]["code"] == "rate_limited"
+    assert "Retry-After" in responses[6].headers
+
+
 async def test_get_answer_returns_the_full_report(
     client: TestClient,
     db_session: AsyncSession,

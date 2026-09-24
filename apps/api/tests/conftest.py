@@ -37,6 +37,18 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     await engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter() -> None:
+    """The rate limiter (app/core/rate_limit.py) is a module-level singleton so its in-memory
+    counts persist across `create_app()` calls — without this, one test's login/register
+    calls would count against the next test's limit, since the TestClient's fake IP never
+    changes. Real deployments don't have this problem: state genuinely should reset when a
+    serverless instance cold-starts."""
+    from app.core.rate_limit import limiter
+
+    limiter.reset()
+
+
 @pytest.fixture
 def client(db_session: AsyncSession) -> Iterator[TestClient]:
     from app.db import get_db
