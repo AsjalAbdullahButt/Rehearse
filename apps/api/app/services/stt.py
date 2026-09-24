@@ -6,6 +6,7 @@ from groq import APIStatusError, AsyncGroq
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.schemas.transcription import TranscriptionResult, WordTiming
+from app.services.groq_retry import REQUEST_TIMEOUT_S, is_retryable
 
 # Told to transcribe verbatim so filler words survive — metrics.py needs "um"/"uh"/"like" in
 # the transcript it counts fillers from, not a cleaned-up version.
@@ -14,16 +15,10 @@ FILLER_PRESERVING_PROMPT = (
     "and you know. Do not clean up or paraphrase the speech."
 )
 
-_REQUEST_TIMEOUT_S = 30.0
-
 
 def _client() -> AsyncGroq:
     settings = get_settings()
-    return AsyncGroq(api_key=settings.groq_api_key, timeout=_REQUEST_TIMEOUT_S)
-
-
-def _is_retryable(exc: APIStatusError) -> bool:
-    return exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS or exc.status_code >= 500
+    return AsyncGroq(api_key=settings.groq_api_key, timeout=REQUEST_TIMEOUT_S)
 
 
 async def _call(client: AsyncGroq, audio_bytes: bytes, filename: str, model: str) -> Any:
@@ -46,7 +41,7 @@ async def transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
     try:
         response = await _call(client, audio_bytes, filename, settings.groq_stt_model)
     except APIStatusError as exc:
-        if not _is_retryable(exc):
+        if not is_retryable(exc):
             raise ApiError(
                 "stt_failed", "Transcription failed.", status_code=status.HTTP_502_BAD_GATEWAY
             ) from exc
