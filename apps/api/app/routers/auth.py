@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import (
@@ -14,6 +14,7 @@ from app.core.auth import (
 )
 from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.rate_limit import limiter
 from app.db import get_db
 from app.models.base import utcnow
 from app.models.user import User
@@ -50,7 +51,13 @@ async def _issue_token_pair(db: AsyncSession, user: User) -> TokenResponse:
 
 
 @router.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+@limiter.limit("5/minute")  # pyright: ignore[reportUnknownMemberType, reportUntypedFunctionDecorator]
+async def register(
+    request: Request,
+    response: Response,
+    body: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
     existing = await repo.get_user_by_email(db, email=body.email)
     if existing is not None:
         raise ApiError(
@@ -69,7 +76,13 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) ->
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+@limiter.limit("10/minute")  # pyright: ignore[reportUnknownMemberType, reportUntypedFunctionDecorator]
+async def login(
+    request: Request,
+    response: Response,
+    body: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
     user = await repo.get_user_by_email(db, email=body.email)
     if user is None or not verify_password(body.password, user.password_hash):
         raise ApiError(

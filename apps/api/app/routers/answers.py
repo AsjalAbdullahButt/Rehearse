@@ -1,11 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.rate_limit import limiter, user_or_ip_key
 from app.db import get_db
 from app.models.user import User
 from app.schemas.answer import AnswerReport
@@ -20,7 +21,15 @@ DURATION_CAP_GRACE_S = 10
 
 
 @router.post("/answers", response_model=AnswerReport, status_code=status.HTTP_201_CREATED)
+# Separate from (and tighter than) the 30/day business-rule cap below: each call costs real
+# Groq usage, so a short burst still needs its own limit even for a user nowhere near the
+# daily cap. Keyed by user, not IP — the meaningful unit of abuse here is per-account.
+@limiter.limit(  # pyright: ignore[reportUnknownMemberType, reportUntypedFunctionDecorator]
+    "6/minute", key_func=user_or_ip_key
+)
 async def create_answer(
+    request: Request,
+    response: Response,
     session_id: Annotated[str, Form()],
     question_id: Annotated[str, Form()],
     time_cap_s: Annotated[int, Form()],
