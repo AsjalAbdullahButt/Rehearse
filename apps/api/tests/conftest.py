@@ -38,15 +38,18 @@ async def db_session() -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_limiter() -> None:
-    """The rate limiter (app/core/rate_limit.py) is a module-level singleton so its in-memory
-    counts persist across `create_app()` calls — without this, one test's login/register
-    calls would count against the next test's limit, since the TestClient's fake IP never
-    changes. Real deployments don't have this problem: state genuinely should reset when a
+def _reset_process_local_state() -> None:
+    """Both the rate limiter (app/core/rate_limit.py) and the questions cache
+    (app/services/repo.py) are module-level, process-lifetime state — without resetting them,
+    one test's login/register calls (or seeded questions) would count against, or leak into,
+    the next test, since the TestClient's fake IP never changes and the cache key space is
+    small. Real deployments don't have this problem: both genuinely should start empty when a
     serverless instance cold-starts."""
     from app.core.rate_limit import limiter
+    from app.services.repo import clear_questions_cache
 
     limiter.reset()
+    clear_questions_cache()
 
 
 @pytest.fixture

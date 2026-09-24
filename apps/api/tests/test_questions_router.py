@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import Category, Difficulty, Role
 from app.models.question import Question
+from app.services import repo
 
 
 async def _seed_questions(db_session: AsyncSession) -> None:
@@ -106,6 +107,29 @@ def test_list_questions_requires_auth(client: TestClient) -> None:
     response = client.get("/v1/questions", params={"role": "backend"})
 
     assert response.status_code == 401
+
+
+async def test_list_questions_serves_repeated_calls_from_cache(db_session: AsyncSession) -> None:
+    db_session.add(
+        Question(
+            role=Role.BACKEND, difficulty=Difficulty.EASY, category=Category.TECHNICAL, text="Q1"
+        )
+    )
+    await db_session.commit()
+
+    first = await repo.list_questions(db_session, role=Role.BACKEND, difficulty=Difficulty.EASY)
+    assert len(first) == 1
+
+    # Added directly against the DB, bypassing the endpoint — a cache hit should not see it.
+    db_session.add(
+        Question(
+            role=Role.BACKEND, difficulty=Difficulty.EASY, category=Category.TECHNICAL, text="Q2"
+        )
+    )
+    await db_session.commit()
+
+    second = await repo.list_questions(db_session, role=Role.BACKEND, difficulty=Difficulty.EASY)
+    assert len(second) == 1
 
 
 def test_list_questions_requires_role(

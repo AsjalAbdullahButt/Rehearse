@@ -2,6 +2,7 @@
 user_id here — MySQL has no Postgres-RLS equivalent, so this module is the only place a
 cross-user data leak can be caught before it ships. See tests/test_cross_user_authorization.py."""
 
+import time
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
@@ -111,16 +112,38 @@ async def revoke_all_refresh_tokens(db: AsyncSession, *, user_id: str) -> None:
 
 # ─── questions ───────────────────────────────────────────────────────────
 
+# In-process TTL cache: the question bank changes rarely (a seed script, not user writes) but
+# is read on every interview setup. Instance-local like the rate limiter in core/rate_limit.py
+# — a cold-started serverless invocation just starts with an empty cache rather than a stale
+# one, so there's nothing to invalidate on write. `Question` rows are plain columns with no
+# lazy-loaded relationships, so caching the ORM instances themselves (rather than re-fetching
+# after the owning session closes) is safe.
+_QUESTIONS_CACHE_TTL_S = 300.0
+_questions_cache: dict[tuple[Role, Difficulty | None], tuple[float, list[Question]]] = {}
+
+
+def clear_questions_cache() -> None:
+    """Exposed for tests, where the cache would otherwise leak seeded rows from one test's
+    throwaway DB into another's assertions (see conftest.py's autouse reset fixture)."""
+    _questions_cache.clear()
+
 
 async def list_questions(
     db: AsyncSession, *, role: Role, difficulty: Difficulty | None = None
 ) -> list[Question]:
+    cache_key = (role, difficulty)
+    cached = _questions_cache.get(cache_key)
+    if cached is not None and time.monotonic() - cached[0] < _QUESTIONS_CACHE_TTL_S:
+        return cached[1]
+
     query = select(Question).where(Question.role == role, Question.is_active.is_(True))
     if difficulty is not None:
         query = query.where(Question.difficulty == difficulty)
 
     result = await db.execute(query)
-    return list(result.scalars().all())
+    questions = list(result.scalars().all())
+    _questions_cache[cache_key] = (time.monotonic(), questions)
+    return questions
 
 
 async def get_question_by_id(db: AsyncSession, *, question_id: str) -> Question | None:

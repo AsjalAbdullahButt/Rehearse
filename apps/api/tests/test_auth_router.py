@@ -54,6 +54,37 @@ def test_login_rejects_wrong_password(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "invalid_credentials"
 
 
+def test_login_is_rate_limited_per_ip(client: TestClient) -> None:
+    for _ in range(10):
+        client.post(
+            "/v1/auth/login", json={"email": "nobody@example.com", "password": "whatever-123"}
+        )
+
+    response = client.post(
+        "/v1/auth/login", json={"email": "nobody@example.com", "password": "whatever-123"}
+    )
+
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "rate_limited"
+    assert "Retry-After" in response.headers
+
+
+def test_register_is_rate_limited_per_ip(client: TestClient) -> None:
+    for i in range(5):
+        client.post(
+            "/v1/auth/register",
+            json={"email": f"flood{i}@example.com", "password": "correct-horse-battery-staple"},
+        )
+
+    response = client.post(
+        "/v1/auth/register",
+        json={"email": "one-more@example.com", "password": "correct-horse-battery-staple"},
+    )
+
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "rate_limited"
+
+
 def test_login_rejects_unknown_email(client: TestClient) -> None:
     response = client.post(
         "/v1/auth/login", json={"email": "nobody@example.com", "password": "whatever-123"}
