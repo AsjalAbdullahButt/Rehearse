@@ -209,6 +209,49 @@ async def test_create_answer_rejects_non_webm_ogg_content_type(
     assert response.status_code == 415
 
 
+async def test_create_answer_accepts_a_valid_time_cap(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        time_cap_s=180,
+    )
+
+    assert response.status_code == 201
+
+
+@pytest.mark.parametrize("time_cap_s", [90, -60, 0])
+async def test_create_answer_rejects_a_time_cap_outside_the_allowed_choices(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+    time_cap_s: int,
+) -> None:
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        time_cap_s=time_cap_s,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_time_cap"
+
+
 async def test_create_answer_rejects_uploads_over_4mb(
     client: TestClient,
     db_session: AsyncSession,

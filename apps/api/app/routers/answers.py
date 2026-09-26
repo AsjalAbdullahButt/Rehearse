@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.rate_limit import limiter, user_or_ip_key
 from app.db import get_db
+from app.models.profile import ANSWER_CAP_CHOICES
 from app.models.user import User
 from app.schemas.answer import AnswerReport
 from app.services import feedback as feedback_service
@@ -68,6 +69,13 @@ async def create_answer(
     db: AsyncSession = Depends(get_db),
 ) -> AnswerReport:
     settings = get_settings()
+
+    if time_cap_s not in ANSWER_CAP_CHOICES:
+        raise ApiError(
+            "invalid_time_cap",
+            f"time_cap_s must be one of {ANSWER_CAP_CHOICES}.",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
 
     session = await repo.get_session_for_user(db, session_id=session_id, user_id=user.id)
     if session is None:
