@@ -1,12 +1,19 @@
 "use client";
 
-import { type ReactNode, useId } from "react";
+import { cloneElement, type ReactElement, type ReactNode, useId } from "react";
 
 import { cn } from "@/lib/utils";
 
+interface Describable {
+  "aria-describedby"?: string;
+}
+
 export interface TooltipProps {
   content: ReactNode;
-  children: ReactNode;
+  /** A single focusable element (button, link, input...) — `aria-describedby` is attached
+   * directly to it, not to a wrapping span, so a screen reader announces the tooltip when this
+   * element receives keyboard focus, not only via CSS hover/focus-within. */
+  children: ReactElement<Describable>;
   side?: "top" | "bottom";
   className?: string;
 }
@@ -14,9 +21,12 @@ export interface TooltipProps {
 export function Tooltip({ content, children, side = "top", className }: TooltipProps) {
   const id = useId();
 
+  const describedBy = [children.props["aria-describedby"], id].filter(Boolean).join(" ");
+  const trigger = cloneElement(children, { "aria-describedby": describedBy });
+
   return (
     <span className="group relative inline-flex">
-      <span aria-describedby={id}>{children}</span>
+      {trigger}
       <span
         id={id}
         role="tooltip"
