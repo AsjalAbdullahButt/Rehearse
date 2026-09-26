@@ -33,6 +33,19 @@ export async function proxyAuthedRequest(path: string, init?: RequestInit): Prom
     return new NextResponse(null, { status: 204 });
   }
 
-  const body: unknown = await response.json();
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return NextResponse.json(
+      {
+        error: {
+          code: "upstream_invalid_response",
+          message: "The server returned an unexpected response. Please try again.",
+        },
+      },
+      { status: 502 },
+    );
+  }
   return NextResponse.json(body, { status: response.status });
 }
