@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { LiveCaption } from "@/components/interview/live-caption";
 import { MicOrb } from "@/components/interview/mic-orb";
 import { RolePicker, type RolePickerValue } from "@/components/interview/role-picker";
 import { Waveform } from "@/components/interview/waveform";
@@ -10,7 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import { useCountdown } from "@/hooks/use-countdown";
+import { useLiveCaptions } from "@/hooks/use-live-captions";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
+import { useSilenceNudge } from "@/hooks/use-silence-nudge";
+import { useVoiceActivity } from "@/hooks/use-voice-activity";
 import {
   type PendingAnswerSubmission as PendingSubmission,
   stashPendingSubmission,
@@ -172,6 +176,40 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
     return () => window.speechSynthesis.cancel();
   }, [readyQuestionText]);
 
+  const voiceActivity = useVoiceActivity(recorder.analyser, isRecording);
+  const captions = useLiveCaptions(isRecording);
+
+  const [showSilenceNudge, setShowSilenceNudge] = useState(false);
+  const silenceNudge = useSilenceNudge(voiceActivity.isSpeaking, isRecording, () =>
+    setShowSilenceNudge(true),
+  );
+  // Answering at all — or a fresh recording starting — clears a nudge from the previous pause;
+  // guarded state updates during render (see use-countdown.ts/use-voice-activity.ts for the
+  // same pattern), not effects.
+  const [wasSpeakingForNudge, setWasSpeakingForNudge] = useState(voiceActivity.isSpeaking);
+  if (voiceActivity.isSpeaking !== wasSpeakingForNudge) {
+    setWasSpeakingForNudge(voiceActivity.isSpeaking);
+    if (voiceActivity.isSpeaking) setShowSilenceNudge(false);
+  }
+  const [wasRecordingForNudge, setWasRecordingForNudge] = useState(isRecording);
+  if (isRecording !== wasRecordingForNudge) {
+    setWasRecordingForNudge(isRecording);
+    if (isRecording) setShowSilenceNudge(false);
+  }
+
+  // Speaking the nudge aloud (not just showing it) is what makes this read as the interviewer
+  // checking in, the same way the question itself is read aloud above.
+  useEffect(() => {
+    if (!showSilenceNudge) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    const utterance = new SpeechSynthesisUtterance(
+      "Take your time. Would you like me to repeat the question?",
+    );
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }, [showSilenceNudge]);
+
   const remaining = useCountdown(state.stage === "ready" ? state.timeCapS : 0, isRecording, () =>
     recorder.stop(),
   );
@@ -227,6 +265,14 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
   // stage is "ready" from here
   const { question } = state;
 
+  function handleRepeatQuestion() {
+    setShowSilenceNudge(false);
+    silenceNudge.reset();
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(question.text));
+  }
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-16">
       <Card className="flex w-full max-w-xl flex-col items-center gap-8 text-center">
@@ -242,6 +288,7 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
         {isRecording ? (
           <>
             <Waveform analyser={recorder.analyser} />
+            <LiveCaption isSupported={captions.isSupported} transcript={captions.transcript} />
             <span className="font-mono-metric text-2xl tabular-nums">
               <span className={getTimerTone(remaining)}>{formatTime(remaining)}</span>
             </span>
@@ -254,6 +301,26 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
                     ? "Time's up."
                     : ""}
             </span>
+
+            {showSilenceNudge ? (
+              <div
+                role="status"
+                className="bg-amber/15 flex flex-col items-center gap-3 rounded-[var(--radius-tile)] px-4 py-3"
+              >
+                <p className="text-amber text-sm">
+                  Still there? Let me know if you missed the question.
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="secondary" onClick={handleRepeatQuestion}>
+                    Repeat the question
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowSilenceNudge(false)}>
+                    I&apos;m still thinking
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             <Button variant="secondary" onClick={() => recorder.stop()}>
               Stop recording
             </Button>
