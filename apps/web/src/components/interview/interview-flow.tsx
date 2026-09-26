@@ -11,15 +11,13 @@ import { Card } from "@/components/ui/card";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import { useCountdown } from "@/hooks/use-countdown";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
+import {
+  type PendingAnswerSubmission as PendingSubmission,
+  stashPendingSubmission,
+  takePendingSubmission,
+} from "@/lib/interview/pending-submission";
 import type { AnswerReport, InterviewSession, Question, Role } from "@/lib/interview/types";
 import { formatTime, getTimerTone } from "@/lib/utils";
-
-interface PendingSubmission {
-  session: InterviewSession;
-  question: Question;
-  timeCapS: number;
-  blob: Blob;
-}
 
 type FlowState =
   | { stage: "setup" }
@@ -48,7 +46,19 @@ async function parseApiError(response: Response): Promise<ParsedApiError> {
 export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
   const router = useRouter();
   const handleSessionExpiry = useSessionExpiry();
-  const [state, setState] = useState<FlowState>({ stage: "setup" });
+  // A session-expiry redirect to /sign-in and back unmounts and remounts this component — the
+  // lazy initializer (not an effect) picks up a submission stashed just before that redirect,
+  // offering it as a retry immediately instead of it silently vanishing.
+  const [state, setState] = useState<FlowState>(() => {
+    const stashed = takePendingSubmission();
+    if (!stashed) return { stage: "setup" };
+    return {
+      stage: "error",
+      message:
+        "Your session expired before your recording finished uploading. Your recording is saved — retry the upload below.",
+      retry: stashed,
+    };
+  });
 
   async function handleRoleSubmit(value: RolePickerValue) {
     setState({ stage: "starting" });
@@ -103,7 +113,13 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
       formData.set("audio", blob, "answer.webm");
 
       const response = await fetch("/api/interview/answers", { method: "POST", body: formData });
-      if (await handleSessionExpiry(response)) return;
+      if (await handleSessionExpiry(response)) {
+        // handleSessionExpiry is about to redirect to /sign-in, which unmounts this component
+        // — stash the recording so the lazy initializer above can offer it as a retry once the
+        // user is back, instead of it being silently discarded.
+        stashPendingSubmission(submission);
+        return;
+      }
       if (!response.ok) {
         const { message, code } = await parseApiError(response);
         // A rate limit (daily cap or burst) won't clear by immediately retrying the same
