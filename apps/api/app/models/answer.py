@@ -25,6 +25,7 @@ class Answer(Base):
     __table_args__ = (
         CheckConstraint("clarity BETWEEN 0 AND 10", name="ck_answers_clarity"),
         Index("ix_answers_user_id_created_at", "user_id", "created_at"),
+        Index("ux_answers_user_id_idempotency_key", "user_id", "idempotency_key", unique=True),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -51,4 +52,5 @@ class Answer(Base):
     on_topic: Mapped[bool | None] = mapped_column(Boolean)
     feedback: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     sample_answer: Mapped[str | None] = mapped_column(Text)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)

@@ -74,7 +74,11 @@ def _post_answer(
     time_cap_s: int = 120,
     content_type: str = "audio/webm",
     audio_bytes: bytes = b"fake-webm-bytes",
+    idempotency_key: str | None = None,
 ) -> Any:
+    headers = _auth_headers(user)
+    if idempotency_key is not None:
+        headers["Idempotency-Key"] = idempotency_key
     return client.post(
         "/v1/answers",
         data={
@@ -83,7 +87,7 @@ def _post_answer(
             "time_cap_s": str(time_cap_s),
         },
         files={"audio": ("answer.webm", audio_bytes, content_type)},
-        headers=_auth_headers(user),
+        headers=headers,
     )
 
 
@@ -125,6 +129,79 @@ async def test_create_answer_happy_path(
     ]
     assert body["filler_count"] == 0
     assert body["wpm"] > 0
+
+
+async def test_create_answer_is_idempotent_on_a_repeated_key(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_count = 0
+
+    async def counting_transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
+        nonlocal call_count
+        call_count += 1
+        return _fake_transcription()
+
+    monkeypatch.setattr(stt, "transcribe", counting_transcribe)
+
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    first = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        idempotency_key="retry-key-1",
+    )
+    second = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        idempotency_key="retry-key-1",
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] == second.json()["id"]
+    # The retry must not have reprocessed the audio through Groq again.
+    assert call_count == 1
+
+    all_answers = await repo.list_answers_for_user(db_session, user_id=user["user"]["id"])
+    assert len(all_answers) == 1
+
+
+async def test_create_answer_treats_a_different_key_as_a_new_answer(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    first = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        idempotency_key="key-a",
+    )
+    second = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        idempotency_key="key-b",
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
 
 
 async def test_create_answer_computes_fillers_from_the_transcript(

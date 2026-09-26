@@ -198,6 +198,25 @@ async def create_answer(db: AsyncSession, *, answer: Answer) -> Answer:
     return answer
 
 
+async def get_answer_by_idempotency_key(
+    db: AsyncSession, *, user_id: str, idempotency_key: str, within_seconds: int
+) -> Answer | None:
+    """Backs POST /answers' idempotency support: a retry submitted with the same key (e.g.
+    after a network drop hid a successful response from the client) returns the original
+    answer instead of reprocessing — no duplicate Groq calls, no duplicate row against the
+    daily cap. Scoped by user_id like every other lookup here, and to a trailing window so a
+    key can't be replayed indefinitely."""
+    window_start = utcnow() - timedelta(seconds=within_seconds)
+    result = await db.execute(
+        select(Answer).where(
+            Answer.user_id == user_id,
+            Answer.idempotency_key == idempotency_key,
+            Answer.created_at >= window_start,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_answer_for_user(db: AsyncSession, *, answer_id: str, user_id: str) -> Answer | None:
     result = await db.execute(
         select(Answer).where(Answer.id == answer_id, Answer.user_id == user_id)

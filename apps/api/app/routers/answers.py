@@ -1,6 +1,7 @@
 from typing import Annotated, Protocol
 
-from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, Request, Response, UploadFile, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -20,6 +21,7 @@ MAX_AUDIO_BYTES = 4 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 256 * 1024
 ALLOWED_AUDIO_CONTENT_TYPES = {"audio/webm", "audio/ogg"}
 DURATION_CAP_GRACE_S = 10
+IDEMPOTENCY_KEY_TTL_S = 24 * 60 * 60
 
 
 class _ReadableUpload(Protocol):
@@ -61,7 +63,21 @@ async def create_answer(
     audio: Annotated[UploadFile, File()],
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> AnswerReport:
+    # A retry with the same key returns the original result instead of reprocessing — before
+    # the rate limit/daily cap below, since a retry (e.g. after a network drop hid a successful
+    # response from the client) shouldn't cost the user any of their budget.
+    if idempotency_key:
+        existing = await repo.get_answer_by_idempotency_key(
+            db,
+            user_id=user.id,
+            idempotency_key=idempotency_key,
+            within_seconds=IDEMPOTENCY_KEY_TTL_S,
+        )
+        if existing is not None:
+            return feedback_service.to_answer_report(existing)
+
     # Separate from (and tighter than) the 30/day business-rule cap below: each call costs real
     # Groq usage, so a short burst still needs its own limit even for a user nowhere near the
     # daily cap. Keyed by user, not IP — the meaningful unit of abuse here is per-account.
@@ -137,7 +153,24 @@ async def create_answer(
         transcription=transcription,
         feedback=llm_feedback,
     )
-    saved = await repo.create_answer(db, answer=answer)
+    answer.idempotency_key = idempotency_key
+    try:
+        saved = await repo.create_answer(db, answer=answer)
+    except IntegrityError:
+        # Lost a race against another request with the same key (the check above isn't atomic
+        # with this insert) — the unique constraint on (user_id, idempotency_key) caught it
+        # instead. The winner's row is what should have been returned anyway.
+        await db.rollback()
+        if idempotency_key:
+            existing = await repo.get_answer_by_idempotency_key(
+                db,
+                user_id=user.id,
+                idempotency_key=idempotency_key,
+                within_seconds=IDEMPOTENCY_KEY_TTL_S,
+            )
+            if existing is not None:
+                return feedback_service.to_answer_report(existing)
+        raise
     return feedback_service.to_answer_report(saved)
 
 
