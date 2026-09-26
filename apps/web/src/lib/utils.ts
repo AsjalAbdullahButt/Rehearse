@@ -18,3 +18,13 @@ export function getTimerTone(remainingSeconds: number): "text-coral" | "text-amb
   if (remainingSeconds <= 30) return "text-amber";
   return "text-text";
 }
+
+/** Only accepts an in-app relative path — must start with a single `/`, not `//` (a
+ * protocol-relative URL) or contain a `:` (a scheme, e.g. `javascript:` or `https:`) — so a
+ * `?next=` query param from a redirect link can't send a signed-in user to an external site.
+ * Anything else falls back to `fallback`. */
+export function sanitizeNextPath(next: string | null, fallback: string): string {
+  if (!next) return fallback;
+  if (!next.startsWith("/") || next.startsWith("//") || next.includes(":")) return fallback;
+  return next;
+}

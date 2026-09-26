@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cn, formatTime, getTimerTone } from "./utils";
+import { cn, formatTime, getTimerTone, sanitizeNextPath } from "./utils";
 
 describe("cn", () => {
   it("merges class names", () => {
@@ -53,5 +53,27 @@ describe("getTimerTone", () => {
 
   it("is coral at 0s remaining", () => {
     expect(getTimerTone(0)).toBe("text-coral");
+  });
+});
+
+describe("sanitizeNextPath", () => {
+  it("accepts a legitimate in-app relative path", () => {
+    expect(sanitizeNextPath("/progress", "/interview")).toBe("/progress");
+  });
+
+  it("falls back for an absolute external URL", () => {
+    expect(sanitizeNextPath("https://evil.example", "/interview")).toBe("/interview");
+  });
+
+  it("falls back for a protocol-relative URL", () => {
+    expect(sanitizeNextPath("//evil.example", "/interview")).toBe("/interview");
+  });
+
+  it("falls back for a value containing a scheme", () => {
+    expect(sanitizeNextPath("/redirect?to=javascript:alert(1)", "/interview")).toBe("/interview");
+  });
+
+  it("falls back when next is missing", () => {
+    expect(sanitizeNextPath(null, "/interview")).toBe("/interview");
   });
 });

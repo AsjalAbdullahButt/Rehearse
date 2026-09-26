@@ -5,6 +5,7 @@ import { type FormEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { sanitizeNextPath } from "@/lib/utils";
 
 type Mode = "login" | "register";
 
@@ -15,7 +16,7 @@ interface AuthErrorBody {
 export function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/interview";
+  const next = sanitizeNextPath(searchParams.get("next"), "/interview");
 
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
