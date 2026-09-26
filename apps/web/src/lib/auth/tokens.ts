@@ -25,3 +25,17 @@ export function decodeJwtPayload(token: string): JwtPayload | null {
     return null;
   }
 }
+
+const EXPIRY_SKEW_S = 10;
+
+/**
+ * Shared expiry check used by both the middleware's best-effort gate (proxy.ts) and the
+ * session-refresh helper (lib/auth/session.ts), so the two never disagree about what counts as
+ * "still valid" — a token that middleware treated as valid but session.ts treated as expired
+ * (or vice versa) is exactly the gap that let a Server Component try to refresh mid-render.
+ */
+export function isTokenExpired(token: string, skewSeconds = EXPIRY_SKEW_S): boolean {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return true;
+  return payload.exp * 1000 <= Date.now() + skewSeconds * 1000;
+}

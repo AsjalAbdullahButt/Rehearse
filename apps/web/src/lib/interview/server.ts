@@ -3,11 +3,11 @@
 // cookie's bearer token themselves).
 
 import { apiFetch, type UserPublic } from "@/lib/auth/api";
-import { getValidAccessToken } from "@/lib/auth/session";
+import { peekAccessToken } from "@/lib/auth/session";
 import type { AnswerReport, ProgressOut, Profile } from "@/lib/interview/types";
 
 async function fetchFromApi<T>(path: string): Promise<T | null> {
-  const accessToken = await getValidAccessToken();
+  const accessToken = await peekAccessToken();
   if (!accessToken) return null;
 
   const response = await apiFetch(path, {
