@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.limits import MAX_AUDIO_BYTES
 from app.core.rate_limit import enforce_rate_limit, user_or_ip_key
 from app.db import get_db
 from app.models.profile import ANSWER_CAP_CHOICES
@@ -17,7 +18,6 @@ from app.services import llm, repo, stt
 
 router = APIRouter()
 
-MAX_AUDIO_BYTES = 4 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 256 * 1024
 ALLOWED_AUDIO_CONTENT_TYPES = {"audio/webm", "audio/ogg"}
 DURATION_CAP_GRACE_S = 10
