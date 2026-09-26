@@ -99,4 +99,31 @@ describe("getValidAccessToken (Route Handler refresh path)", () => {
     await expect(getValidAccessToken()).resolves.toBe(newAccess);
     expect(cookieStore.set).toHaveBeenCalledWith(ACCESS_TOKEN_COOKIE, newAccess, expect.anything());
   });
+
+  it("de-dupes concurrent refreshes against the same rotating refresh token into a single call", async () => {
+    const newAccess = makeJwt(900);
+    const newRefresh = makeJwt(30 * 24 * 60 * 60, "refresh");
+    vi.mocked(apiFetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          access_token: newAccess,
+          refresh_token: newRefresh,
+          token_type: "bearer",
+          user: { id: "user-1", email: "a@b.com" },
+        }),
+        { status: 200 },
+      ),
+    );
+    cookieStore.get.mockImplementation((name) => {
+      if (name === ACCESS_TOKEN_COOKIE) return { value: makeJwt(-60) };
+      if (name === REFRESH_TOKEN_COOKIE) return { value: makeJwt(1000, "refresh") };
+      return undefined;
+    });
+
+    const [first, second] = await Promise.all([getValidAccessToken(), getValidAccessToken()]);
+
+    expect(first).toBe(newAccess);
+    expect(second).toBe(newAccess);
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+  });
 });
