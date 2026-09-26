@@ -5,6 +5,17 @@ export interface PendingAnswerSubmission {
   question: Question;
   timeCapS: number;
   blob: Blob;
+  /** Generated once per recording (see `createIdempotencyKey`) and reused for every retry of
+   * that same recording, so a lost-response retry replays the original request instead of the
+   * API processing (and billing Groq for) the same answer twice. A re-record gets a new one. */
+  idempotencyKey: string;
+}
+
+/** One per recording, not per request — call this exactly once when a recording is finalized
+ * (see `handleStopped` in `InterviewFlow`) and carry the result on every retry of that same
+ * blob. */
+export function createIdempotencyKey(): string {
+  return crypto.randomUUID();
 }
 
 // Module-level, not React state: a session-expiry redirect to /sign-in and back unmounts and

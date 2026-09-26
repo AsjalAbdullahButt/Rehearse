@@ -237,6 +237,47 @@ async def test_create_answer_treats_a_different_key_as_a_new_answer(
     assert first.json()["id"] != second.json()["id"]
 
 
+async def test_create_answer_rejects_an_oversized_idempotency_key(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        idempotency_key="x" * 129,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_idempotency_key"
+
+
+async def test_create_answer_accepts_a_key_exactly_at_the_length_limit(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        idempotency_key="x" * 128,
+    )
+
+    assert response.status_code == 201
+
+
 async def test_create_answer_computes_fillers_from_the_transcript(
     client: TestClient,
     db_session: AsyncSession,

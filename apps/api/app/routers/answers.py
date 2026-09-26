@@ -22,6 +22,7 @@ UPLOAD_CHUNK_BYTES = 256 * 1024
 ALLOWED_AUDIO_CONTENT_TYPES = {"audio/webm", "audio/ogg"}
 DURATION_CAP_GRACE_S = 10
 IDEMPOTENCY_KEY_TTL_S = 24 * 60 * 60
+MAX_IDEMPOTENCY_KEY_LENGTH = 128
 
 # Magic bytes for the two containers ALLOWED_AUDIO_CONTENT_TYPES claims to accept. WebM is
 # Matroska/EBML-based, so any WebM file starts with the EBML header; Ogg files start with the
@@ -77,6 +78,15 @@ async def create_answer(
     db: AsyncSession = Depends(get_db),
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> AnswerReport:
+    if idempotency_key is not None and (
+        len(idempotency_key) == 0 or len(idempotency_key) > MAX_IDEMPOTENCY_KEY_LENGTH
+    ):
+        raise ApiError(
+            "invalid_idempotency_key",
+            f"Idempotency-Key must be 1-{MAX_IDEMPOTENCY_KEY_LENGTH} characters.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
     # A retry with the same key returns the original result instead of reprocessing — before
     # the rate limit/daily cap below, since a retry (e.g. after a network drop hid a successful
     # response from the client) shouldn't cost the user any of their budget.

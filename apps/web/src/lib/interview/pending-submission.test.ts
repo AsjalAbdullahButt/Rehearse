@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  createIdempotencyKey,
   stashPendingSubmission,
   takePendingSubmission,
   type PendingAnswerSubmission,
@@ -16,8 +17,15 @@ function fakeSubmission(): PendingAnswerSubmission {
     question: { id: "q1", text: "Tell me about a time..." } as PendingAnswerSubmission["question"],
     timeCapS: 120,
     blob: new Blob(["fake-audio"], { type: "audio/webm" }),
+    idempotencyKey: createIdempotencyKey(),
   };
 }
+
+describe("createIdempotencyKey", () => {
+  it("generates a different key on every call", () => {
+    expect(createIdempotencyKey()).not.toBe(createIdempotencyKey());
+  });
+});
 
 describe("pending-submission stash", () => {
   beforeEach(() => {

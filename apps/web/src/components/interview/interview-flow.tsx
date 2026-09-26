@@ -16,6 +16,7 @@ import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import { useSilenceNudge } from "@/hooks/use-silence-nudge";
 import { useVoiceActivity } from "@/hooks/use-voice-activity";
 import {
+  createIdempotencyKey,
   type PendingAnswerSubmission as PendingSubmission,
   stashPendingSubmission,
   takePendingSubmission,
@@ -116,7 +117,11 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
       formData.set("time_cap_s", String(timeCapS));
       formData.set("audio", blob, "answer.webm");
 
-      const response = await fetch("/api/interview/answers", { method: "POST", body: formData });
+      const response = await fetch("/api/interview/answers", {
+        method: "POST",
+        headers: { "Idempotency-Key": submission.idempotencyKey },
+        body: formData,
+      });
       if (await handleSessionExpiry(response)) {
         // handleSessionExpiry is about to redirect to /sign-in, which unmounts this component
         // — stash the recording so the lazy initializer above can offer it as a retry once the
@@ -150,7 +155,13 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
   async function handleStopped(blob: Blob) {
     if (state.stage !== "ready") return;
     const { session, question, timeCapS } = state;
-    await submitAnswer({ session, question, timeCapS, blob });
+    await submitAnswer({
+      session,
+      question,
+      timeCapS,
+      blob,
+      idempotencyKey: createIdempotencyKey(),
+    });
   }
 
   const recorder = useAudioRecorder(handleStopped);
