@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Self
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,22 @@ class Settings(BaseSettings):
     @property
     def allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+
+    @model_validator(mode="after")
+    def _reject_wildcard_origin_with_credentials(self) -> Self:
+        # main.py's CORSMiddleware always sets allow_credentials=True. A wildcard origin
+        # alongside credentials is invalid per the CORS spec — browsers reject it outright — so
+        # Starlette's CORSMiddleware fails cryptically at request time (it still runs, but every
+        # credentialed cross-origin request just breaks). Catching this at startup, with an
+        # actionable message, beats debugging a silently-broken CORS response later.
+        if "*" in self.allowed_origins_list:
+            raise ValueError(
+                "ALLOWED_ORIGINS cannot include '*': this API always sends "
+                "Access-Control-Allow-Credentials: true, and browsers reject a wildcard "
+                "Access-Control-Allow-Origin combined with credentials. List explicit origins "
+                "instead, e.g. ALLOWED_ORIGINS=https://example.com,http://localhost:3000."
+            )
+        return self
 
 
 @lru_cache
