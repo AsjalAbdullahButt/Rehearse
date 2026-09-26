@@ -19,6 +19,37 @@ export async function peekAccessToken(): Promise<string | null> {
   return accessToken;
 }
 
+// Module-scoped, keyed by the refresh token being redeemed: concurrent callers racing the same
+// rotating refresh token would otherwise each fire their own /v1/auth/refresh, and only one of
+// those calls can win against a token that gets invalidated on rotation — the rest would fail
+// and log a valid session out. Every concurrent caller instead awaits the same in-flight
+// request and applies its result to their own cookie store.
+let inFlightRefresh: { refreshToken: string; promise: Promise<TokenResponse | null> } | null = null;
+
+async function refreshTokens(refreshToken: string): Promise<TokenResponse | null> {
+  if (inFlightRefresh && inFlightRefresh.refreshToken === refreshToken) {
+    return inFlightRefresh.promise;
+  }
+
+  const promise = (async () => {
+    const response = await apiFetch("/v1/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as TokenResponse;
+  })();
+
+  inFlightRefresh = { refreshToken, promise };
+  try {
+    return await promise;
+  } finally {
+    if (inFlightRefresh?.promise === promise) {
+      inFlightRefresh = null;
+    }
+  }
+}
+
 /**
  * Returns a valid access token for the current request, refreshing it first if the cookie is
  * missing or looks expired. Returns null when there's no session to refresh (never throws) —
@@ -38,18 +69,13 @@ export async function getValidAccessToken(): Promise<string | null> {
   const refreshToken = cookieStore.get(REFRESH_TOKEN_COOKIE)?.value;
   if (!refreshToken) return null;
 
-  const response = await apiFetch("/v1/auth/refresh", {
-    method: "POST",
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
-
-  if (!response.ok) {
+  const tokens = await refreshTokens(refreshToken);
+  if (!tokens) {
     cookieStore.delete(ACCESS_TOKEN_COOKIE);
     cookieStore.delete(REFRESH_TOKEN_COOKIE);
     return null;
   }
 
-  const tokens = (await response.json()) as TokenResponse;
   for (const cookie of buildSessionCookies(tokens)) {
     cookieStore.set(cookie.name, cookie.value, cookie.options);
   }
