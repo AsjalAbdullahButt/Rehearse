@@ -80,7 +80,7 @@ def _post_answer(
     user: dict[str, Any],
     time_cap_s: int = 120,
     content_type: str = "audio/webm",
-    audio_bytes: bytes = b"fake-webm-bytes",
+    audio_bytes: bytes = b"\x1a\x45\xdf\xa3fake-webm-bytes",
     idempotency_key: str | None = None,
 ) -> Any:
     headers = _auth_headers(user)
@@ -370,6 +370,51 @@ async def test_create_answer_rejects_a_time_cap_outside_the_allowed_choices(
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_time_cap"
+
+
+async def test_create_answer_rejects_a_payload_that_isnt_really_audio(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    """A spoofed Content-Type header alone shouldn't be enough — the actual bytes are sniffed
+    for a real WebM/Ogg signature before anything gets sent to Groq."""
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        content_type="audio/webm",
+        audio_bytes=b"this is not actually a webm file",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_audio_content"
+
+
+async def test_create_answer_accepts_a_real_ogg_signature(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        question_id=question_id,
+        user=user,
+        content_type="audio/ogg",
+        audio_bytes=b"OggSfake-ogg-bytes",
+    )
+
+    assert response.status_code == 201
 
 
 async def test_create_answer_rejects_uploads_over_4mb(

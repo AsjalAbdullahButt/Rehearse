@@ -23,6 +23,18 @@ ALLOWED_AUDIO_CONTENT_TYPES = {"audio/webm", "audio/ogg"}
 DURATION_CAP_GRACE_S = 10
 IDEMPOTENCY_KEY_TTL_S = 24 * 60 * 60
 
+# Magic bytes for the two containers ALLOWED_AUDIO_CONTENT_TYPES claims to accept. WebM is
+# Matroska/EBML-based, so any WebM file starts with the EBML header; Ogg files start with the
+# ASCII capture pattern "OggS". A client-supplied Content-Type header is just a string the
+# client chose to send — the check against ALLOWED_AUDIO_CONTENT_TYPES above is a cheap,
+# spoofable pre-filter, not real validation of what's actually in the file.
+_WEBM_MAGIC = b"\x1a\x45\xdf\xa3"
+_OGG_MAGIC = b"OggS"
+
+
+def _looks_like_audio(header: bytes) -> bool:
+    return header.startswith(_WEBM_MAGIC) or header.startswith(_OGG_MAGIC)
+
 
 class _ReadableUpload(Protocol):
     """Structural type for what `_read_capped` actually needs — just chunked `.read()` — so a
@@ -129,6 +141,13 @@ async def create_answer(
         )
 
     audio_bytes = await _read_capped(audio, MAX_AUDIO_BYTES)
+
+    if not _looks_like_audio(audio_bytes[: len(_WEBM_MAGIC)]):
+        raise ApiError(
+            "invalid_audio_content",
+            "The uploaded file doesn't look like a webm or ogg audio recording.",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
 
     # Transcribed in memory and never written to disk or persisted — only the resulting text
     # (and what's derived from it) gets stored.
