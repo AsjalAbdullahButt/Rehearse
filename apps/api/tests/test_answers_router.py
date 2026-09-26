@@ -12,7 +12,7 @@ from app.models.question import Question
 from app.routers.answers import MAX_AUDIO_BYTES, UPLOAD_CHUNK_BYTES, _read_capped
 from app.schemas.feedback import LLMFeedback, StarScores
 from app.schemas.transcription import TranscriptionResult, WordTiming
-from app.services import llm, stt
+from app.services import llm, repo, stt
 
 
 def _auth_headers(user: dict[str, Any]) -> dict[str, str]:
@@ -315,6 +315,42 @@ async def test_create_answer_rejects_silent_recordings(
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "empty_transcript"
+
+
+async def test_count_answers_today_locks_rows_it_reads(
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+    client: TestClient,
+) -> None:
+    """count_answers_today's fix for the daily-cap TOCTOU race is a `SELECT ... FOR UPDATE` —
+    correct on MySQL/InnoDB (production's dialect), which takes next-key locks on the read range
+    that block a concurrent transaction's INSERT into it too. SQLite (this whole suite's
+    dialect) has no row/range locking and compiles FOR UPDATE away entirely, so a literal
+    two-concurrent-requests race can't distinguish "fixed" from "not fixed" here without a live
+    MySQL instance (unavailable in this sandbox — see AGENTS.md's other MySQL-only gaps).
+
+    This instead captures the exact SQL count_answers_today executes against the real session
+    and confirms that, compiled for MySQL, it carries FOR UPDATE — pinning that the fix is
+    actually wired in, even though its locking effect can't be observed against SQLite."""
+    from sqlalchemy.dialects import mysql
+
+    user = register_user()
+    captured: list[object] = []
+    real_execute = db_session.execute
+
+    async def spy_execute(statement: object, *args: object, **kwargs: object) -> object:
+        captured.append(statement)
+        return await real_execute(statement, *args, **kwargs)  # type: ignore[arg-type]
+
+    db_session.execute = spy_execute  # type: ignore[method-assign]
+    try:
+        await repo.count_answers_today(db_session, user_id=user["user"]["id"])
+    finally:
+        db_session.execute = real_execute  # type: ignore[method-assign]
+
+    assert len(captured) == 1
+    compiled = str(captured[0].compile(dialect=mysql.dialect()))  # type: ignore[attr-defined]
+    assert "FOR UPDATE" in compiled
 
 
 async def test_create_answer_enforces_the_daily_rate_limit(

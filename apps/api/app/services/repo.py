@@ -214,12 +214,25 @@ async def list_answers_for_user(db: AsyncSession, *, user_id: str) -> list[Answe
 
 async def count_answers_today(db: AsyncSession, *, user_id: str) -> int:
     """Backs the 30-answers/user/day rate limit. Counted from the `answers` table directly
-    rather than a separate counter, so there's nothing to keep in sync or reset."""
+    rather than a separate counter, so there's nothing to keep in sync or reset. A locking read
+    (SELECT ... FOR UPDATE) closes the TOCTOU gap where two concurrent requests both read
+    count=29, both pass the `< 30` check, and both insert: on MySQL/InnoDB (the real production
+    dialect, default REPEATABLE READ), a range-predicate locking read like this takes next-key
+    (gap) locks that block a concurrent transaction's INSERT into the same range too, not just
+    reads of existing rows — so the second caller's own count read blocks until the first
+    commits, and then sees the true, up-to-date count rather than a stale one. The caller must
+    keep this call and the eventual INSERT in the same transaction (no commit in between) for
+    the lock to still be held.
+
+    SQLite (used in tests) has no row/range locking and compiles FOR UPDATE away entirely, so
+    this can't be exercised as a true concurrency test without a real MySQL instance — the
+    existing sequential daily-cap test still covers the counting logic itself."""
     start_of_day = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(func.count())
         .select_from(Answer)
         .where(Answer.user_id == user_id, Answer.created_at >= start_of_day)
+        .with_for_update()
     )
     return result.scalar_one()
 
