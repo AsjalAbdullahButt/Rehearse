@@ -52,11 +52,15 @@ venv = ".venv"
 
 # Third-party test-client stubs (httpx/starlette) aren't fully strict-typed;
 # relax unknown-type reporting for tests only. App/API code stays fully strict.
+# reportPrivateUsage is also relaxed here: unit-testing a module's own underscore-prefixed
+# helper directly (e.g. _read_capped) is normal and expected, unlike reaching into an
+# unrelated module's internals from application code, which strict mode should still catch.
 [[tool.pyright.executionEnvironments]]
 root = "tests"
 reportUnknownMemberType = false
 reportUnknownVariableType = false
 reportUnknownArgumentType = false
+reportPrivateUsage = false
 
 [[tool.pyright.executionEnvironments]]
 root = "."
