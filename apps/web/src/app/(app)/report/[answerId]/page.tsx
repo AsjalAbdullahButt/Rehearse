@@ -3,6 +3,7 @@ import { ScoreRing } from "@/components/report/score-ring";
 import { StarBars } from "@/components/report/star-bars";
 import { Card } from "@/components/ui/card";
 import { Stat } from "@/components/ui/stat";
+import { hasCompleteFeedback } from "@/lib/interview/feedback";
 import { fetchAnswerReport } from "@/lib/interview/server";
 import { toTranscriptParts } from "@/lib/interview/transcript";
 
@@ -24,6 +25,20 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
   }
 
   const { feedback } = report;
+  if (!hasCompleteFeedback(feedback)) {
+    return (
+      <div className="flex flex-1 items-center justify-center px-6 py-16">
+        <Card className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <h1 className="font-display text-text text-xl font-bold">Feedback unavailable</h1>
+          <p className="text-muted text-sm">
+            This report&apos;s feedback is still processing or couldn&apos;t be loaded. Check back
+            in a moment.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
   const starScores = {
     s: feedback.star.situation,
     t: feedback.star.task,
