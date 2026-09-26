@@ -38,6 +38,11 @@ describe("proxy middleware", () => {
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
+  it("forwards the current pathname as a header, for Server Components that can't read it themselves", async () => {
+    const response = await proxy(requestFor("/progress", { [ACCESS_TOKEN_COOKIE]: makeJwt(600) }));
+    expect(response.headers.get("x-middleware-request-x-pathname")).toBe("/progress");
+  });
+
   it("redirects to sign-in, preserving the target path, when there is no session at all", async () => {
     const response = await proxy(requestFor("/progress"));
     expect(response.headers.get("location")).toContain("/sign-in");
@@ -69,6 +74,7 @@ describe("proxy middleware", () => {
     expect(response.headers.get("location")).toBeNull();
     expect(response.cookies.get(ACCESS_TOKEN_COOKIE)?.value).toBe(newAccess);
     expect(response.cookies.get(REFRESH_TOKEN_COOKIE)?.value).toBe(newRefresh);
+    expect(response.headers.get("x-middleware-request-x-pathname")).toBe("/report/abc");
   });
 
   it("redirects to sign-in when the refresh token is invalid or the refresh call fails", async () => {

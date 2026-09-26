@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
@@ -14,7 +15,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // best-effort gate (or an expired-but-refreshable session) still lands somewhere correct.
   const user = await fetchCurrentUser();
   if (!user) {
-    redirect("/sign-in");
+    // proxy.ts forwards the request's own pathname as a header (there's no other way to read
+    // it from a Server Component) so this redirect can carry the same `?next=` a
+    // middleware-issued redirect would have used, instead of a bare /sign-in that strands the
+    // user on /interview after signing in.
+    const pathname = (await headers()).get("x-pathname");
+    redirect(pathname ? `/sign-in?next=${encodeURIComponent(pathname)}` : "/sign-in");
   }
 
   return (

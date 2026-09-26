@@ -13,6 +13,17 @@ function redirectToSignIn(request: NextRequest): NextResponse {
   return NextResponse.redirect(redirectUrl);
 }
 
+// There's no built-in way for a Server Component to read the current request's pathname —
+// carrying it forward as a header is the standard workaround. (app)/layout.tsx's own
+// belt-and-suspenders redirect (see its comment) reads this to build the same `?next=` a
+// middleware-issued redirect above would have used, instead of sending the user back to a
+// bare /sign-in with nowhere to return to.
+function forwardedHeaders(request: NextRequest): Headers {
+  const headers = new Headers(request.headers);
+  headers.set("x-pathname", request.nextUrl.pathname);
+  return headers;
+}
+
 // A best-effort gate, not the security boundary: it never verifies the access token's
 // signature (Edge middleware has no reason to hold the JWT secret), so it can't be spoofed into
 // granting real access — every API call still goes through get_current_user, which does verify.
@@ -27,7 +38,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   const accessToken = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
   if (accessToken && !isTokenExpired(accessToken)) {
-    return NextResponse.next();
+    return NextResponse.next({ request: { headers: forwardedHeaders(request) } });
   }
 
   const refreshToken = request.cookies.get(REFRESH_TOKEN_COOKIE)?.value;
@@ -48,7 +59,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   for (const cookie of buildSessionCookies(tokens)) {
     request.cookies.set(cookie.name, cookie.value);
   }
-  const response = NextResponse.next({ request });
+  const response = NextResponse.next({ request: { headers: forwardedHeaders(request) } });
   for (const cookie of buildSessionCookies(tokens)) {
     response.cookies.set(cookie.name, cookie.value, cookie.options);
   }
