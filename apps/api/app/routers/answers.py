@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Protocol
 
 from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,8 +16,38 @@ from app.services import llm, repo, stt
 router = APIRouter()
 
 MAX_AUDIO_BYTES = 4 * 1024 * 1024
+UPLOAD_CHUNK_BYTES = 256 * 1024
 ALLOWED_AUDIO_CONTENT_TYPES = {"audio/webm", "audio/ogg"}
 DURATION_CAP_GRACE_S = 10
+
+
+class _ReadableUpload(Protocol):
+    """Structural type for what `_read_capped` actually needs — just chunked `.read()` — so a
+    lightweight test double doesn't have to satisfy `UploadFile`'s full concrete interface
+    (which needs a real `SpooledTemporaryFile`) to stand in for one here."""
+
+    async def read(self, size: int = -1) -> bytes: ...
+
+
+async def _read_capped(audio: _ReadableUpload, max_bytes: int) -> bytes:
+    """Reads `audio` in fixed-size chunks, aborting as soon as the cumulative size exceeds
+    `max_bytes` — so a payload far over the cap is never fully materialized into a single
+    `bytes` object by this function, unlike a single unbounded `.read()` followed by a length
+    check. (Starlette's own multipart parser has already spooled the raw body before this
+    function runs; this bounds *this function's* memory use, not the framework's.)"""
+    chunks = bytearray()
+    while True:
+        chunk = await audio.read(UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            break
+        chunks.extend(chunk)
+        if len(chunks) > max_bytes:
+            raise ApiError(
+                "payload_too_large",
+                "Audio file exceeds the 4MB limit.",
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            )
+    return bytes(chunks)
 
 
 @router.post("/answers", response_model=AnswerReport, status_code=status.HTTP_201_CREATED)
@@ -66,13 +96,7 @@ async def create_answer(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
         )
 
-    audio_bytes = await audio.read()
-    if len(audio_bytes) > MAX_AUDIO_BYTES:
-        raise ApiError(
-            "payload_too_large",
-            "Audio file exceeds the 4MB limit.",
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-        )
+    audio_bytes = await _read_capped(audio, MAX_AUDIO_BYTES)
 
     # Transcribed in memory and never written to disk or persisted — only the resulting text
     # (and what's derived from it) gets stored.
