@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cn, formatTime, getTimerTone, sanitizeNextPath } from "./utils";
+import { clampFraction, cn, formatTime, getTimerTone, sanitizeNextPath } from "./utils";
 
 describe("cn", () => {
   it("merges class names", () => {
@@ -53,6 +53,25 @@ describe("getTimerTone", () => {
 
   it("is coral at 0s remaining", () => {
     expect(getTimerTone(0)).toBe("text-coral");
+  });
+});
+
+describe("clampFraction", () => {
+  it("computes a normal in-range fraction", () => {
+    expect(clampFraction(5, 10)).toBe(0.5);
+  });
+
+  it("clamps a score above max to 1", () => {
+    expect(clampFraction(13, 10)).toBe(1);
+  });
+
+  it("clamps a negative score to 0", () => {
+    expect(clampFraction(-2, 10)).toBe(0);
+  });
+
+  it("clamps exactly at the boundaries", () => {
+    expect(clampFraction(0, 10)).toBe(0);
+    expect(clampFraction(10, 10)).toBe(1);
   });
 });
 

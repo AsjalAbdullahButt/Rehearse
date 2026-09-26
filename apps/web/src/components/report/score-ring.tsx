@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "motion/react";
 
 import { brandEase } from "@/lib/motion";
+import { clampFraction } from "@/lib/utils";
 
 export function ScoreRing({
   score,
@@ -20,7 +21,7 @@ export function ScoreRing({
   const reduce = useReducedMotion();
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const fraction = Math.max(0, Math.min(1, score / max));
+  const fraction = clampFraction(score, max);
 
   return (
     <div className="flex flex-col items-center gap-2">
