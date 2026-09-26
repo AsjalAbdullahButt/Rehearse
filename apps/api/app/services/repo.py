@@ -155,7 +155,7 @@ async def get_question_by_id(db: AsyncSession, *, question_id: str) -> Question 
 
 
 async def create_session(
-    db: AsyncSession, *, user_id: str, role: str, difficulty: Difficulty
+    db: AsyncSession, *, user_id: str, role: Role, difficulty: Difficulty
 ) -> InterviewSession:
     session = InterviewSession(user_id=user_id, role=role, difficulty=difficulty)
     db.add(session)

@@ -6,7 +6,7 @@ from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, utcnow
-from app.models.enums import Difficulty
+from app.models.enums import Difficulty, Role
 
 
 class InterviewSession(Base):
@@ -20,7 +20,12 @@ class InterviewSession(Base):
     user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Same length as the existing column (was a plain String(64)) so this is a Python-side
+    # typing change only — no DDL diff, no migration needed. native_enum=False matches
+    # Question.role: a portable VARCHAR + Python-side validation, not a MySQL-native ENUM.
+    role: Mapped[Role] = mapped_column(
+        SAEnum(Role, native_enum=False, length=64, validate_strings=True), nullable=False
+    )
     difficulty: Mapped[Difficulty] = mapped_column(
         SAEnum(Difficulty, native_enum=False, length=16, validate_strings=True), nullable=False
     )

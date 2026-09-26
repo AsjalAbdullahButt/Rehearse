@@ -106,6 +106,13 @@ async def create_answer(
             "question_not_found", "Question not found.", status_code=status.HTTP_404_NOT_FOUND
         )
 
+    if question.role != session.role or question.difficulty != session.difficulty:
+        raise ApiError(
+            "question_session_mismatch",
+            "This question doesn't match the session's role and difficulty.",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
     answers_today = await repo.count_answers_today(db, user_id=user.id)
     if answers_today >= settings.daily_answer_limit:
         raise ApiError(

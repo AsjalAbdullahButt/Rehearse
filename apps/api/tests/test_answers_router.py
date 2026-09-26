@@ -19,10 +19,15 @@ def _auth_headers(user: dict[str, Any]) -> dict[str, str]:
     return {"Authorization": f"Bearer {user['access_token']}"}
 
 
-async def _seed_question(db_session: AsyncSession) -> str:
+async def _seed_question(
+    db_session: AsyncSession,
+    *,
+    role: Role = Role.BACKEND,
+    difficulty: Difficulty = Difficulty.MEDIUM,
+) -> str:
     question = Question(
-        role=Role.BACKEND,
-        difficulty=Difficulty.MEDIUM,
+        role=role,
+        difficulty=difficulty,
         category=Category.TECHNICAL,
         text="How would you design a rate limiter?",
     )
@@ -32,10 +37,12 @@ async def _seed_question(db_session: AsyncSession) -> str:
     return question.id
 
 
-def _create_session(client: TestClient, user: dict[str, Any]) -> str:
+def _create_session(
+    client: TestClient, user: dict[str, Any], *, role: str = "backend", difficulty: str = "medium"
+) -> str:
     response = client.post(
         "/v1/sessions",
-        json={"role": "backend", "difficulty": "medium"},
+        json={"role": role, "difficulty": difficulty},
         headers=_auth_headers(user),
     )
     assert response.status_code == 201
@@ -264,6 +271,42 @@ async def test_create_answer_rejects_unknown_question(
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "question_not_found"
+
+
+async def test_create_answer_rejects_a_question_from_a_different_role(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    session_id = _create_session(client, user, role="backend", difficulty="medium")
+    frontend_question_id = await _seed_question(
+        db_session, role=Role.FRONTEND, difficulty=Difficulty.MEDIUM
+    )
+
+    response = _post_answer(
+        client, session_id=session_id, question_id=frontend_question_id, user=user
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "question_session_mismatch"
+
+
+async def test_create_answer_rejects_a_question_from_a_different_difficulty(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    session_id = _create_session(client, user, role="backend", difficulty="medium")
+    hard_question_id = await _seed_question(
+        db_session, role=Role.BACKEND, difficulty=Difficulty.HARD
+    )
+
+    response = _post_answer(client, session_id=session_id, question_id=hard_question_id, user=user)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "question_session_mismatch"
 
 
 async def test_create_answer_rejects_non_webm_ogg_content_type(

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
 from app.models.base import utcnow
-from app.models.enums import Difficulty
+from app.models.enums import Difficulty, Role
 from app.services import repo
 
 
@@ -24,7 +24,7 @@ async def test_user_cannot_read_another_users_session(db_session: AsyncSession) 
     user_b_id = await _make_user(db_session, "b@example.com")
 
     session = await repo.create_session(
-        db_session, user_id=user_a_id, role="backend", difficulty=Difficulty.MEDIUM
+        db_session, user_id=user_a_id, role=Role.BACKEND, difficulty=Difficulty.MEDIUM
     )
 
     owner_read = await repo.get_session_for_user(
@@ -43,10 +43,10 @@ async def test_list_sessions_only_returns_the_callers_own_rows(db_session: Async
     user_b_id = await _make_user(db_session, "b@example.com")
 
     await repo.create_session(
-        db_session, user_id=user_a_id, role="backend", difficulty=Difficulty.EASY
+        db_session, user_id=user_a_id, role=Role.BACKEND, difficulty=Difficulty.EASY
     )
     await repo.create_session(
-        db_session, user_id=user_b_id, role="frontend", difficulty=Difficulty.EASY
+        db_session, user_id=user_b_id, role=Role.FRONTEND, difficulty=Difficulty.EASY
     )
 
     a_sessions = await repo.list_sessions_for_user(db_session, user_id=user_a_id)
@@ -60,7 +60,7 @@ async def test_user_cannot_read_another_users_answer(db_session: AsyncSession) -
     user_b_id = await _make_user(db_session, "b@example.com")
 
     session = await repo.create_session(
-        db_session, user_id=user_a_id, role="backend", difficulty=Difficulty.EASY
+        db_session, user_id=user_a_id, role=Role.BACKEND, difficulty=Difficulty.EASY
     )
     answer = await repo.create_answer(
         db_session,
@@ -86,10 +86,10 @@ async def test_list_answers_only_returns_the_callers_own_rows(db_session: AsyncS
     user_b_id = await _make_user(db_session, "b@example.com")
 
     session_a = await repo.create_session(
-        db_session, user_id=user_a_id, role="backend", difficulty=Difficulty.EASY
+        db_session, user_id=user_a_id, role=Role.BACKEND, difficulty=Difficulty.EASY
     )
     session_b = await repo.create_session(
-        db_session, user_id=user_b_id, role="frontend", difficulty=Difficulty.EASY
+        db_session, user_id=user_b_id, role=Role.FRONTEND, difficulty=Difficulty.EASY
     )
 
     await repo.create_answer(
