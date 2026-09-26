@@ -14,6 +14,12 @@ export interface AudioRecorder {
   status: RecorderStatus;
   error: RecorderError | null;
   analyser: AnalyserNode | null;
+  /** True from the moment `start()` is called until getUserMedia settles — covers the gap
+   * before `status` has any way to reflect "requesting permission" (it only distinguishes
+   * idle/recording/stopped). Callers should disable their "Start recording" control on this,
+   * not just on `status === "recording"`, so a user can't double-click their way into two
+   * concurrent permission requests. */
+  isStarting: boolean;
   start: () => Promise<void>;
   stop: () => void;
 }
@@ -48,6 +54,7 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [error, setError] = useState<RecorderError | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -57,6 +64,12 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
   useEffect(() => {
     onStoppedRef.current = onStopped;
   });
+
+  // Guards start() against re-entrancy (a second call while getUserMedia() is pending is a
+  // no-op) and lets stop()/unmount "supersede" a still-pending start() — checked synchronously,
+  // unlike the isStarting *state* above, which only exists to drive the UI.
+  const isStartingRef = useRef(false);
+  const startGenerationRef = useRef(0);
 
   const releaseResources = useCallback(() => {
     for (const track of streamRef.current?.getTracks() ?? []) {
@@ -71,12 +84,34 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
     setAnalyser(null);
   }, []);
 
-  useEffect(() => releaseResources, [releaseResources]);
+  useEffect(() => {
+    return () => {
+      // Supersede any start() still awaiting getUserMedia() at unmount time, so its stream
+      // (once the permission prompt resolves) gets stopped immediately below instead of
+      // leaking a live mic that nothing is using anymore.
+      startGenerationRef.current += 1;
+      releaseResources();
+    };
+  }, [releaseResources]);
 
   const start = useCallback(async () => {
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
+    setIsStarting(true);
+    const generation = ++startGenerationRef.current;
     setError(null);
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      if (generation !== startGenerationRef.current) {
+        // Superseded while the permission prompt was pending (stop() or unmount ran in the
+        // meantime) — this stream was never wanted; release it rather than leaving the mic
+        // active with nothing consuming it.
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+
       streamRef.current = stream;
 
       const audioContext = new AudioContext();
@@ -109,18 +144,26 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
       recorder.start();
       setStatus("recording");
     } catch (caughtError) {
+      if (generation !== startGenerationRef.current) return;
       const kind = recorderErrorKind(caughtError);
       setError({ kind, message: RECORDER_ERROR_MESSAGES[kind] });
       setStatus("idle");
+    } finally {
+      isStartingRef.current = false;
+      setIsStarting(false);
     }
   }, [releaseResources]);
 
   const stop = useCallback(() => {
+    // Supersede a still-pending start() (see the generation check above) — if the user clicked
+    // stop before the permission prompt resolved, the eventual stream should be released, not
+    // turned into a recording.
+    startGenerationRef.current += 1;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
     setStatus("stopped");
   }, []);
 
-  return { status, error, analyser, start, stop };
+  return { status, error, analyser, isStarting, start, stop };
 }

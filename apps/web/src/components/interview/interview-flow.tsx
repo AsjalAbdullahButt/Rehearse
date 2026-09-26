@@ -251,8 +251,8 @@ export function InterviewFlow({ initialRole }: { initialRole?: Role }) {
                 {recorder.error.message}
               </p>
             ) : null}
-            <Button size="lg" onClick={() => recorder.start()}>
-              Start recording
+            <Button size="lg" disabled={recorder.isStarting} onClick={() => recorder.start()}>
+              {recorder.isStarting ? "Requesting mic access…" : "Start recording"}
             </Button>
           </>
         )}
