@@ -11,23 +11,34 @@ logger = logging.getLogger("rehearse.api")
 class ApiError(Exception):
     """An application error with a stable machine-readable code and user-safe message."""
 
-    def __init__(self, code: str, message: str, status_code: int = status.HTTP_400_BAD_REQUEST):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status_code: int = status.HTTP_400_BAD_REQUEST,
+        headers: dict[str, str] | None = None,
+    ):
         self.code = code
         self.message = message
         self.status_code = status_code
+        self.headers = headers
         super().__init__(message)
 
 
-def _error_response(code: str, message: str, status_code: int) -> JSONResponse:
+def _error_response(
+    code: str, message: str, status_code: int, headers: dict[str, str] | None = None
+) -> JSONResponse:
     return JSONResponse(
-        status_code=status_code, content={"error": {"code": code, "message": message}}
+        status_code=status_code,
+        content={"error": {"code": code, "message": message}},
+        headers=headers,
     )
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error_handler(_: Request, exc: ApiError) -> JSONResponse:
-        return _error_response(exc.code, exc.message, exc.status_code)
+        return _error_response(exc.code, exc.message, exc.status_code, exc.headers)
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:

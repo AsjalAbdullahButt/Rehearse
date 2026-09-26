@@ -14,7 +14,7 @@ from app.core.auth import (
 )
 from app.core.config import get_settings
 from app.core.errors import ApiError
-from app.core.rate_limit import limiter
+from app.core.rate_limit import enforce_rate_limit
 from app.db import get_db
 from app.models.base import utcnow
 from app.models.user import User
@@ -51,13 +51,16 @@ async def _issue_token_pair(db: AsyncSession, user: User) -> TokenResponse:
 
 
 @router.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("5/minute")  # pyright: ignore[reportUnknownMemberType, reportUntypedFunctionDecorator]
 async def register(
     request: Request,
     response: Response,
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
+    # Separate from (and tighter than) any per-user limit: keyed by IP since there's no
+    # authenticated user yet at this point.
+    await enforce_rate_limit(request, db, scope="register", limit=5, window_seconds=60)
+
     existing = await repo.get_user_by_email(db, email=body.email)
     if existing is not None:
         raise ApiError(
@@ -76,13 +79,14 @@ async def register(
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-@limiter.limit("10/minute")  # pyright: ignore[reportUnknownMemberType, reportUntypedFunctionDecorator]
 async def login(
     request: Request,
     response: Response,
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
+    await enforce_rate_limit(request, db, scope="login", limit=10, window_seconds=60)
+
     user = await repo.get_user_by_email(db, email=body.email)
     if user is None or not verify_password(body.password, user.password_hash):
         raise ApiError(

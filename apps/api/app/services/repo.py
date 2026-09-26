@@ -4,10 +4,10 @@ cross-user data leak can be caught before it ships. See tests/test_cross_user_au
 
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
@@ -16,6 +16,7 @@ from app.models.enums import Difficulty, Role
 from app.models.interview_session import InterviewSession
 from app.models.profile import Profile
 from app.models.question import Question
+from app.models.rate_limit_hit import RateLimitHit
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.schemas.progress import ProgressRow
@@ -272,3 +273,30 @@ async def get_progress_for_user(
             )
         )
     return rows
+
+
+# ─── rate limiting ───────────────────────────────────────────────────────
+
+
+async def record_rate_limit_hit(db: AsyncSession, *, key: str, window_seconds: int) -> int:
+    """Records one hit for `key` and returns how many hits (including this one) fall within the
+    trailing `window_seconds` — a durable, cross-instance rate limit backed by real rows, the
+    same pattern count_answers_today uses for the daily answer cap. Commits immediately so the
+    hit is counted even if the rest of the request goes on to fail or raise. Also opportunistically
+    deletes this key's hits already outside the window, so the table doesn't grow unboundedly."""
+    now = utcnow()
+    window_start = now - timedelta(seconds=window_seconds)
+
+    db.add(RateLimitHit(key=key, created_at=now))
+    count_result = await db.execute(
+        select(func.count())
+        .select_from(RateLimitHit)
+        .where(RateLimitHit.key == key, RateLimitHit.created_at >= window_start)
+    )
+    count = count_result.scalar_one()
+
+    await db.execute(
+        delete(RateLimitHit).where(RateLimitHit.key == key, RateLimitHit.created_at < window_start)
+    )
+    await db.commit()
+    return count

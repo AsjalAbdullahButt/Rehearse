@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.errors import ApiError
-from app.core.rate_limit import limiter, user_or_ip_key
+from app.core.rate_limit import enforce_rate_limit, user_or_ip_key
 from app.db import get_db
 from app.models.profile import ANSWER_CAP_CHOICES
 from app.models.user import User
@@ -52,12 +52,6 @@ async def _read_capped(audio: _ReadableUpload, max_bytes: int) -> bytes:
 
 
 @router.post("/answers", response_model=AnswerReport, status_code=status.HTTP_201_CREATED)
-# Separate from (and tighter than) the 30/day business-rule cap below: each call costs real
-# Groq usage, so a short burst still needs its own limit even for a user nowhere near the
-# daily cap. Keyed by user, not IP — the meaningful unit of abuse here is per-account.
-@limiter.limit(  # pyright: ignore[reportUnknownMemberType, reportUntypedFunctionDecorator]
-    "6/minute", key_func=user_or_ip_key
-)
 async def create_answer(
     request: Request,
     response: Response,
@@ -68,6 +62,13 @@ async def create_answer(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AnswerReport:
+    # Separate from (and tighter than) the 30/day business-rule cap below: each call costs real
+    # Groq usage, so a short burst still needs its own limit even for a user nowhere near the
+    # daily cap. Keyed by user, not IP — the meaningful unit of abuse here is per-account.
+    await enforce_rate_limit(
+        request, db, scope="answers", limit=6, window_seconds=60, key_func=user_or_ip_key
+    )
+
     settings = get_settings()
 
     if time_cap_s not in ANSWER_CAP_CHOICES:

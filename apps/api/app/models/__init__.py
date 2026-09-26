@@ -6,6 +6,7 @@ from app.models.base import Base
 from app.models.interview_session import InterviewSession
 from app.models.profile import Profile
 from app.models.question import Question
+from app.models.rate_limit_hit import RateLimitHit
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -15,6 +16,7 @@ __all__ = [
     "InterviewSession",
     "Profile",
     "Question",
+    "RateLimitHit",
     "RefreshToken",
     "User",
 ]
