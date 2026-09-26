@@ -5,9 +5,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ApiError
 from app.models.answer import Answer
 from app.models.enums import Category, Difficulty, Role
 from app.models.question import Question
+from app.routers.answers import MAX_AUDIO_BYTES, UPLOAD_CHUNK_BYTES, _read_capped
 from app.schemas.feedback import LLMFeedback, StarScores
 from app.schemas.transcription import TranscriptionResult, WordTiming
 from app.services import llm, stt
@@ -361,3 +363,41 @@ async def test_get_answer_is_scoped_to_the_owner(
     response = client.get(f"/v1/answers/{answer_id}", headers=_auth_headers(user_b))
 
     assert response.status_code == 404
+
+
+class _FakeUploadFile:
+    """Stands in for Starlette's UploadFile, serving an effectively unbounded stream in fixed
+    chunks so the test can prove `_read_capped` stops reading once the cap is crossed, instead of
+    consuming (and buffering) the whole oversized payload first."""
+
+    def __init__(self, total_bytes: int) -> None:
+        self._remaining = total_bytes
+        self.read_calls = 0
+
+    async def read(self, size: int = -1) -> bytes:
+        self.read_calls += 1
+        take = min(size, self._remaining)
+        self._remaining -= take
+        return b"0" * take
+
+
+async def test_read_capped_aborts_without_buffering_the_full_oversized_payload() -> None:
+    # 100x the cap: if `_read_capped` buffered/consumed the whole thing before checking the
+    # size, this would take hundreds of read() calls. It should abort after only a handful.
+    huge_upload = _FakeUploadFile(total_bytes=MAX_AUDIO_BYTES * 100)
+
+    with pytest.raises(ApiError) as exc_info:
+        await _read_capped(huge_upload, MAX_AUDIO_BYTES)
+
+    assert exc_info.value.status_code == 413
+    assert exc_info.value.code == "payload_too_large"
+    max_expected_calls = (MAX_AUDIO_BYTES // UPLOAD_CHUNK_BYTES) + 2
+    assert huge_upload.read_calls <= max_expected_calls
+
+
+async def test_read_capped_returns_full_bytes_when_under_the_cap() -> None:
+    upload = _FakeUploadFile(total_bytes=1024)
+
+    result = await _read_capped(upload, MAX_AUDIO_BYTES)
+
+    assert result == b"0" * 1024
