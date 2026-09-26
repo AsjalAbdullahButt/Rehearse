@@ -124,6 +124,37 @@ def test_refresh_rotates_tokens_and_invalidates_the_old_one(client: TestClient) 
     assert replay.status_code == 401
 
 
+def test_replaying_a_rotated_out_refresh_token_revokes_every_token_for_that_user(
+    client: TestClient,
+) -> None:
+    """Reuse of an already-rotated-out refresh token is the standard signal of token theft —
+    the response is to revoke every refresh token for that user, not just the replayed one, so
+    both the attacker's and the legitimate client's sessions are forced to re-authenticate."""
+    body = _register(client)
+    rotated_out_token = body["refresh_token"]
+
+    # A second, independent session for the same user (e.g. another device) — untouched by the
+    # rotation below, so it's a control: it should only die from reuse detection, nothing else.
+    second_login = client.post(
+        "/v1/auth/login",
+        json={"email": "user@example.com", "password": "correct-horse-battery-staple"},
+    )
+    other_session_token = second_login.json()["refresh_token"]
+
+    rotate_response = client.post("/v1/auth/refresh", json={"refresh_token": rotated_out_token})
+    current_token = rotate_response.json()["refresh_token"]
+
+    replay = client.post("/v1/auth/refresh", json={"refresh_token": rotated_out_token})
+    assert replay.status_code == 401
+
+    # Both the just-issued token from the legitimate rotation and the unrelated second
+    # session's token must now be dead too.
+    current_now = client.post("/v1/auth/refresh", json={"refresh_token": current_token})
+    assert current_now.status_code == 401
+    other_now = client.post("/v1/auth/refresh", json={"refresh_token": other_session_token})
+    assert other_now.status_code == 401
+
+
 def test_logout_revokes_refresh_token(client: TestClient) -> None:
     body = _register(client)
     refresh_token = body["refresh_token"]

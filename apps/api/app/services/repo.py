@@ -92,6 +92,14 @@ async def get_active_refresh_token(db: AsyncSession, *, token_hash: str) -> Refr
     return result.scalar_one_or_none()
 
 
+async def get_refresh_token_by_hash(db: AsyncSession, *, token_hash: str) -> RefreshToken | None:
+    """Unlike get_active_refresh_token, doesn't filter out an already-revoked row — the refresh
+    endpoint needs to distinguish "never existed" from "presented again after being rotated
+    out" (a signal of token theft) rather than treating both as the same generic invalid case."""
+    result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
+    return result.scalar_one_or_none()
+
+
 async def revoke_refresh_token(db: AsyncSession, *, token_hash: str) -> None:
     row = await get_active_refresh_token(db, token_hash=token_hash)
     if row is not None:

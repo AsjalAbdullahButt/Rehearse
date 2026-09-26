@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -29,6 +30,7 @@ from app.schemas.auth import (
 from app.services import repo
 
 router = APIRouter()
+logger = logging.getLogger("rehearse.api")
 
 
 async def _issue_token_pair(db: AsyncSession, user: User) -> TokenResponse:
@@ -103,8 +105,23 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
     payload = decode_token(body.refresh_token, expected_type="refresh")
     token_hash = hash_token(body.refresh_token)
 
-    stored = await repo.get_active_refresh_token(db, token_hash=token_hash)
+    stored = await repo.get_refresh_token_by_hash(db, token_hash=token_hash)
     if stored is None or stored.expires_at < utcnow():
+        raise ApiError(
+            "token_invalid",
+            "Refresh token is invalid or has been revoked.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    if stored.revoked_at is not None:
+        # This token was already rotated out — a legitimate client never presents a refresh
+        # token it has already exchanged. Reuse like this is the standard signal of a stolen
+        # refresh token being replayed, so every active token for this user is revoked,
+        # forcing re-authentication everywhere rather than just rejecting this one request.
+        logger.warning(
+            "refresh_token_reuse_detected user_id=%s token_id=%s", stored.user_id, stored.id
+        )
+        await repo.revoke_all_refresh_tokens(db, user_id=stored.user_id)
         raise ApiError(
             "token_invalid",
             "Refresh token is invalid or has been revoked.",
