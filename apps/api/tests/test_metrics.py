@@ -1,5 +1,6 @@
 from app.schemas.transcription import WordTiming
 from app.services.metrics import (
+    assess_confidence,
     assess_rambling,
     build_transcript_parts,
     compute_wpm,
@@ -145,3 +146,35 @@ def test_build_transcript_parts_last_word_has_no_trailing_space() -> None:
     words = [_word("done", 0.0, 0.2)]
 
     assert build_transcript_parts(words)[0].text == "done"
+
+
+def test_assess_confidence_returns_none_for_a_clean_transcript() -> None:
+    assert assess_confidence(filler_count=0, word_count=100) is None
+
+
+def test_assess_confidence_returns_none_below_the_minimum_count() -> None:
+    # A 100% filler rate, but only 2 fillers total — too small a sample to call it a pattern.
+    assert assess_confidence(filler_count=2, word_count=2) is None
+
+
+def test_assess_confidence_returns_none_below_the_rate_threshold() -> None:
+    # 3 fillers over 100 words is a 3% rate — under the 8% threshold, even though the count
+    # alone clears CONFIDENCE_MIN_FILLER_COUNT.
+    assert assess_confidence(filler_count=3, word_count=100) is None
+
+
+def test_assess_confidence_flags_a_high_filler_rate() -> None:
+    note = assess_confidence(filler_count=5, word_count=20)
+
+    assert note is not None
+    assert "confident" in note
+
+
+def test_assess_confidence_boundary_is_strictly_greater_than() -> None:
+    # Exactly 8% must not trip it; just over must.
+    assert assess_confidence(filler_count=8, word_count=100) is None
+    assert assess_confidence(filler_count=9, word_count=100) is not None
+
+
+def test_assess_confidence_returns_none_for_a_zero_word_transcript() -> None:
+    assert assess_confidence(filler_count=0, word_count=0) is None

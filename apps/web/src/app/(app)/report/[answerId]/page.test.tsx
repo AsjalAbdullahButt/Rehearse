@@ -32,6 +32,7 @@ function baseReport(): AnswerReport {
     filler_breakdown: {},
     long_pauses: 0,
     rambling: null,
+    confidence_note: null,
     feedback: {
       star: { situation: 7, task: 7, action: 8, result: 7 },
       clarity: 8,
@@ -83,5 +84,56 @@ describe("ReportPage", () => {
 
     expect(screen.queryByText("Feedback unavailable")).not.toBeInTheDocument();
     expect(screen.getByText("Tell me about a time you resolved a conflict.")).toBeInTheDocument();
+  });
+
+  it("praises the strongest STAR area by name when it clears the highlight threshold", async () => {
+    const report = baseReport();
+    fetchAnswerReportMock.mockResolvedValue({
+      ...report,
+      feedback: { ...report.feedback, star: { situation: 5, task: 6, action: 9, result: 6 } },
+    });
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    expect(screen.getByText(/strongest part of this answer/)).toBeInTheDocument();
+    expect(
+      screen.getByText("you walked through the steps you actually took", { exact: false }),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the strength callout when no STAR area clears the highlight threshold", async () => {
+    const report = baseReport();
+    fetchAnswerReportMock.mockResolvedValue({
+      ...report,
+      feedback: { ...report.feedback, star: { situation: 4, task: 5, action: 6, result: 3 } },
+    });
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    expect(screen.queryByText("Nice work —", { exact: false })).not.toBeInTheDocument();
+  });
+
+  it("shows the confidence coaching note when the API returns one", async () => {
+    fetchAnswerReportMock.mockResolvedValue({
+      ...baseReport(),
+      confidence_note: 'You leaned on filler words like "um" and "uh" quite a bit here.',
+    });
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    expect(screen.getByText(/leaned on filler words/)).toBeInTheDocument();
+  });
+
+  it("always offers a way to start another practice round", async () => {
+    fetchAnswerReportMock.mockResolvedValue(baseReport());
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    const link = screen.getByRole("link", { name: "Let's try another round" });
+    expect(link).toHaveAttribute("href", "/interview");
   });
 });

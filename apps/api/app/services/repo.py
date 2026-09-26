@@ -159,6 +159,26 @@ async def get_question_by_id(db: AsyncSession, *, question_id: str) -> Question 
     return await db.get(Question, question_id)
 
 
+async def get_answered_question_ids(
+    db: AsyncSession, *, user_id: str, role: Role, difficulty: Difficulty | None = None
+) -> set[str]:
+    """IDs of questions this user has already answered, scoped to role (and difficulty, when
+    given) so a completed "easy" pool doesn't affect "medium" availability. Used by the
+    questions router to bias selection away from repeats on a second practice round — see its
+    docstring for the recycle-when-exhausted fallback."""
+    query = (
+        select(Answer.question_id)
+        .join(Question, Question.id == Answer.question_id)
+        .where(Answer.user_id == user_id, Question.role == role)
+        .distinct()
+    )
+    if difficulty is not None:
+        query = query.where(Question.difficulty == difficulty)
+
+    result = await db.execute(query)
+    return {question_id for question_id in result.scalars().all() if question_id is not None}
+
+
 # ─── sessions ────────────────────────────────────────────────────────────
 
 

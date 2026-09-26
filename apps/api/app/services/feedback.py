@@ -64,6 +64,7 @@ def to_answer_report(answer: Answer) -> AnswerReport:
         filler_breakdown=answer.filler_breakdown,
         long_pauses=answer.long_pauses,
         rambling=answer.rambling,
+        confidence_note=metrics.assess_confidence(answer.filler_count, len(words)),
         feedback=LLMFeedback(
             star=StarScores(**(answer.star or {})),
             clarity=answer.clarity or 0,

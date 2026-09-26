@@ -105,3 +105,31 @@ def assess_rambling(duration_s: float) -> str | None:
     if duration_s > IDEAL_ANSWER_MAX_S + RAMBLING_GRACE_S:
         return "rambling"
     return None
+
+
+# A filler rate below this reads as normal, unremarkable speech — not worth surfacing. Gated
+# by a minimum count too, so a short answer with a single "um" (a high rate over few words)
+# doesn't get flagged; there has to be an actual pattern, not just a small sample size.
+CONFIDENCE_FILLER_RATE_THRESHOLD = 0.08
+CONFIDENCE_MIN_FILLER_COUNT = 3
+
+
+def assess_confidence(filler_count: int, word_count: int) -> str | None:
+    """A coarse, code-computed confidence signal from filler-word density alone (never the
+    LLM's job — see module docstring). A high filler rate doesn't mean the content was wrong,
+    so this is written as a delivery tip to try next time, not a criticism of this answer —
+    the report surfaces it alongside an invitation to practice again, not as a red mark.
+    Returns None for a zero-word transcript (nothing to rate) or below either threshold."""
+    if word_count <= 0:
+        return None
+
+    rate = filler_count / word_count
+    if filler_count < CONFIDENCE_MIN_FILLER_COUNT or rate <= CONFIDENCE_FILLER_RATE_THRESHOLD:
+        return None
+
+    return (
+        'You leaned on filler words like "um" and "uh" quite a bit here — completely normal '
+        "under pressure, but trimming them reads as more confident and composed, even when "
+        "you're still gathering your thoughts. Try pausing silently instead of filling the "
+        "gap next time you practice."
+    )

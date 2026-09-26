@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { BeforeAfterToggle } from "@/components/report/before-after-toggle";
 import { ScoreRing } from "@/components/report/score-ring";
 import { StarBars } from "@/components/report/star-bars";
@@ -5,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Stat } from "@/components/ui/stat";
 import { hasCompleteFeedback } from "@/lib/interview/feedback";
 import { fetchAnswerReport } from "@/lib/interview/server";
+import { strongestStarArea } from "@/lib/interview/star-insights";
 import { toTranscriptParts } from "@/lib/interview/transcript";
 
 export default async function ReportPage({ params }: { params: Promise<{ answerId: string }> }) {
@@ -45,6 +48,7 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
     a: feedback.star.action,
     r: feedback.star.result,
   };
+  const strongestArea = strongestStarArea(feedback.star);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-16">
@@ -65,9 +69,23 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
           </div>
         </div>
 
+        {strongestArea ? (
+          <p className="bg-lime/10 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">
+            <span className="text-lime font-medium">Nice work —</span> your{" "}
+            <span className="font-medium">{strongestArea.label}</span> was the strongest part of
+            this answer: {strongestArea.praise}. Keep leaning into that.
+          </p>
+        ) : null}
+
         {report.rambling ? (
           <p className="bg-amber/15 text-amber w-fit rounded-[var(--radius-pill)] px-3 py-1 text-xs font-medium">
             This answer ran long — aim for 1-2 minutes.
+          </p>
+        ) : null}
+
+        {report.confidence_note ? (
+          <p className="bg-amber/15 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">
+            {report.confidence_note}
           </p>
         ) : null}
 
@@ -89,7 +107,7 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
         </div>
 
         <div className="flex flex-col gap-3">
-          <h2 className="text-muted text-xs font-medium tracking-wide uppercase">Tips</h2>
+          <h2 className="text-muted text-xs font-medium tracking-wide uppercase">Ways to grow</h2>
           <ul className="flex flex-col gap-2">
             {feedback.tips.map((tip, index) => (
               <li key={index} className="text-text flex gap-2 text-sm">
@@ -117,6 +135,18 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
             Follow-up question
           </h2>
           <p className="text-text text-sm">{feedback.follow_up_question}</p>
+        </div>
+
+        <div className="border-line flex flex-col items-center gap-3 border-t pt-6 text-center">
+          <p className="text-muted text-sm">
+            Every round builds confidence. Ready to try another one?
+          </p>
+          <Link
+            href="/interview"
+            className="bg-lime text-lime-ink inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] px-6 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
+          >
+            Let&apos;s try another round
+          </Link>
         </div>
       </Card>
     </div>

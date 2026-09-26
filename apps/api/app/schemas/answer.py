@@ -19,6 +19,7 @@ class AnswerReport(BaseModel):
     filler_breakdown: dict[str, int]
     long_pauses: int
     rambling: str | None
+    confidence_note: str | None
     feedback: LLMFeedback
     created_at: datetime
 

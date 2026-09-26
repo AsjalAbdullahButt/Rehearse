@@ -91,6 +91,7 @@ export interface AnswerReport {
   filler_breakdown: Record<string, number>;
   long_pauses: number;
   rambling: string | null;
+  confidence_note: string | null;
   feedback: LLMFeedback;
   created_at: string;
 }

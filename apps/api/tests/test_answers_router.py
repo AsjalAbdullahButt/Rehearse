@@ -136,6 +136,32 @@ async def test_create_answer_happy_path(
     ]
     assert body["filler_count"] == 0
     assert body["wpm"] > 0
+    assert body["confidence_note"] is None
+
+
+async def test_create_answer_includes_a_confidence_note_for_a_high_filler_rate(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 5 fillers in 10 words (50% rate) — well past both the count and rate thresholds in
+    # metrics.assess_confidence.
+    async def filler_heavy_transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
+        return _fake_transcription("um so uh basically I um think uh it um works")
+
+    monkeypatch.setattr(stt, "transcribe", filler_heavy_transcribe)
+
+    user = register_user()
+    question_id = await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    response = _post_answer(client, session_id=session_id, question_id=question_id, user=user)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["confidence_note"] is not None
+    assert "confident" in body["confidence_note"]
 
 
 async def test_create_answer_is_idempotent_on_a_repeated_key(
