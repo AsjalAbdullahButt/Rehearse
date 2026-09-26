@@ -2,14 +2,21 @@ import { cookies } from "next/headers";
 
 import { apiFetch, type TokenResponse } from "@/lib/auth/api";
 import { ACCESS_TOKEN_COOKIE, buildSessionCookies, REFRESH_TOKEN_COOKIE } from "@/lib/auth/cookies";
-import { decodeJwtPayload } from "@/lib/auth/tokens";
+import { isTokenExpired } from "@/lib/auth/tokens";
 
-const EXPIRY_SKEW_S = 10;
-
-function isExpiredOrMalformed(token: string): boolean {
-  const payload = decodeJwtPayload(token);
-  if (!payload) return true;
-  return payload.exp * 1000 <= Date.now() + EXPIRY_SKEW_S * 1000;
+/**
+ * Read-only counterpart for Server Components (via lib/interview/server.ts). Server Components
+ * cannot write cookies mid-render — Next.js throws if you try — so this never refreshes and
+ * never touches `cookieStore.set`/`.delete`. It relies on the middleware (proxy.ts) having
+ * already refreshed an expired-but-refreshable session before a guarded page's Server
+ * Components run. If it still finds no valid token, callers treat null as unauthenticated, same
+ * as before.
+ */
+export async function peekAccessToken(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
+  if (!accessToken || isTokenExpired(accessToken)) return null;
+  return accessToken;
 }
 
 /**
@@ -17,13 +24,14 @@ function isExpiredOrMalformed(token: string): boolean {
  * missing or looks expired. Returns null when there's no session to refresh (never throws) —
  * callers turn that into a 401. Called from Route Handlers only: `cookies()` here is the
  * mutable store, so a refresh's new cookies are applied to the outgoing response the same way
- * `/api/auth/refresh` does it, just without needing to build that response itself.
+ * `/api/auth/refresh` does it, just without needing to build that response itself. Server
+ * Components must use `peekAccessToken` instead — see its docstring.
  */
 export async function getValidAccessToken(): Promise<string | null> {
   const cookieStore = await cookies();
   const accessToken = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
 
-  if (accessToken && !isExpiredOrMalformed(accessToken)) {
+  if (accessToken && !isTokenExpired(accessToken)) {
     return accessToken;
   }
 
