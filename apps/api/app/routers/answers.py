@@ -183,8 +183,10 @@ async def create_answer(
 
     llm_feedback = await llm.generate_feedback(
         role=session.role,
+        category=session_question.category,
         question_text=session_question.text,
         transcript=transcription.transcript,
+        candidate_context=session.personalization_context(),
     )
 
     answer = feedback_service.build_answer(
@@ -193,6 +195,8 @@ async def create_answer(
         question_id=session_question.question_id,
         session_question_id=session_question.id,
         question_text=session_question.text,
+        category=session_question.category,
+        answer_cap_s=session.answer_cap_s,
         transcription=transcription,
         feedback=llm_feedback,
     )

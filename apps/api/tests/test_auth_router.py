@@ -168,7 +168,12 @@ def test_replaying_a_rotated_out_refresh_token_after_the_grace_period_revokes_ev
     token theft — the response is to revoke every refresh token for that user, not just the
     replayed one, so both the attacker's and the legitimate client's sessions are forced to
     re-authenticate."""
-    monkeypatch.setattr(auth_router, "REFRESH_REUSE_GRACE_PERIOD_S", 0)
+    # Negative, not 0 — a boundary of exactly 0 is a real flakiness risk: age_s (wall-clock
+    # elapsed time between the rotation and the replay a couple of DB round trips later) could
+    # legitimately compute to 0.0 on a fast run or a coarse system clock, landing this in the
+    # grace-recovery branch by accident. Negative makes "outside grace" true for any realistic
+    # positive elapsed time, however small.
+    monkeypatch.setattr(auth_router, "REFRESH_REUSE_GRACE_PERIOD_S", -1)
 
     body = _register(client)
     rotated_out_token = body["refresh_token"]

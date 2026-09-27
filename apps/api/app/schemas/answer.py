@@ -2,8 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.enums import SessionStatus
-from app.schemas.feedback import LLMFeedback
+from app.models.enums import Category, SessionStatus
+from app.schemas.feedback import FeedbackReport
 from app.schemas.session import SessionQuestionOut
 from app.schemas.transcription import TranscriptPart
 
@@ -13,17 +13,26 @@ class AnswerReport(BaseModel):
     session_id: str
     question_id: str | None
     session_question_id: str | None
+    category: Category
     question_text: str
     transcript: str
     transcript_parts: list[TranscriptPart]
     duration_s: float
     wpm: float
+    word_count: int
     filler_count: int
     filler_breakdown: dict[str, int]
+    possible_filler_count: int
+    possible_filler_breakdown: dict[str, int]
+    filler_rate_per_100_words: float
     long_pauses: int
+    max_pause_s: float | None
+    total_long_pause_s: float
+    avg_pause_s: float | None
     rambling: str | None
     confidence_note: str | None
-    feedback: LLMFeedback
+    transcription_quality_warning: str | None
+    feedback: FeedbackReport
     created_at: datetime
     # Session-progression fields — what InterviewFlow needs to show "Question X of Y" and either
     # continue to the next question or route to the final session summary.

@@ -13,6 +13,11 @@ class TranscriptionResult(BaseModel):
     transcript: str
     words: list[WordTiming]
     duration_s: float
+    # Real signals from Whisper's verbose_json segments (see app/services/stt.py), propagated
+    # as-is — None when Groq doesn't return segment data (e.g. mocked tests), never fabricated.
+    # See app/services/metrics.py's assess_transcription_quality for how these get interpreted.
+    avg_logprob: float | None = None
+    avg_no_speech_prob: float | None = None
 
 
 class TranscriptPart(BaseModel):

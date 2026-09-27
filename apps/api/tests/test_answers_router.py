@@ -10,7 +10,7 @@ from app.models.answer import Answer
 from app.models.enums import Category, Difficulty, Role
 from app.models.question import Question
 from app.routers.answers import MAX_AUDIO_BYTES, UPLOAD_CHUNK_BYTES, _read_capped
-from app.schemas.feedback import LLMFeedback, StarScores
+from app.schemas.feedback import LLMFeedback, TechnicalRubric
 from app.schemas.transcription import TranscriptionResult, WordTiming
 from app.services import llm, repo, stt
 
@@ -110,12 +110,14 @@ def _fake_feedback(
     follow_up_question: str = "How would you handle a burst of traffic?",
 ) -> LLMFeedback:
     return LLMFeedback(
-        star=StarScores(situation=7, task=7, action=8, result=7),
+        rubric=TechnicalRubric(correctness=8, depth=7, tradeoffs=6, communication=8),
         clarity=8,
         on_topic=True,
+        strengths=["Clearly explained the token bucket approach."],
+        improvements=["Be more specific.", "Quantify the impact.", "Mention tradeoffs."],
+        evidence=["I designed a token bucket rate limiter."],
         rambling_notes="",
-        tips=["Be more specific.", "Quantify the impact.", "Mention tradeoffs."],
-        sample_answer="A stronger sample answer would open with the constraint...",
+        reference_answer="A stronger reference answer would open with the constraint...",
         follow_up_question=follow_up_question,
     )
 
@@ -147,7 +149,12 @@ def _mock_groq(monkeypatch: pytest.MonkeyPatch) -> None:
         return _fake_transcription()
 
     async def fake_generate_feedback(
-        *, role: str, question_text: str, transcript: str
+        *,
+        role: str,
+        category: Category,
+        question_text: str,
+        transcript: str,
+        candidate_context: dict[str, Any],
     ) -> LLMFeedback:
         return _fake_feedback()
 
@@ -175,8 +182,8 @@ async def test_create_answer_happy_path(
     assert body["session_id"] == session_id
     assert body["question_id"] == question_id
     assert body["session_question_id"] == session_question_id
-    assert body["feedback"]["star"]["action"] == 8
-    assert body["feedback"]["tips"] == [
+    assert body["feedback"]["rubric"]["correctness"] == 8
+    assert body["feedback"]["improvements"] == [
         "Be more specific.",
         "Quantify the impact.",
         "Mention tradeoffs.",
@@ -387,7 +394,11 @@ async def test_create_answer_computes_fillers_from_the_transcript(
     )
 
     assert response.status_code == 201
-    assert response.json()["filler_count"] == 3
+    body = response.json()
+    # "um"/"uh" are definite fillers; "basically" is possible-tier only (see
+    # app/services/metrics.py) and must not be folded into the headline filler_count.
+    assert body["filler_count"] == 2
+    assert body["possible_filler_count"] == 1
 
 
 async def test_create_answer_rejects_unknown_session(

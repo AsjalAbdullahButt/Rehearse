@@ -21,6 +21,7 @@ from app.models.rate_limit_hit import RateLimitHit
 from app.models.refresh_token import RefreshToken
 from app.models.session_question import SessionQuestion
 from app.models.user import User
+from app.schemas.feedback import rubric_overall_score
 from app.schemas.progress import ProgressRow
 
 # ─── users ───────────────────────────────────────────────────────────────
@@ -504,10 +505,10 @@ async def get_progress_for_user(
     for session in sessions:
         answers = answers_by_session[session.id]
 
-        star_averages = [
-            (star["situation"] + star["task"] + star["action"] + star["result"]) / 4
+        overall_scores = [
+            score
             for answer in answers
-            if (star := answer.star) is not None
+            if (score := rubric_overall_score(answer.rubric)) is not None
         ]
 
         rows.append(
@@ -520,7 +521,7 @@ async def get_progress_for_user(
                 avg_wpm=_avg([float(a.wpm) for a in answers]),
                 avg_filler_count=_avg([float(a.filler_count) for a in answers]),
                 avg_clarity=_avg([float(a.clarity) for a in answers if a.clarity is not None]),
-                avg_star=_avg(star_averages),
+                avg_overall_score=_avg(overall_scores),
             )
         )
     return rows

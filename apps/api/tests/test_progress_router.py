@@ -76,7 +76,13 @@ async def test_progress_aggregates_answers_per_session(
                 wpm=100,
                 filler_count=2,
                 clarity=8,
-                star={"situation": 8, "task": 8, "action": 8, "result": 8},
+                rubric={
+                    "category": "behavioral",
+                    "situation": 8,
+                    "task": 8,
+                    "action": 8,
+                    "result": 8,
+                },
             ),
             Answer(
                 session_id=session_id,
@@ -87,7 +93,13 @@ async def test_progress_aggregates_answers_per_session(
                 wpm=120,
                 filler_count=4,
                 clarity=6,
-                star={"situation": 6, "task": 6, "action": 6, "result": 6},
+                rubric={
+                    "category": "behavioral",
+                    "situation": 6,
+                    "task": 6,
+                    "action": 6,
+                    "result": 6,
+                },
             ),
         ]
     )
@@ -104,7 +116,7 @@ async def test_progress_aggregates_answers_per_session(
     assert row["avg_wpm"] == 110.0
     assert row["avg_filler_count"] == 3.0
     assert row["avg_clarity"] == 7.0
-    assert row["avg_star"] == 7.0
+    assert row["avg_overall_score"] == 7.0
 
 
 async def test_progress_keeps_each_sessions_answers_separate(

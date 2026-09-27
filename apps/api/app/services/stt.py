@@ -66,4 +66,14 @@ async def transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
         float(duration_raw) if duration_raw is not None else (words[-1].end if words else 0.0)
     )
 
-    return TranscriptionResult(transcript=response.text, words=words, duration_s=duration_s)
+    segments_raw = cast(list[dict[str, Any]], extra.get("segments") or [])
+    avg_logprobs = [s["avg_logprob"] for s in segments_raw if "avg_logprob" in s]
+    no_speech_probs = [s["no_speech_prob"] for s in segments_raw if "no_speech_prob" in s]
+
+    return TranscriptionResult(
+        transcript=response.text,
+        words=words,
+        duration_s=duration_s,
+        avg_logprob=sum(avg_logprobs) / len(avg_logprobs) if avg_logprobs else None,
+        avg_no_speech_prob=sum(no_speech_probs) / len(no_speech_probs) if no_speech_probs else None,
+    )

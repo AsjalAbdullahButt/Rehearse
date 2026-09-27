@@ -44,19 +44,40 @@ class Answer(Base):
     session_question_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("session_questions.id", ondelete="SET NULL")
     )
+    # Denormalized from session_questions.category (nullable for pre-Phase-4 rows, which predate
+    # category-specific rubrics entirely — rendered as "behavioral" at read time, since STAR was
+    # the only rubric that existed then). Kept directly on Answer, not joined at read time, since
+    # it's needed on every single report render.
+    category: Mapped[str | None] = mapped_column(String(16))
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     transcript: Mapped[str] = mapped_column(Text, nullable=False)
     words: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     duration_s: Mapped[float] = mapped_column(DECIMAL(6, 2), nullable=False)
     wpm: Mapped[float] = mapped_column(DECIMAL(6, 2), nullable=False)
+    # "Definite" tier (um/uh/erm/hmm) — the headline count/rate. See app/services/metrics.py's
+    # module docstring for why the "possible" tier (like/actually/basically/...) is kept apart.
     filler_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     filler_breakdown: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    possible_filler_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    possible_filler_breakdown: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
     long_pauses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     rambling: Mapped[str | None] = mapped_column(Text)
-    star: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    transcription_quality_warning: Mapped[str | None] = mapped_column(Text)
+    # Renamed from `star`: holds whichever of BehavioralRubric/TechnicalRubric/SituationalRubric
+    # the question's category produced (see app/schemas/feedback.py) — the JSON shape varies by
+    # category now, so a column literally named "star" would be misleading for a technical or
+    # situational answer. Old rows' `{"situation":...,"task":...,"action":...,"result":...}`
+    # blobs still validate as BehavioralRubric unchanged (see StarScores alias).
+    rubric: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     clarity: Mapped[int | None] = mapped_column(SmallInteger)
     on_topic: Mapped[bool | None] = mapped_column(Boolean)
     feedback: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    sample_answer: Mapped[str | None] = mapped_column(Text)
+    # Renamed from `sample_answer`: holds either a behavioral rewritten_answer or a technical/
+    # situational reference_answer (exactly one, per LLMFeedback's category-conditioned
+    # validator) — which kind it is follows from `category` above, so one column covers both
+    # rather than two columns that are always mutually exclusive anyway.
+    answer_example: Mapped[str | None] = mapped_column(Text)
     idempotency_key: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)

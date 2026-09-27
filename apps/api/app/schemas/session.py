@@ -117,7 +117,7 @@ class SessionOut(BaseModel):
 
 class AnswerCategoryBreakdown(BaseModel):
     category: Category
-    avg_star: float | None
+    avg_score: float | None
 
 
 class SessionSummary(BaseModel):

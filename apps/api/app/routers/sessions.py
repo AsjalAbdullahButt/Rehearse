@@ -10,6 +10,7 @@ from app.models.enums import Category
 from app.models.interview_session import InterviewSession
 from app.models.session_question import SessionQuestion
 from app.models.user import User
+from app.schemas.feedback import rubric_overall_score
 from app.schemas.session import (
     AnswerCategoryBreakdown,
     SessionCreate,
@@ -114,25 +115,20 @@ async def get_session_summary(
     session_questions = await repo.list_session_questions_for_session(db, session_id=session_id)
     category_by_session_question_id = {sq.id: sq.category for sq in session_questions}
 
-    star_averages_by_category: dict[Category, list[float]] = {}
-    overall_star_averages: list[float] = []
+    scores_by_category: dict[Category, list[float]] = {}
+    overall_scores: list[float] = []
     for answer in answers:
-        if answer.star is None:
+        score = rubric_overall_score(answer.rubric)
+        if score is None:
             continue
-        star_avg = (
-            answer.star["situation"]
-            + answer.star["task"]
-            + answer.star["action"]
-            + answer.star["result"]
-        ) / 4
-        overall_star_averages.append(star_avg)
+        overall_scores.append(score)
         category = (
             category_by_session_question_id.get(answer.session_question_id)
             if answer.session_question_id
             else None
         )
         if category is not None:
-            star_averages_by_category.setdefault(category, []).append(star_avg)
+            scores_by_category.setdefault(category, []).append(score)
 
     def _avg(values: list[float]) -> float | None:
         return round(sum(values) / len(values), 2) if values else None
@@ -140,10 +136,10 @@ async def get_session_summary(
     return SessionSummary(
         session=_session_out(session),
         questions_completed=len(answers),
-        overall_score=_avg(overall_star_averages),
+        overall_score=_avg(overall_scores),
         category_breakdown=[
-            AnswerCategoryBreakdown(category=category, avg_star=_avg(values))
-            for category, values in star_averages_by_category.items()
+            AnswerCategoryBreakdown(category=category, avg_score=_avg(values))
+            for category, values in scores_by_category.items()
         ],
         avg_wpm=_avg([float(a.wpm) for a in answers]),
         avg_filler_count=_avg([float(a.filler_count) for a in answers]),
