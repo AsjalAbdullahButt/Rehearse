@@ -38,6 +38,12 @@ class Answer(Base):
     question_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("questions.id", ondelete="SET NULL")
     )
+    # Nullable because pre-migration answers (and any answer to a generated/follow-up question,
+    # which has no bank row) predate or fall outside this — question_text below is always the
+    # real source of truth for what was actually asked.
+    session_question_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("session_questions.id", ondelete="SET NULL")
+    )
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     transcript: Mapped[str] = mapped_column(Text, nullable=False)
     words: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)

@@ -15,7 +15,6 @@ function fakeSubmission(): PendingAnswerSubmission {
       difficulty: "medium",
     } as PendingAnswerSubmission["session"],
     question: { id: "q1", text: "Tell me about a time..." } as PendingAnswerSubmission["question"],
-    timeCapS: 120,
     blob: new Blob(["fake-audio"], { type: "audio/webm" }),
     idempotencyKey: createIdempotencyKey(),
   };

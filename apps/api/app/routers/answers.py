@@ -10,11 +10,15 @@ from app.core.errors import ApiError
 from app.core.limits import MAX_AUDIO_BYTES
 from app.core.rate_limit import enforce_rate_limit, user_or_ip_key
 from app.db import get_db
-from app.models.profile import ANSWER_CAP_CHOICES
 from app.models.user import User
 from app.schemas.answer import AnswerReport
 from app.services import feedback as feedback_service
 from app.services import llm, repo, stt
+from app.services.question_orchestrator import (
+    NoQuestionAvailableError,
+    category_for_position,
+    select_next_question,
+)
 
 router = APIRouter()
 
@@ -71,8 +75,7 @@ async def create_answer(
     request: Request,
     response: Response,
     session_id: Annotated[str, Form()],
-    question_id: Annotated[str, Form()],
-    time_cap_s: Annotated[int, Form()],
+    session_question_id: Annotated[str, Form()],
     audio: Annotated[UploadFile, File()],
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -98,7 +101,13 @@ async def create_answer(
             within_seconds=IDEMPOTENCY_KEY_TTL_S,
         )
         if existing is not None:
-            return feedback_service.to_answer_report(existing)
+            existing_session = await repo.get_session_for_user(
+                db, session_id=existing.session_id, user_id=user.id
+            )
+            if existing_session is not None:
+                return await feedback_service.to_answer_report(
+                    db, answer=existing, session=existing_session
+                )
 
     # Separate from (and tighter than) the 30/day business-rule cap below: each call costs real
     # Groq usage, so a short burst still needs its own limit even for a user nowhere near the
@@ -109,30 +118,25 @@ async def create_answer(
 
     settings = get_settings()
 
-    if time_cap_s not in ANSWER_CAP_CHOICES:
-        raise ApiError(
-            "invalid_time_cap",
-            f"time_cap_s must be one of {ANSWER_CAP_CHOICES}.",
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        )
-
     session = await repo.get_session_for_user(db, session_id=session_id, user_id=user.id)
     if session is None:
         raise ApiError(
             "session_not_found", "Session not found.", status_code=status.HTTP_404_NOT_FOUND
         )
 
-    question = await repo.get_question_by_id(db, question_id=question_id)
-    if question is None:
+    session_question = await repo.get_session_question_for_session(
+        db, session_question_id=session_question_id, session_id=session.id
+    )
+    if session_question is None:
         raise ApiError(
             "question_not_found", "Question not found.", status_code=status.HTTP_404_NOT_FOUND
         )
 
-    if question.role != session.role or question.difficulty != session.difficulty:
+    if await repo.get_answer_for_session_question(db, session_question_id=session_question.id):
         raise ApiError(
-            "question_session_mismatch",
-            "This question doesn't match the session's role and difficulty.",
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "question_already_answered",
+            "This question has already been answered.",
+            status_code=status.HTTP_409_CONFLICT,
         )
 
     answers_today = await repo.count_answers_today(db, user_id=user.id)
@@ -163,7 +167,7 @@ async def create_answer(
     # (and what's derived from it) gets stored.
     transcription = await stt.transcribe(audio_bytes, audio.filename or "answer.webm")
 
-    if transcription.duration_s > time_cap_s + DURATION_CAP_GRACE_S:
+    if transcription.duration_s > session.answer_cap_s + DURATION_CAP_GRACE_S:
         raise ApiError(
             "duration_exceeds_cap",
             "Recording exceeds the configured time cap.",
@@ -178,14 +182,17 @@ async def create_answer(
         )
 
     llm_feedback = await llm.generate_feedback(
-        role=session.role, question_text=question.text, transcript=transcription.transcript
+        role=session.role,
+        question_text=session_question.text,
+        transcript=transcription.transcript,
     )
 
     answer = feedback_service.build_answer(
         session_id=session.id,
         user_id=user.id,
-        question_id=question.id,
-        question_text=question.text,
+        question_id=session_question.question_id,
+        session_question_id=session_question.id,
+        question_text=session_question.text,
         transcription=transcription,
         feedback=llm_feedback,
     )
@@ -205,9 +212,38 @@ async def create_answer(
                 within_seconds=IDEMPOTENCY_KEY_TTL_S,
             )
             if existing is not None:
-                return feedback_service.to_answer_report(existing)
+                return await feedback_service.to_answer_report(db, answer=existing, session=session)
         raise
-    return feedback_service.to_answer_report(saved)
+
+    # Advance the session: either the next question in sequence, or completion.
+    if session_question.sequence_number >= session.question_count:
+        await repo.mark_session_completed(db, session_id=session.id)
+    else:
+        next_position = session_question.sequence_number + 1
+        next_category = category_for_position(session.focus, next_position)
+        try:
+            text, source, question_id = await select_next_question(
+                db,
+                session=session,
+                category=next_category,
+                prior_follow_up=llm_feedback.follow_up_question,
+            )
+        except NoQuestionAvailableError:
+            # No bank question left and no usable follow-up — end the session early rather than
+            # leaving it stuck with no way to progress.
+            await repo.mark_session_completed(db, session_id=session.id)
+        else:
+            await repo.create_session_question(
+                db,
+                session_id=session.id,
+                sequence_number=next_position,
+                text=text,
+                category=next_category,
+                source=source,
+                question_id=question_id,
+            )
+
+    return await feedback_service.to_answer_report(db, answer=saved, session=session)
 
 
 @router.get("/answers/{answer_id}", response_model=AnswerReport)
@@ -221,4 +257,9 @@ async def get_answer(
         raise ApiError(
             "answer_not_found", "Answer not found.", status_code=status.HTTP_404_NOT_FOUND
         )
-    return feedback_service.to_answer_report(answer)
+    session = await repo.get_session_for_user(db, session_id=answer.session_id, user_id=user.id)
+    if session is None:
+        raise ApiError(
+            "session_not_found", "Session not found.", status_code=status.HTTP_404_NOT_FOUND
+        )
+    return await feedback_service.to_answer_report(db, answer=answer, session=session)

@@ -24,11 +24,12 @@ async def _seed_question(
     *,
     role: Role = Role.BACKEND,
     difficulty: Difficulty = Difficulty.MEDIUM,
+    category: Category = Category.TECHNICAL,
 ) -> str:
     question = Question(
         role=role,
         difficulty=difficulty,
-        category=Category.TECHNICAL,
+        category=category,
         text="How would you design a rate limiter?",
     )
     db_session.add(question)
@@ -38,16 +39,61 @@ async def _seed_question(
 
 
 def _create_session(
-    client: TestClient, user: dict[str, Any], *, role: str = "backend", difficulty: str = "medium"
-) -> str:
+    client: TestClient,
+    user: dict[str, Any],
+    *,
+    role: str = "backend",
+    difficulty: str = "medium",
+    focus: str = "technical",
+    question_count: int = 5,
+    answer_cap_s: int = 120,
+) -> dict[str, Any]:
+    """Creates a session and returns the full response body (including its auto-generated
+    `current_question`) — the caller is responsible for seeding at least one matching bank
+    question first, or session creation itself 422s with no_questions_available."""
     response = client.post(
         "/v1/sessions",
-        json={"role": role, "difficulty": difficulty},
+        json={
+            "role": role,
+            "difficulty": difficulty,
+            "experience_level": "mid",
+            "focus": focus,
+            "question_count": question_count,
+            "answer_cap_s": answer_cap_s,
+        },
         headers=_auth_headers(user),
     )
-    assert response.status_code == 201
-    session_id: str = response.json()["id"]
-    return session_id
+    assert response.status_code == 201, response.text
+    body: dict[str, Any] = response.json()
+    return body
+
+
+async def _create_session_with_question(
+    client: TestClient,
+    db_session: AsyncSession,
+    user: dict[str, Any],
+    *,
+    role: str = "backend",
+    difficulty: str = "medium",
+    answer_cap_s: int = 120,
+    question_count: int = 5,
+) -> tuple[str, str, str]:
+    """Seeds one bank question and creates a session focused on its category, so the session's
+    auto-generated first question is deterministically that seeded question. Returns
+    (session_id, session_question_id, bank_question_id)."""
+    question_id = await _seed_question(
+        db_session, role=Role(role), difficulty=Difficulty(difficulty)
+    )
+    session = _create_session(
+        client,
+        user,
+        role=role,
+        difficulty=difficulty,
+        focus="technical",
+        answer_cap_s=answer_cap_s,
+        question_count=question_count,
+    )
+    return session["id"], session["current_question"]["id"], question_id
 
 
 def _fake_transcription(
@@ -60,7 +106,9 @@ def _fake_transcription(
     return TranscriptionResult(transcript=transcript, words=words, duration_s=duration_s)
 
 
-def _fake_feedback() -> LLMFeedback:
+def _fake_feedback(
+    follow_up_question: str = "How would you handle a burst of traffic?",
+) -> LLMFeedback:
     return LLMFeedback(
         star=StarScores(situation=7, task=7, action=8, result=7),
         clarity=8,
@@ -68,7 +116,7 @@ def _fake_feedback() -> LLMFeedback:
         rambling_notes="",
         tips=["Be more specific.", "Quantify the impact.", "Mention tradeoffs."],
         sample_answer="A stronger sample answer would open with the constraint...",
-        follow_up_question="How would you handle a burst of traffic?",
+        follow_up_question=follow_up_question,
     )
 
 
@@ -76,9 +124,8 @@ def _post_answer(
     client: TestClient,
     *,
     session_id: str,
-    question_id: str,
+    session_question_id: str,
     user: dict[str, Any],
-    time_cap_s: int = 120,
     content_type: str = "audio/webm",
     audio_bytes: bytes = b"\x1a\x45\xdf\xa3fake-webm-bytes",
     idempotency_key: str | None = None,
@@ -88,11 +135,7 @@ def _post_answer(
         headers["Idempotency-Key"] = idempotency_key
     return client.post(
         "/v1/answers",
-        data={
-            "session_id": session_id,
-            "question_id": question_id,
-            "time_cap_s": str(time_cap_s),
-        },
+        data={"session_id": session_id, "session_question_id": session_question_id},
         files={"audio": ("answer.webm", audio_bytes, content_type)},
         headers=headers,
     )
@@ -118,16 +161,20 @@ async def test_create_answer_happy_path(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, question_id = await _create_session_with_question(
+        client, db_session, user
+    )
 
-    response = _post_answer(client, session_id=session_id, question_id=question_id, user=user)
+    response = _post_answer(
+        client, session_id=session_id, session_question_id=session_question_id, user=user
+    )
 
     assert response.status_code == 201
     body = response.json()
     assert body["transcript"] == "I designed a token bucket rate limiter."
     assert body["session_id"] == session_id
     assert body["question_id"] == question_id
+    assert body["session_question_id"] == session_question_id
     assert body["feedback"]["star"]["action"] == 8
     assert body["feedback"]["tips"] == [
         "Be more specific.",
@@ -137,6 +184,45 @@ async def test_create_answer_happy_path(
     assert body["filler_count"] == 0
     assert body["wpm"] > 0
     assert body["confidence_note"] is None
+    assert body["question_number"] == 1
+    assert body["question_count"] == 5
+    assert body["session_status"] == "in_progress"
+    assert body["next_question"] is not None
+    assert body["next_question"]["sequence_number"] == 2
+
+
+async def test_create_answer_on_the_last_question_completes_the_session(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user, question_count=3
+    )
+    # Answer questions 1 and 2 first, following the server's own next_question each time.
+    current = session_question_id
+    for _ in range(2):
+        response = _post_answer(
+            client, session_id=session_id, session_question_id=current, user=user
+        )
+        assert response.status_code == 201
+        current = response.json()["next_question"]["id"]
+
+    final_response = _post_answer(
+        client, session_id=session_id, session_question_id=current, user=user
+    )
+
+    assert final_response.status_code == 201
+    body = final_response.json()
+    assert body["question_number"] == 3
+    assert body["session_status"] == "completed"
+    assert body["next_question"] is None
+
+    summary = client.get(f"/v1/sessions/{session_id}", headers=_auth_headers(user))
+    assert summary.status_code == 200
+    assert summary.json()["questions_completed"] == 3
+    assert summary.json()["session"]["status"] == "completed"
 
 
 async def test_create_answer_includes_a_confidence_note_for_a_high_filler_rate(
@@ -153,10 +239,13 @@ async def test_create_answer_includes_a_confidence_note_for_a_high_filler_rate(
     monkeypatch.setattr(stt, "transcribe", filler_heavy_transcribe)
 
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
-    response = _post_answer(client, session_id=session_id, question_id=question_id, user=user)
+    response = _post_answer(
+        client, session_id=session_id, session_question_id=session_question_id, user=user
+    )
 
     assert response.status_code == 201
     body = response.json()
@@ -180,20 +269,21 @@ async def test_create_answer_is_idempotent_on_a_repeated_key(
     monkeypatch.setattr(stt, "transcribe", counting_transcribe)
 
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
     first = _post_answer(
         client,
         session_id=session_id,
-        question_id=question_id,
+        session_question_id=session_question_id,
         user=user,
         idempotency_key="retry-key-1",
     )
     second = _post_answer(
         client,
         session_id=session_id,
-        question_id=question_id,
+        session_question_id=session_question_id,
         user=user,
         idempotency_key="retry-key-1",
     )
@@ -208,33 +298,29 @@ async def test_create_answer_is_idempotent_on_a_repeated_key(
     assert len(all_answers) == 1
 
 
-async def test_create_answer_treats_a_different_key_as_a_new_answer(
+async def test_create_answer_rejects_answering_the_same_question_twice(
     client: TestClient,
     db_session: AsyncSession,
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
     first = _post_answer(
-        client,
-        session_id=session_id,
-        question_id=question_id,
-        user=user,
-        idempotency_key="key-a",
+        client, session_id=session_id, session_question_id=session_question_id, user=user
     )
+    assert first.status_code == 201
+
+    # No idempotency key this time — a genuinely separate request for the same question, not a
+    # retry of the first one.
     second = _post_answer(
-        client,
-        session_id=session_id,
-        question_id=question_id,
-        user=user,
-        idempotency_key="key-b",
+        client, session_id=session_id, session_question_id=session_question_id, user=user
     )
 
-    assert first.status_code == 201
-    assert second.status_code == 201
-    assert first.json()["id"] != second.json()["id"]
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == "question_already_answered"
 
 
 async def test_create_answer_rejects_an_oversized_idempotency_key(
@@ -243,13 +329,14 @@ async def test_create_answer_rejects_an_oversized_idempotency_key(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
     response = _post_answer(
         client,
         session_id=session_id,
-        question_id=question_id,
+        session_question_id=session_question_id,
         user=user,
         idempotency_key="x" * 129,
     )
@@ -264,13 +351,14 @@ async def test_create_answer_accepts_a_key_exactly_at_the_length_limit(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
     response = _post_answer(
         client,
         session_id=session_id,
-        question_id=question_id,
+        session_question_id=session_question_id,
         user=user,
         idempotency_key="x" * 128,
     )
@@ -290,10 +378,13 @@ async def test_create_answer_computes_fillers_from_the_transcript(
     monkeypatch.setattr(stt, "transcribe", fake_transcribe)
 
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
-    response = _post_answer(client, session_id=session_id, question_id=question_id, user=user)
+    response = _post_answer(
+        client, session_id=session_id, session_question_id=session_question_id, user=user
+    )
 
     assert response.status_code == 201
     assert response.json()["filler_count"] == 3
@@ -305,9 +396,10 @@ async def test_create_answer_rejects_unknown_session(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
 
-    response = _post_answer(client, session_id="does-not-exist", question_id=question_id, user=user)
+    response = _post_answer(
+        client, session_id="does-not-exist", session_question_id="does-not-exist", user=user
+    )
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "session_not_found"
@@ -320,60 +412,58 @@ async def test_create_answer_rejects_another_users_session(
 ) -> None:
     user_a = register_user("a@example.com")
     user_b = register_user("b@example.com")
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user_a)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user_a
+    )
 
-    response = _post_answer(client, session_id=session_id, question_id=question_id, user=user_b)
+    response = _post_answer(
+        client, session_id=session_id, session_question_id=session_question_id, user=user_b
+    )
 
     assert response.status_code == 404
 
 
 async def test_create_answer_rejects_unknown_question(
-    client: TestClient, register_user: Callable[..., dict[str, Any]]
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    session_id = _create_session(client, user)
+    session_id, _, _ = await _create_session_with_question(client, db_session, user)
 
-    response = _post_answer(client, session_id=session_id, question_id="does-not-exist", user=user)
+    response = _post_answer(
+        client, session_id=session_id, session_question_id="does-not-exist", user=user
+    )
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "question_not_found"
 
 
-async def test_create_answer_rejects_a_question_from_a_different_role(
+async def test_create_answer_rejects_a_session_question_from_a_different_session(
     client: TestClient,
     db_session: AsyncSession,
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
+    """A SessionQuestion always belongs to exactly one session by construction — there's no
+    "role/difficulty mismatch" case left to test (unlike the old client-chosen-question design):
+    presenting one session's question against a *different* session's id is just not found."""
     user = register_user()
-    session_id = _create_session(client, user, role="backend", difficulty="medium")
-    frontend_question_id = await _seed_question(
-        db_session, role=Role.FRONTEND, difficulty=Difficulty.MEDIUM
+    _, session_a_question_id, _ = await _create_session_with_question(
+        client, db_session, user, role="backend", difficulty="medium"
+    )
+    session_b_id, _, _ = await _create_session_with_question(
+        client, db_session, user, role="frontend", difficulty="medium"
     )
 
     response = _post_answer(
-        client, session_id=session_id, question_id=frontend_question_id, user=user
+        client,
+        session_id=session_b_id,
+        session_question_id=session_a_question_id,
+        user=user,
     )
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "question_session_mismatch"
-
-
-async def test_create_answer_rejects_a_question_from_a_different_difficulty(
-    client: TestClient,
-    db_session: AsyncSession,
-    register_user: Callable[..., dict[str, Any]],
-) -> None:
-    user = register_user()
-    session_id = _create_session(client, user, role="backend", difficulty="medium")
-    hard_question_id = await _seed_question(
-        db_session, role=Role.BACKEND, difficulty=Difficulty.HARD
-    )
-
-    response = _post_answer(client, session_id=session_id, question_id=hard_question_id, user=user)
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "question_session_mismatch"
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "question_not_found"
 
 
 async def test_create_answer_rejects_non_webm_ogg_content_type(
@@ -382,61 +472,19 @@ async def test_create_answer_rejects_non_webm_ogg_content_type(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
     response = _post_answer(
         client,
         session_id=session_id,
-        question_id=question_id,
+        session_question_id=session_question_id,
         user=user,
         content_type="audio/mpeg",
     )
 
     assert response.status_code == 415
-
-
-async def test_create_answer_accepts_a_valid_time_cap(
-    client: TestClient,
-    db_session: AsyncSession,
-    register_user: Callable[..., dict[str, Any]],
-) -> None:
-    user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
-
-    response = _post_answer(
-        client,
-        session_id=session_id,
-        question_id=question_id,
-        user=user,
-        time_cap_s=180,
-    )
-
-    assert response.status_code == 201
-
-
-@pytest.mark.parametrize("time_cap_s", [90, -60, 0])
-async def test_create_answer_rejects_a_time_cap_outside_the_allowed_choices(
-    client: TestClient,
-    db_session: AsyncSession,
-    register_user: Callable[..., dict[str, Any]],
-    time_cap_s: int,
-) -> None:
-    user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
-
-    response = _post_answer(
-        client,
-        session_id=session_id,
-        question_id=question_id,
-        user=user,
-        time_cap_s=time_cap_s,
-    )
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "invalid_time_cap"
 
 
 async def test_create_answer_rejects_a_payload_that_isnt_really_audio(
@@ -447,13 +495,14 @@ async def test_create_answer_rejects_a_payload_that_isnt_really_audio(
     """A spoofed Content-Type header alone shouldn't be enough — the actual bytes are sniffed
     for a real WebM/Ogg signature before anything gets sent to Groq."""
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
     response = _post_answer(
         client,
         session_id=session_id,
-        question_id=question_id,
+        session_question_id=session_question_id,
         user=user,
         content_type="audio/webm",
         audio_bytes=b"this is not actually a webm file",
@@ -469,13 +518,14 @@ async def test_create_answer_accepts_a_real_ogg_signature(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
     response = _post_answer(
         client,
         session_id=session_id,
-        question_id=question_id,
+        session_question_id=session_question_id,
         user=user,
         content_type="audio/ogg",
         audio_bytes=b"OggSfake-ogg-bytes",
@@ -490,14 +540,15 @@ async def test_create_answer_rejects_uploads_over_4mb(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
     oversized = b"0" * (4 * 1024 * 1024 + 1)
     response = _post_answer(
         client,
         session_id=session_id,
-        question_id=question_id,
+        session_question_id=session_question_id,
         user=user,
         audio_bytes=oversized,
     )
@@ -517,11 +568,12 @@ async def test_create_answer_rejects_duration_beyond_the_time_cap(
     monkeypatch.setattr(stt, "transcribe", fake_transcribe)
 
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user, answer_cap_s=60
+    )
 
     response = _post_answer(
-        client, session_id=session_id, question_id=question_id, user=user, time_cap_s=60
+        client, session_id=session_id, session_question_id=session_question_id, user=user
     )
 
     assert response.status_code == 422
@@ -540,10 +592,13 @@ async def test_create_answer_rejects_silent_recordings(
     monkeypatch.setattr(stt, "transcribe", fake_transcribe)
 
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
-    response = _post_answer(client, session_id=session_id, question_id=question_id, user=user)
+    response = _post_answer(
+        client, session_id=session_id, session_question_id=session_question_id, user=user
+    )
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "empty_transcript"
@@ -591,8 +646,9 @@ async def test_create_answer_enforces_the_daily_rate_limit(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, question_id = await _create_session_with_question(
+        client, db_session, user
+    )
 
     for _ in range(30):
         db_session.add(
@@ -608,7 +664,9 @@ async def test_create_answer_enforces_the_daily_rate_limit(
         )
     await db_session.commit()
 
-    response = _post_answer(client, session_id=session_id, question_id=question_id, user=user)
+    response = _post_answer(
+        client, session_id=session_id, session_question_id=session_question_id, user=user
+    )
 
     assert response.status_code == 429
     assert response.json()["error"]["code"] == "rate_limited"
@@ -620,15 +678,25 @@ async def test_create_answer_enforces_the_per_minute_burst_limit(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     """Separate from the 30/day cap above: even a user nowhere near that cap gets stopped by
-    a tighter per-minute burst limit, since each call costs real Groq usage."""
+    a tighter per-minute burst limit, since each call costs real Groq usage. Each iteration
+    answers the session's *current* question and moves to the one it returns, since a question
+    can't be answered twice."""
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user, question_count=8
+    )
 
-    responses = [
-        _post_answer(client, session_id=session_id, question_id=question_id, user=user)
-        for _ in range(7)
-    ]
+    responses = []
+    current = session_question_id
+    for _ in range(7):
+        response = _post_answer(
+            client, session_id=session_id, session_question_id=current, user=user
+        )
+        responses.append(response)
+        if response.status_code == 201:
+            next_question = response.json()["next_question"]
+            if next_question is not None:
+                current = next_question["id"]
 
     assert [r.status_code for r in responses[:6]] == [201] * 6
     assert responses[6].status_code == 429
@@ -642,11 +710,12 @@ async def test_get_answer_returns_the_full_report(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
 
     create_response = _post_answer(
-        client, session_id=session_id, question_id=question_id, user=user
+        client, session_id=session_id, session_question_id=session_question_id, user=user
     )
     answer_id = create_response.json()["id"]
 
@@ -663,11 +732,12 @@ async def test_get_answer_is_scoped_to_the_owner(
 ) -> None:
     user_a = register_user("a@example.com")
     user_b = register_user("b@example.com")
-    question_id = await _seed_question(db_session)
-    session_id = _create_session(client, user_a)
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user_a
+    )
 
     create_response = _post_answer(
-        client, session_id=session_id, question_id=question_id, user=user_a
+        client, session_id=session_id, session_question_id=session_question_id, user=user_a
     )
     answer_id = create_response.json()["id"]
 

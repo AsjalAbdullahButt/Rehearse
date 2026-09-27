@@ -8,9 +8,9 @@ function toValidRole(value: string | undefined): Role | undefined {
 export default async function InterviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ role?: string }>;
+  searchParams: Promise<{ role?: string; session?: string }>;
 }) {
-  const { role } = await searchParams;
+  const { role, session } = await searchParams;
 
-  return <InterviewFlow initialRole={toValidRole(role)} />;
+  return <InterviewFlow initialRole={toValidRole(role)} resumeSessionId={session} />;
 }

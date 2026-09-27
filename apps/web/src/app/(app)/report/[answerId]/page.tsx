@@ -138,15 +138,32 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
         </div>
 
         <div className="border-line flex flex-col items-center gap-3 border-t pt-6 text-center">
-          <p className="text-muted text-sm">
-            Every round builds confidence. Ready to try another one?
-          </p>
-          <Link
-            href="/interview"
-            className="bg-lime text-lime-ink inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] px-6 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
-          >
-            Let&apos;s try another round
-          </Link>
+          {report.session_status === "completed" || !report.next_question ? (
+            <>
+              <p className="text-muted text-sm">
+                That was the last question — your session is complete.
+              </p>
+              <Link
+                href={`/session/${report.session_id}/summary`}
+                className="bg-lime text-lime-ink inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] px-6 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
+              >
+                View session summary
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="text-muted text-sm">
+                Question {report.question_number} of {report.question_count} complete.
+              </p>
+              <Link
+                href={`/interview?session=${report.session_id}`}
+                className="bg-lime text-lime-ink inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] px-6 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
+              >
+                Continue interview — Question {report.question_number + 1} of{" "}
+                {report.question_count}
+              </Link>
+            </>
+          )}
         </div>
       </Card>
     </div>

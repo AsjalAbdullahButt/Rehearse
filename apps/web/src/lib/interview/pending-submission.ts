@@ -1,9 +1,8 @@
-import type { InterviewSession, Question } from "@/lib/interview/types";
+import type { InterviewSession, SessionQuestion } from "@/lib/interview/types";
 
 export interface PendingAnswerSubmission {
   session: InterviewSession;
-  question: Question;
-  timeCapS: number;
+  question: SessionQuestion;
   blob: Blob;
   /** Generated once per recording (see `createIdempotencyKey`) and reused for every retry of
    * that same recording, so a lost-response retry replays the original request instead of the

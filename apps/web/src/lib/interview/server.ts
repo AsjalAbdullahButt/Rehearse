@@ -4,7 +4,7 @@
 
 import { apiFetch, type UserPublic } from "@/lib/auth/api";
 import { peekAccessToken } from "@/lib/auth/session";
-import type { AnswerReport, ProgressOut, Profile } from "@/lib/interview/types";
+import type { AnswerReport, ProgressOut, Profile, SessionSummary } from "@/lib/interview/types";
 
 async function fetchFromApi<T>(path: string): Promise<T | null> {
   const accessToken = await peekAccessToken();
@@ -32,4 +32,8 @@ export function fetchProgress(): Promise<ProgressOut | null> {
 
 export function fetchProfile(): Promise<Profile | null> {
   return fetchFromApi<Profile>("/v1/profile");
+}
+
+export function fetchSessionSummary(sessionId: string): Promise<SessionSummary | null> {
+  return fetchFromApi<SessionSummary>(`/v1/sessions/${encodeURIComponent(sessionId)}`);
 }

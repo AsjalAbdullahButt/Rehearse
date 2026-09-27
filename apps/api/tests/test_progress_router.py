@@ -5,10 +5,44 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
+from app.models.enums import Category, Difficulty, Role
+from app.models.question import Question
 
 
 def _auth_headers(user: dict[str, Any]) -> dict[str, str]:
     return {"Authorization": f"Bearer {user['access_token']}"}
+
+
+async def _seed_question(
+    db_session: AsyncSession,
+    *,
+    role: Role = Role.BACKEND,
+    difficulty: Difficulty = Difficulty.MEDIUM,
+) -> None:
+    db_session.add(
+        Question(role=role, difficulty=difficulty, category=Category.TECHNICAL, text="Q")
+    )
+    await db_session.commit()
+
+
+def _create_session(
+    client: TestClient, user: dict[str, Any], *, role: str = "backend", difficulty: str = "medium"
+) -> str:
+    response = client.post(
+        "/v1/sessions",
+        json={
+            "role": role,
+            "difficulty": difficulty,
+            "experience_level": "mid",
+            "focus": "technical",
+            "question_count": 5,
+            "answer_cap_s": 120,
+        },
+        headers=_auth_headers(user),
+    )
+    assert response.status_code == 201, response.text
+    session_id: str = response.json()["id"]
+    return session_id
 
 
 async def test_progress_is_empty_for_a_new_user(
@@ -28,13 +62,8 @@ async def test_progress_aggregates_answers_per_session(
     register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user = register_user()
-
-    session_response = client.post(
-        "/v1/sessions",
-        json={"role": "backend", "difficulty": "medium"},
-        headers=_auth_headers(user),
-    )
-    session_id = session_response.json()["id"]
+    await _seed_question(db_session)
+    session_id = _create_session(client, user)
 
     db_session.add_all(
         [
@@ -86,15 +115,9 @@ async def test_progress_keeps_each_sessions_answers_separate(
     """Regression test for the batched-query rewrite of get_progress_for_user: answers must
     stay grouped by their own session_id, not bleed into another session's averages."""
     user = register_user()
+    await _seed_question(db_session)
 
-    session_ids = [
-        client.post(
-            "/v1/sessions",
-            json={"role": "backend", "difficulty": "medium"},
-            headers=_auth_headers(user),
-        ).json()["id"]
-        for _ in range(2)
-    ]
+    session_ids = [_create_session(client, user) for _ in range(2)]
 
     db_session.add_all(
         [
@@ -129,16 +152,15 @@ async def test_progress_keeps_each_sessions_answers_separate(
 
 
 async def test_progress_only_includes_the_callers_own_sessions(
-    client: TestClient, register_user: Callable[..., dict[str, Any]]
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
 ) -> None:
     user_a = register_user("a@example.com")
     user_b = register_user("b@example.com")
+    await _seed_question(db_session)
 
-    client.post(
-        "/v1/sessions",
-        json={"role": "backend", "difficulty": "easy"},
-        headers=_auth_headers(user_b),
-    )
+    _create_session(client, user_b)
 
     response = client.get("/v1/progress", headers=_auth_headers(user_a))
 

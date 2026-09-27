@@ -35,24 +35,109 @@ export const DIFFICULTY_OPTIONS: { slug: Difficulty; name: string }[] = [
 ];
 
 // Mirrors apps/api/app/models/profile.py's ANSWER_CAP_CHOICES — shared between the per-session
-// override in RolePicker and the persisted default in Settings.
+// override in SessionSetupForm and the persisted default in Settings.
 export const TIME_CAP_OPTIONS = [60, 120, 180, 300] as const;
+
+export type ExperienceLevel = "student" | "junior" | "mid" | "senior";
+
+export const EXPERIENCE_LEVEL_OPTIONS: { slug: ExperienceLevel; name: string }[] = [
+  { slug: "student", name: "Student / New grad" },
+  { slug: "junior", name: "Junior" },
+  { slug: "mid", name: "Mid-level" },
+  { slug: "senior", name: "Senior" },
+];
+
+export type Focus = "behavioral" | "technical" | "situational" | "mixed";
+
+export const FOCUS_OPTIONS: { slug: Focus; name: string }[] = [
+  { slug: "behavioral", name: "Behavioral" },
+  { slug: "technical", name: "Technical" },
+  { slug: "situational", name: "Situational" },
+  { slug: "mixed", name: "Mixed" },
+];
+
+// Mirrors apps/api/app/models/interview_session.py's QUESTION_COUNT_CHOICES.
+export const QUESTION_COUNT_OPTIONS = [3, 5, 8] as const;
+
+export type InterviewerStyle = "supportive" | "realistic" | "challenging";
+
+export const INTERVIEWER_STYLE_OPTIONS: { slug: InterviewerStyle; name: string }[] = [
+  { slug: "supportive", name: "Supportive" },
+  { slug: "realistic", name: "Realistic" },
+  { slug: "challenging", name: "Challenging" },
+];
+
+export type Category = "behavioral" | "technical" | "situational";
+export type QuestionSource = "bank" | "generated" | "follow_up";
+export type SessionStatus = "in_progress" | "completed";
 
 export interface Question {
   id: string;
   role: Role;
   difficulty: Difficulty;
-  category: "behavioral" | "technical" | "situational";
+  category: Category;
   text: string;
+}
+
+export interface SessionQuestion {
+  id: string;
+  sequence_number: number;
+  text: string;
+  category: Category;
+  source: QuestionSource;
+}
+
+export interface SessionCreateInput {
+  role: Role;
+  difficulty: Difficulty;
+  experience_level: ExperienceLevel;
+  focus: Focus;
+  question_count: (typeof QUESTION_COUNT_OPTIONS)[number];
+  answer_cap_s: (typeof TIME_CAP_OPTIONS)[number];
+  company?: string;
+  industry?: string;
+  job_description?: string;
+  candidate_background?: string;
+  skills?: string[];
+  focus_topics?: string[];
+  years_experience?: number;
+  interviewer_style?: InterviewerStyle;
+  language?: string;
 }
 
 export interface InterviewSession {
   id: string;
   user_id: string;
-  role: string;
+  role: Role;
   difficulty: Difficulty;
+  experience_level: ExperienceLevel | null;
+  focus: Focus;
+  question_count: number;
+  answer_cap_s: number;
+  company: string | null;
+  industry: string | null;
+  interviewer_style: InterviewerStyle | null;
+  language: string | null;
+  status: SessionStatus;
+  current_question_number: number;
   started_at: string;
   ended_at: string | null;
+  current_question: SessionQuestion | null;
+}
+
+export interface AnswerCategoryBreakdown {
+  category: Category;
+  avg_star: number | null;
+}
+
+export interface SessionSummary {
+  session: InterviewSession;
+  questions_completed: number;
+  overall_score: number | null;
+  category_breakdown: AnswerCategoryBreakdown[];
+  avg_wpm: number | null;
+  avg_filler_count: number | null;
+  avg_clarity: number | null;
 }
 
 export interface ApiTranscriptPart {
@@ -82,6 +167,7 @@ export interface AnswerReport {
   id: string;
   session_id: string;
   question_id: string | null;
+  session_question_id: string | null;
   question_text: string;
   transcript: string;
   transcript_parts: ApiTranscriptPart[];
@@ -94,6 +180,10 @@ export interface AnswerReport {
   confidence_note: string | null;
   feedback: LLMFeedback;
   created_at: string;
+  question_number: number;
+  question_count: number;
+  session_status: SessionStatus;
+  next_question: SessionQuestion | null;
 }
 
 export interface ProgressRow {

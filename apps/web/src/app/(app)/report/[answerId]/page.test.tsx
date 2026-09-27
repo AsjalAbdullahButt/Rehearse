@@ -23,6 +23,7 @@ function baseReport(): AnswerReport {
     id: "answer-1",
     session_id: "session-1",
     question_id: "question-1",
+    session_question_id: "session-question-1",
     question_text: "Tell me about a time you resolved a conflict.",
     transcript: "I once had a disagreement with a teammate...",
     transcript_parts: [{ type: "text", text: "I once had a disagreement.", seconds: null }],
@@ -43,6 +44,16 @@ function baseReport(): AnswerReport {
       follow_up_question: "What would you do differently?",
     },
     created_at: new Date().toISOString(),
+    question_number: 1,
+    question_count: 3,
+    session_status: "in_progress",
+    next_question: {
+      id: "session-question-2",
+      sequence_number: 2,
+      text: "Next question",
+      category: "behavioral",
+      source: "bank",
+    },
   };
 }
 
@@ -127,13 +138,28 @@ describe("ReportPage", () => {
     expect(screen.getByText(/leaned on filler words/)).toBeInTheDocument();
   });
 
-  it("always offers a way to start another practice round", async () => {
+  it("offers to continue the interview when more questions remain", async () => {
     fetchAnswerReportMock.mockResolvedValue(baseReport());
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
     render(element);
 
-    const link = screen.getByRole("link", { name: "Let's try another round" });
-    expect(link).toHaveAttribute("href", "/interview");
+    const link = screen.getByRole("link", { name: "Continue interview — Question 2 of 3" });
+    expect(link).toHaveAttribute("href", "/interview?session=session-1");
+  });
+
+  it("offers the session summary once the session is complete", async () => {
+    fetchAnswerReportMock.mockResolvedValue({
+      ...baseReport(),
+      question_number: 3,
+      session_status: "completed",
+      next_question: null,
+    });
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    const link = screen.getByRole("link", { name: "View session summary" });
+    expect(link).toHaveAttribute("href", "/session/session-1/summary");
   });
 });

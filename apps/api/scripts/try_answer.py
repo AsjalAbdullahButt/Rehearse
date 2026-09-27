@@ -48,28 +48,21 @@ def main() -> int:
 
         session_response = client.post(
             "/v1/sessions",
-            json={"role": args.role, "difficulty": args.difficulty},
+            json={
+                "role": args.role,
+                "difficulty": args.difficulty,
+                "experience_level": "mid",
+                "focus": "mixed",
+                "question_count": 3,
+                "answer_cap_s": args.time_cap_s,
+            },
             headers=headers,
         )
         session_response.raise_for_status()
-        session_id = session_response.json()["id"]
-
-        questions_response = client.get(
-            "/v1/questions",
-            params={"role": args.role, "difficulty": args.difficulty},
-            headers=headers,
-        )
-        questions_response.raise_for_status()
-        questions = questions_response.json()
-        if not questions:
-            print(
-                f"No questions found for role={args.role} difficulty={args.difficulty}",
-                file=sys.stderr,
-            )
-            return 1
-
-        question = questions[0]
-        print(f"Question: {question['text']}")
+        session = session_response.json()
+        session_id = session["id"]
+        current_question = session["current_question"]
+        print(f"Question: {current_question['text']}")
 
         content_type = "audio/ogg" if args.audio_path.suffix == ".ogg" else "audio/webm"
         with args.audio_path.open("rb") as audio_file:
@@ -77,8 +70,7 @@ def main() -> int:
                 "/v1/answers",
                 data={
                     "session_id": session_id,
-                    "question_id": question["id"],
-                    "time_cap_s": str(args.time_cap_s),
+                    "session_question_id": current_question["id"],
                 },
                 files={"audio": (args.audio_path.name, audio_file, content_type)},
                 headers=headers,

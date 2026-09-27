@@ -13,12 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
 from app.models.base import utcnow
-from app.models.enums import Difficulty, Role
+from app.models.enums import Category, Difficulty, Focus, InterviewerStyle, Role, SessionStatus
 from app.models.interview_session import InterviewSession
 from app.models.profile import Profile
 from app.models.question import Question
 from app.models.rate_limit_hit import RateLimitHit
 from app.models.refresh_token import RefreshToken
+from app.models.session_question import SessionQuestion
 from app.models.user import User
 from app.schemas.progress import ProgressRow
 
@@ -181,7 +182,8 @@ async def revoke_all_refresh_tokens(db: AsyncSession, *, user_id: str) -> None:
 # lazy-loaded relationships, so caching the ORM instances themselves (rather than re-fetching
 # after the owning session closes) is safe.
 _QUESTIONS_CACHE_TTL_S = 300.0
-_questions_cache: dict[tuple[Role, Difficulty | None], tuple[float, list[Question]]] = {}
+_QuestionsCacheKey = tuple[Role, Difficulty | None, Category | None]
+_questions_cache: dict[_QuestionsCacheKey, tuple[float, list[Question]]] = {}
 
 
 def clear_questions_cache() -> None:
@@ -191,9 +193,13 @@ def clear_questions_cache() -> None:
 
 
 async def list_questions(
-    db: AsyncSession, *, role: Role, difficulty: Difficulty | None = None
+    db: AsyncSession,
+    *,
+    role: Role,
+    difficulty: Difficulty | None = None,
+    category: Category | None = None,
 ) -> list[Question]:
-    cache_key = (role, difficulty)
+    cache_key = (role, difficulty, category)
     cached = _questions_cache.get(cache_key)
     if cached is not None and time.monotonic() - cached[0] < _QUESTIONS_CACHE_TTL_S:
         return cached[1]
@@ -201,6 +207,8 @@ async def list_questions(
     query = select(Question).where(Question.role == role, Question.is_active.is_(True))
     if difficulty is not None:
         query = query.where(Question.difficulty == difficulty)
+    if category is not None:
+        query = query.where(Question.category == category)
 
     result = await db.execute(query)
     questions = list(result.scalars().all())
@@ -236,9 +244,43 @@ async def get_answered_question_ids(
 
 
 async def create_session(
-    db: AsyncSession, *, user_id: str, role: Role, difficulty: Difficulty
+    db: AsyncSession,
+    *,
+    user_id: str,
+    role: Role,
+    difficulty: Difficulty,
+    experience_level: str | None = None,
+    focus: Focus = Focus.MIXED,
+    question_count: int = 5,
+    answer_cap_s: int = 120,
+    company: str | None = None,
+    industry: str | None = None,
+    job_description: str | None = None,
+    candidate_background: str | None = None,
+    skills: list[str] | None = None,
+    focus_topics: list[str] | None = None,
+    years_experience: int | None = None,
+    interviewer_style: InterviewerStyle | None = None,
+    language: str | None = None,
 ) -> InterviewSession:
-    session = InterviewSession(user_id=user_id, role=role, difficulty=difficulty)
+    session = InterviewSession(
+        user_id=user_id,
+        role=role,
+        difficulty=difficulty,
+        experience_level=experience_level,
+        focus=focus,
+        question_count=question_count,
+        answer_cap_s=answer_cap_s,
+        company=company,
+        industry=industry,
+        job_description=job_description,
+        candidate_background=candidate_background,
+        skills=skills,
+        focus_topics=focus_topics,
+        years_experience=years_experience,
+        interviewer_style=interviewer_style,
+        language=language,
+    )
     db.add(session)
     await db.commit()
     await db.refresh(session)
@@ -267,6 +309,84 @@ async def list_sessions_for_user(
         .offset(offset)
     )
     return list(result.scalars().all())
+
+
+async def mark_session_completed(db: AsyncSession, *, session_id: str) -> None:
+    await db.execute(
+        update(InterviewSession)
+        .where(InterviewSession.id == session_id)
+        .values(status=SessionStatus.COMPLETED, ended_at=utcnow())
+    )
+    await db.commit()
+
+
+# ─── session questions ───────────────────────────────────────────────────
+
+
+async def create_session_question(
+    db: AsyncSession,
+    *,
+    session_id: str,
+    sequence_number: int,
+    text: str,
+    category: Category,
+    source: str,
+    question_id: str | None = None,
+) -> SessionQuestion:
+    session_question = SessionQuestion(
+        session_id=session_id,
+        sequence_number=sequence_number,
+        text=text,
+        category=category,
+        source=source,
+        question_id=question_id,
+    )
+    db.add(session_question)
+    await db.execute(
+        update(InterviewSession)
+        .where(InterviewSession.id == session_id)
+        .values(current_question_number=sequence_number)
+    )
+    await db.commit()
+    await db.refresh(session_question)
+    return session_question
+
+
+async def get_session_question_for_session(
+    db: AsyncSession, *, session_question_id: str, session_id: str
+) -> SessionQuestion | None:
+    """Scoped by session_id, not just its own id — the session itself is already scoped to the
+    caller by get_session_for_user, so this transitively enforces ownership without a second
+    join back to users."""
+    result = await db.execute(
+        select(SessionQuestion).where(
+            SessionQuestion.id == session_question_id, SessionQuestion.session_id == session_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_session_questions_for_session(
+    db: AsyncSession, *, session_id: str
+) -> list[SessionQuestion]:
+    result = await db.execute(
+        select(SessionQuestion)
+        .where(SessionQuestion.session_id == session_id)
+        .order_by(SessionQuestion.sequence_number)
+    )
+    return list(result.scalars().all())
+
+
+async def get_used_bank_question_ids_for_session(db: AsyncSession, *, session_id: str) -> set[str]:
+    """Bank question IDs already served in this session — the "no duplicate question in the
+    same session" rule. Only meaningful for source=BANK rows; generated/follow-up questions
+    have no question_id at all."""
+    result = await db.execute(
+        select(SessionQuestion.question_id).where(
+            SessionQuestion.session_id == session_id, SessionQuestion.question_id.is_not(None)
+        )
+    )
+    return {question_id for question_id in result.scalars().all() if question_id is not None}
 
 
 # ─── answers ─────────────────────────────────────────────────────────────
@@ -305,9 +425,27 @@ async def get_answer_for_user(db: AsyncSession, *, answer_id: str, user_id: str)
     return result.scalar_one_or_none()
 
 
+async def get_answer_for_session_question(
+    db: AsyncSession, *, session_question_id: str
+) -> Answer | None:
+    """Backs the "no double-answering the same question" check in answers.py — a session's
+    questions are already scoped to their owning session/user by the time this is called."""
+    result = await db.execute(
+        select(Answer).where(Answer.session_question_id == session_question_id)
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_answers_for_user(db: AsyncSession, *, user_id: str) -> list[Answer]:
     result = await db.execute(
         select(Answer).where(Answer.user_id == user_id).order_by(Answer.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def list_answers_for_session(db: AsyncSession, *, session_id: str) -> list[Answer]:
+    result = await db.execute(
+        select(Answer).where(Answer.session_id == session_id).order_by(Answer.created_at)
     )
     return list(result.scalars().all())
 
