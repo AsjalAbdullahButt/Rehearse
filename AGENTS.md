@@ -419,6 +419,48 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
     needed so a resume-derived skills list can't produce something the session schema would
     reject downstream. `AccountPrivacyPanel`'s copy was extended to disclose this new data flow.
     Known gap: no OCR, so a scanned-image PDF with no text layer is rejected rather than read.
+  - **Frontend UX audit — closing the gap between what Settings promises and what the interview
+    actually does.** Found and fixed: Settings' default time cap / interviewer voice / speaking
+    rate were saved to the profile but never read anywhere — `/interview` hardcoded a 120s cap
+    and every `SpeechSynthesisUtterance` used the bare browser default voice/rate. `(app)/
+    interview/page.tsx` now fetches the profile server-side and passes it into `InterviewFlow`,
+    which resolves `voice_name` to a live `SpeechSynthesisVoice` (once the browser's async voice
+    list loads) through one shared `speak()` helper used by the question read-aloud, the silence
+    nudge, and "repeat the question" alike, and passes `answer_cap_s` into `SessionSetupForm` as
+    its pre-filled default instead of a constant.
+    - **Mic check + get-ready countdown.** A new `"mic-check"` `FlowState` stage runs once, only
+      before a session's first question (`firstStageFor` — resuming later in an in-progress
+      session skips it, since the mic's already been exercised): reuses the same
+      `useAudioRecorder`/`Waveform` as the real recording, showing live level bars so a bad mic is
+      caught before an answer is wasted on it, with "Skip check" always available. Its throwaway
+      recording is discarded via `micCheckActiveRef` (a ref, not state — `handleStopped` fires
+      from the recorder's real, asynchronously-later "stop" event, so a ref sidesteps a stale-
+      closure race a `state.stage` check alone can't). Separately, every question (not just the
+      first) now has a 3-second "get ready" beat between pressing "Start recording" and the mic
+      actually going live (`isPreparing` + a second `useCountdown` call), instead of the clock and
+      mic starting the instant the button is clicked.
+    - **"Practice this weak area" and "Repeat this setup" links, from the session summary page.**
+      The summary page already computed and displayed the weakest category in prose but never
+      linked to it — it now does, as `/interview?role=<role>&focus=<weakest category>`. A second,
+      broader "Repeat this setup" link carries the full previous configuration (role, difficulty,
+      focus, question count, time cap) as query params. `(app)/interview/page.tsx` and
+      `SessionSetupForm` both gained matching `initialDifficulty`/`initialQuestionCount` props to
+      receive them (`initialFocus`/`initialAnswerCapS` already existed from the profile-defaults
+      work above); an explicit link always wins over a standing profile default.
+    - **`target_role` finally has a Settings UI.** `display_name`/`target_role` were modeled on
+      `Profile` and returned by `GET /v1/profile` since Phase 5 with no way to set them (a
+      previously-documented gap) — `SettingsForm` now has a "Target role" `OptionPill` row
+      (reusing `ROLE_OPTIONS`, plus a "No default" pill to clear it), and `(app)/interview/
+      page.tsx` falls back to it for `initialRole` whenever no `role` query param is present.
+      `display_name` remains unexposed in Settings — it's set at registration
+      (`sign-in-form.tsx`) but has no other consumer yet, so adding an editor for it here would be
+      UI ahead of a use case, the same reasoning Phase 5 originally gave for leaving both alone.
+    Not covered by an automated test: `InterviewFlow` itself has no test file (heavy
+    `MediaRecorder`/`getUserMedia`/`speechSynthesis`/`AnalyserNode` usage this environment's
+    jsdom can't provide — consistent with Phase 4's already-documented limitation). What's newly
+    covered: `SessionSetupForm`'s prop-driven defaults (`session-setup-form.test.tsx`, new) and
+    `SettingsForm`'s target-role save/clear behavior (`settings-form.test.tsx`, new) — both were
+    previously untested files.
 
 ## Known gaps / deliberate scope cuts from Phase 2
 

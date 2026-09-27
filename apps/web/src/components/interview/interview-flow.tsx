@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LiveCaption } from "@/components/interview/live-caption";
 import { MicOrb } from "@/components/interview/mic-orb";
@@ -14,6 +14,7 @@ import { useCountdown } from "@/hooks/use-countdown";
 import { useLiveCaptions } from "@/hooks/use-live-captions";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import { useSilenceNudge } from "@/hooks/use-silence-nudge";
+import { useSpeechVoices } from "@/hooks/use-speech-voices";
 import { useVoiceActivity } from "@/hooks/use-voice-activity";
 import {
   createIdempotencyKey,
@@ -23,7 +24,10 @@ import {
 } from "@/lib/interview/pending-submission";
 import type {
   AnswerReport,
+  Difficulty,
+  Focus,
   InterviewSession,
+  Profile,
   Role,
   SessionCreateInput,
   SessionQuestion,
@@ -31,9 +35,17 @@ import type {
 } from "@/lib/interview/types";
 import { formatTime, getTimerTone } from "@/lib/utils";
 
+// How long the "get ready" beat runs after pressing "Start recording" — long enough to take a
+// breath, short enough not to feel like a delay.
+const PREP_COUNTDOWN_S = 3;
+
 type FlowState =
   | { stage: "setup" }
   | { stage: "starting" }
+  // Shown once at the start of a fresh session (the first question only — see
+  // handleSetupSubmit/the resume effect) so a bad mic is caught before an answer is wasted on
+  // it, not on every question.
+  | { stage: "mic-check"; session: InterviewSession; question: SessionQuestion }
   | { stage: "ready"; session: InterviewSession; question: SessionQuestion }
   | {
       stage: "reviewing";
@@ -46,6 +58,12 @@ type FlowState =
   // `retry` is only set for a failed upload (the recording still exists and can be resent);
   // a setup-time failure (e.g. session creation) has nothing to retry but "start over".
   | { stage: "error"; message: string; retry?: PendingSubmission };
+
+/** The first question of a session is the only place a mic-check makes sense — resuming later in
+ * an already-in-progress session means the mic was already exercised (this tab or another). */
+function firstStageFor(question: SessionQuestion): "mic-check" | "ready" {
+  return question.sequence_number === 1 ? "mic-check" : "ready";
+}
 
 interface ParsedApiError {
   message: string;
@@ -64,10 +82,21 @@ async function parseApiError(response: Response): Promise<ParsedApiError> {
 
 export function InterviewFlow({
   initialRole,
+  initialFocus,
+  initialDifficulty,
+  initialQuestionCount,
+  initialAnswerCapS,
   resumeSessionId,
+  profile,
 }: {
   initialRole?: Role;
+  initialFocus?: Focus;
+  initialDifficulty?: Difficulty;
+  initialQuestionCount?: number;
+  /** From a "repeat this setup" link — overrides the profile's saved default time cap below. */
+  initialAnswerCapS?: number;
   resumeSessionId?: string;
+  profile: Profile | null;
 }) {
   const router = useRouter();
   const handleSessionExpiry = useSessionExpiry();
@@ -108,7 +137,7 @@ export function InterviewFlow({
         return;
       }
       setState({
-        stage: "ready",
+        stage: firstStageFor(summary.session.current_question),
         session: summary.session,
         question: summary.session.current_question,
       });
@@ -140,7 +169,11 @@ export function InterviewFlow({
         return;
       }
 
-      setState({ stage: "ready", session, question: session.current_question });
+      setState({
+        stage: firstStageFor(session.current_question),
+        session,
+        question: session.current_question,
+      });
     } catch {
       setState({
         stage: "error",
@@ -194,11 +227,21 @@ export function InterviewFlow({
     }
   }
 
+  // The mic-check stage reuses the same recorder to exercise the real getUserMedia/MediaRecorder
+  // path, but its recording is a throwaway level test, never an answer — this ref (not state, so
+  // it can't be stale by the time the recorder's real, asynchronous "stop" event fires) tells
+  // handleStopped to discard that blob instead of treating it as a submittable answer.
+  const micCheckActiveRef = useRef(false);
+
   // Stopping a recording moves to "reviewing", not straight to upload — the user gets to
   // listen back and re-record before anything is sent. Called by useAudioRecorder's internal
   // MediaRecorder "stop" event, not from a render/effect — an ordinary async event callback, so
   // setState here isn't the cascading-render pattern the newer react-hooks rules warn about.
   function handleStopped(blob: Blob) {
+    if (micCheckActiveRef.current) {
+      micCheckActiveRef.current = false;
+      return;
+    }
     if (state.stage !== "ready") return;
     const { session, question } = state;
     setState({
@@ -227,17 +270,41 @@ export function InterviewFlow({
     void recorder.start();
   }
 
+  function handleMicCheckContinue() {
+    if (state.stage !== "mic-check") return;
+    if (recorder.status === "recording") recorder.stop();
+    setState({ stage: "ready", session: state.session, question: state.question });
+  }
+
+  // Resolves the user's saved interviewer-voice preference (Settings) to a live
+  // SpeechSynthesisVoice, once the browser's async voice list has loaded — shared by every place
+  // this flow speaks aloud (the question itself, the silence nudge, "repeat the question"), so
+  // Settings' voice/rate controls actually take effect here instead of only being saved and
+  // never read.
+  const voices = useSpeechVoices();
+  const speak = useCallback(
+    (text: string) => {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voice = voices.find((candidate) => candidate.name === profile?.voice_name);
+      if (voice) utterance.voice = voice;
+      utterance.rate = profile?.voice_rate ?? 1;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    },
+    [voices, profile?.voice_name, profile?.voice_rate],
+  );
+
   const readyQuestionText = state.stage === "ready" ? state.question.text : null;
   useEffect(() => {
     if (!readyQuestionText) return;
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-    const utterance = new SpeechSynthesisUtterance(readyQuestionText);
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-
-    return () => window.speechSynthesis.cancel();
-  }, [readyQuestionText]);
+    speak(readyQuestionText);
+    return () => window.speechSynthesis?.cancel();
+    // `speak` is intentionally a dependency here (unlike a typical stable callback) — if the
+    // browser's async voice list finishes loading just after this question was already spoken in
+    // the default voice, re-running once with the now-resolved preferred voice is correct, not a
+    // bug to suppress.
+  }, [readyQuestionText, speak]);
 
   const voiceActivity = useVoiceActivity(recorder.analyser, isRecording);
   const captions = useLiveCaptions(isRecording);
@@ -264,20 +331,23 @@ export function InterviewFlow({
   // checking in, the same way the question itself is read aloud above.
   useEffect(() => {
     if (!showSilenceNudge) return;
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-    const utterance = new SpeechSynthesisUtterance(
-      "Take your time. Would you like me to repeat the question?",
-    );
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  }, [showSilenceNudge]);
+    speak("Take your time. Would you like me to repeat the question?");
+  }, [showSilenceNudge, speak]);
 
   const remaining = useCountdown(
     state.stage === "ready" ? state.session.answer_cap_s : 0,
     isRecording,
     () => recorder.stop(),
   );
+
+  // A short "get ready" beat between pressing Start and the mic actually going live — every
+  // question, not just the first (that's the mic-check's job) — so the recording clock doesn't
+  // start the instant a still-orienting candidate clicks the button.
+  const [isPreparing, setIsPreparing] = useState(false);
+  const prepRemaining = useCountdown(PREP_COUNTDOWN_S, isPreparing, () => {
+    setIsPreparing(false);
+    void recorder.start();
+  });
 
   const reviewBlob = state.stage === "reviewing" ? state.blob : null;
   // Created during render (memoized on the blob's identity) rather than via setState-in-effect
@@ -298,6 +368,10 @@ export function InterviewFlow({
       <div className="flex flex-1 items-center justify-center px-6 py-16">
         <SessionSetupForm
           initialRole={initialRole}
+          initialFocus={initialFocus}
+          initialDifficulty={initialDifficulty}
+          initialQuestionCount={initialQuestionCount}
+          initialAnswerCapS={initialAnswerCapS ?? profile?.answer_cap_s}
           isSubmitting={false}
           onSubmit={handleSetupSubmit}
         />
@@ -310,6 +384,50 @@ export function InterviewFlow({
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16">
         <MicOrb size={100} animate />
         <p className="text-muted text-sm">Preparing your question…</p>
+      </div>
+    );
+  }
+
+  if (state.stage === "mic-check") {
+    const micIsLive = recorder.status === "recording";
+
+    return (
+      <div className="flex flex-1 items-center justify-center px-6 py-16">
+        <Card className="flex w-full max-w-xl flex-col items-center gap-6 text-center">
+          <h1 className="font-display text-text text-xl font-bold">Check your microphone</h1>
+          <p className="text-muted text-sm">
+            Say something out loud — you should see the bars move below. This only happens once per
+            session.
+          </p>
+          <MicOrb size={100} recording={micIsLive} />
+          {micIsLive ? <Waveform analyser={recorder.analyser} /> : null}
+          {recorder.error ? (
+            <p role="alert" className="text-coral text-sm">
+              {recorder.error.message}
+            </p>
+          ) : null}
+          <div className="flex gap-3">
+            {!micIsLive ? (
+              <Button
+                variant="secondary"
+                disabled={recorder.isStarting}
+                onClick={() => {
+                  micCheckActiveRef.current = true;
+                  void recorder.start();
+                }}
+              >
+                {recorder.isStarting
+                  ? "Requesting mic access…"
+                  : recorder.error
+                    ? "Try again"
+                    : "Test my mic"}
+              </Button>
+            ) : null}
+            <Button variant={micIsLive ? "primary" : "ghost"} onClick={handleMicCheckContinue}>
+              {micIsLive ? "Sounds good — continue" : "Skip check"}
+            </Button>
+          </div>
+        </Card>
       </div>
     );
   }
@@ -437,6 +555,14 @@ export function InterviewFlow({
           </>
         ) : isFinalizing ? (
           <p className="text-muted text-sm">Finishing up…</p>
+        ) : isPreparing ? (
+          <p
+            className="font-mono-metric text-text text-3xl tabular-nums"
+            aria-live="assertive"
+            aria-label={`Recording starts in ${prepRemaining} second${prepRemaining === 1 ? "" : "s"}`}
+          >
+            {prepRemaining > 0 ? prepRemaining : "Go!"}
+          </p>
         ) : (
           <>
             {recorder.error ? (
@@ -444,7 +570,7 @@ export function InterviewFlow({
                 {recorder.error.message}
               </p>
             ) : null}
-            <Button size="lg" disabled={recorder.isStarting} onClick={() => recorder.start()}>
+            <Button size="lg" disabled={recorder.isStarting} onClick={() => setIsPreparing(true)}>
               {recorder.isStarting ? "Requesting mic access…" : "Start recording"}
             </Button>
           </>

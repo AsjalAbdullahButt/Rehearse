@@ -41,21 +41,54 @@ function splitList(value: string, max: number): string[] {
     .slice(0, max);
 }
 
+const DEFAULT_ANSWER_CAP_S: (typeof TIME_CAP_OPTIONS)[number] = 120;
+const DEFAULT_QUESTION_COUNT: (typeof QUESTION_COUNT_OPTIONS)[number] = 5;
+
+function isTimeCapOption(value: number | undefined): value is (typeof TIME_CAP_OPTIONS)[number] {
+  return (TIME_CAP_OPTIONS as readonly number[]).includes(value ?? Number.NaN);
+}
+
+function isQuestionCountOption(
+  value: number | undefined,
+): value is (typeof QUESTION_COUNT_OPTIONS)[number] {
+  return (QUESTION_COUNT_OPTIONS as readonly number[]).includes(value ?? Number.NaN);
+}
+
 export function SessionSetupForm({
   initialRole,
+  initialFocus,
+  initialDifficulty,
+  initialQuestionCount,
+  initialAnswerCapS,
   isSubmitting,
   onSubmit,
 }: {
   initialRole?: Role;
+  /** A session-focused link (e.g. "Practice this weak area" on the summary page) can hand a
+   * specific focus straight through instead of leaving the candidate to reselect "Mixed" and
+   * then a category by hand. */
+  initialFocus?: Focus;
+  /** Set by a "repeat this setup" link (session summary page) — restores the previous session's
+   * exact configuration instead of resetting to the defaults below. */
+  initialDifficulty?: Difficulty;
+  initialQuestionCount?: number;
+  /** The candidate's saved default from Settings — pre-fills the time cap instead of always
+   * starting at 120s regardless of what they configured there. A "repeat this setup" link can
+   * override it with the exact cap that session used. */
+  initialAnswerCapS?: number;
   isSubmitting: boolean;
   onSubmit: (value: SessionCreateInput) => void;
 }) {
   const [role, setRole] = useState<Role | null>(initialRole ?? null);
-  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
+  const [difficulty, setDifficulty] = useState<Difficulty>(initialDifficulty ?? "medium");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("mid");
-  const [focus, setFocus] = useState<Focus>("mixed");
-  const [questionCount, setQuestionCount] = useState<(typeof QUESTION_COUNT_OPTIONS)[number]>(5);
-  const [answerCapS, setAnswerCapS] = useState<(typeof TIME_CAP_OPTIONS)[number]>(120);
+  const [focus, setFocus] = useState<Focus>(initialFocus ?? "mixed");
+  const [questionCount, setQuestionCount] = useState<(typeof QUESTION_COUNT_OPTIONS)[number]>(
+    isQuestionCountOption(initialQuestionCount) ? initialQuestionCount : DEFAULT_QUESTION_COUNT,
+  );
+  const [answerCapS, setAnswerCapS] = useState<(typeof TIME_CAP_OPTIONS)[number]>(
+    isTimeCapOption(initialAnswerCapS) ? initialAnswerCapS : DEFAULT_ANSWER_CAP_S,
+  );
   const [company, setCompany] = useState("");
   const [showPersonalize, setShowPersonalize] = useState(false);
   const [industry, setIndustry] = useState("");

@@ -105,12 +105,26 @@ export default async function SessionSummaryPage({
 
         <div className="border-line flex flex-col items-center gap-3 border-t pt-6 text-center">
           <p className="text-muted text-sm">Ready for another round?</p>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap justify-center gap-3">
             <Link
               href="/progress"
               className="border-line text-text inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] border px-6 text-sm font-medium transition-colors duration-150 hover:bg-[var(--color-surface-2)]"
             >
               View progress
+            </Link>
+            {weakest && strongest && strongest.category !== weakest.category ? (
+              <Link
+                href={`/interview?role=${encodeURIComponent(summary.session.role)}&focus=${weakest.category}`}
+                className="border-line text-text inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] border px-6 text-sm font-medium transition-colors duration-150 hover:bg-[var(--color-surface-2)]"
+              >
+                Practice {CATEGORY_LABELS[weakest.category] ?? weakest.category}
+              </Link>
+            ) : null}
+            <Link
+              href={`/interview?role=${encodeURIComponent(summary.session.role)}&difficulty=${summary.session.difficulty}&focus=${summary.session.focus}&count=${summary.session.question_count}&cap=${summary.session.answer_cap_s}`}
+              className="border-line text-text inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] border px-6 text-sm font-medium transition-colors duration-150 hover:bg-[var(--color-surface-2)]"
+            >
+              Repeat this setup
             </Link>
             <Link
               href="/interview"

@@ -9,8 +9,8 @@ import { OptionPill } from "@/components/ui/option-pill";
 import { useHasMounted } from "@/hooks/use-has-mounted";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import { useSpeechVoices } from "@/hooks/use-speech-voices";
-import type { Profile } from "@/lib/interview/types";
-import { TIME_CAP_OPTIONS } from "@/lib/interview/types";
+import type { Profile, Role } from "@/lib/interview/types";
+import { ROLE_OPTIONS, TIME_CAP_OPTIONS } from "@/lib/interview/types";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -23,6 +23,9 @@ export function SettingsForm({ initialProfile }: { initialProfile: Profile }) {
   // pills before then would mismatch server vs. client output.
   const mounted = useHasMounted();
 
+  const [targetRole, setTargetRole] = useState<Role | "">(
+    (initialProfile.target_role as Role | null) ?? "",
+  );
   const [answerCapS, setAnswerCapS] = useState(initialProfile.answer_cap_s);
   const [voiceName, setVoiceName] = useState(initialProfile.voice_name ?? "");
   const [voiceRate, setVoiceRate] = useState(initialProfile.voice_rate);
@@ -35,6 +38,7 @@ export function SettingsForm({ initialProfile }: { initialProfile: Profile }) {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          target_role: targetRole || null,
           answer_cap_s: answerCapS,
           voice_name: voiceName || null,
           voice_rate: voiceRate,
@@ -62,6 +66,31 @@ export function SettingsForm({ initialProfile }: { initialProfile: Profile }) {
   return (
     <Card className="mx-auto flex w-full max-w-xl flex-col gap-8">
       <h1 className="font-display text-text text-2xl font-bold">Settings</h1>
+
+      <div className="flex flex-col gap-3">
+        <span className="text-muted text-xs font-medium tracking-wide uppercase">Target role</span>
+        <p className="text-muted text-xs">
+          Pre-selects your role every time you start a mock interview, instead of choosing it from
+          scratch each session.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <OptionPill
+            value=""
+            label="No default"
+            selected={targetRole === ""}
+            onSelect={() => setTargetRole("")}
+          />
+          {ROLE_OPTIONS.map((option) => (
+            <OptionPill
+              key={option.slug}
+              value={option.slug}
+              label={option.name}
+              selected={targetRole === option.slug}
+              onSelect={setTargetRole}
+            />
+          ))}
+        </div>
+      </div>
 
       <div className="flex flex-col gap-3">
         <span className="text-muted text-xs font-medium tracking-wide uppercase">
