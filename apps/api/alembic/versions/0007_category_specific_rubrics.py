@@ -37,8 +37,17 @@ def upgrade() -> None:
         # every existing row actually has a value.
         batch_op.add_column(sa.Column("possible_filler_breakdown", sa.JSON(), nullable=True))
         batch_op.add_column(sa.Column("transcription_quality_warning", sa.Text(), nullable=True))
-        batch_op.alter_column("star", new_column_name="rubric")
-        batch_op.alter_column("sample_answer", new_column_name="answer_example")
+        # existing_type is mandatory here on MySQL: a plain rename compiles to CHANGE COLUMN,
+        # whose syntax requires restating the column's full type even when it isn't changing.
+        batch_op.alter_column(
+            "star", new_column_name="rubric", existing_type=sa.JSON(), existing_nullable=True
+        )
+        batch_op.alter_column(
+            "sample_answer",
+            new_column_name="answer_example",
+            existing_type=sa.Text(),
+            existing_nullable=True,
+        )
 
     op.execute(
         "UPDATE answers SET possible_filler_breakdown = '{}' "
@@ -51,8 +60,15 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     with op.batch_alter_table("answers") as batch_op:
-        batch_op.alter_column("answer_example", new_column_name="sample_answer")
-        batch_op.alter_column("rubric", new_column_name="star")
+        batch_op.alter_column(
+            "answer_example",
+            new_column_name="sample_answer",
+            existing_type=sa.Text(),
+            existing_nullable=True,
+        )
+        batch_op.alter_column(
+            "rubric", new_column_name="star", existing_type=sa.JSON(), existing_nullable=True
+        )
         batch_op.drop_column("transcription_quality_warning")
         batch_op.drop_column("possible_filler_breakdown")
         batch_op.drop_column("possible_filler_count")
