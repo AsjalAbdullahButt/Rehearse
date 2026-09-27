@@ -87,6 +87,15 @@ export interface SessionQuestion {
   source: QuestionSource;
 }
 
+/** What POST /v1/resume/parse returns — pre-fills SessionSetupForm's personalization fields, all
+ * of which stay editable; nothing here is submitted automatically. Mirrors
+ * apps/api/app/schemas/resume.py's ResumeExtraction. */
+export interface ResumeExtraction {
+  candidate_background: string | null;
+  skills: string[];
+  years_experience: number | null;
+}
+
 export interface SessionCreateInput {
   role: Role;
   difficulty: Difficulty;

@@ -19,6 +19,8 @@ from app.models.interview_session import (
     MAX_FOCUS_TOPICS,
     MAX_INDUSTRY_LENGTH,
     MAX_JOB_DESCRIPTION_LENGTH,
+    MAX_SKILL_LENGTH,
+    MAX_SKILLS,
     QUESTION_COUNT_CHOICES,
 )
 from app.models.profile import ANSWER_CAP_CHOICES
@@ -63,6 +65,11 @@ class SessionCreate(BaseModel):
         if value is None:
             return value
         cleaned = [skill.strip() for skill in value if skill.strip()]
+        if len(cleaned) > MAX_SKILLS:
+            raise ValueError(f"skills can have at most {MAX_SKILLS} entries")
+        for skill in cleaned:
+            if len(skill) > MAX_SKILL_LENGTH:
+                raise ValueError(f"each skill must be at most {MAX_SKILL_LENGTH} characters")
         return cleaned or None
 
     @field_validator("focus_topics")

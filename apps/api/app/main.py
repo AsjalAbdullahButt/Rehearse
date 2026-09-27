@@ -6,7 +6,7 @@ from app.core.errors import register_exception_handlers
 from app.core.limits import MAX_REQUEST_BODY_BYTES
 from app.core.logging import configure_logging
 from app.core.middleware import MaxBodySizeMiddleware, RequestIdMiddleware
-from app.routers import answers, auth, health, profile, progress, questions, sessions
+from app.routers import answers, auth, health, profile, progress, questions, resume, sessions
 
 
 def create_app() -> FastAPI:
@@ -39,6 +39,7 @@ def create_app() -> FastAPI:
     app.include_router(answers.router, prefix="/v1", tags=["answers"])
     app.include_router(progress.router, prefix="/v1", tags=["progress"])
     app.include_router(profile.router, prefix="/v1", tags=["profile"])
+    app.include_router(resume.router, prefix="/v1", tags=["resume"])
 
     return app
 

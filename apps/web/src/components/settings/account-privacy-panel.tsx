@@ -93,6 +93,10 @@ export function AccountPrivacyPanel() {
             Groq&apos;s AI model to generate your feedback.
           </li>
           <li>
+            • If you upload a resume to pre-fill your background, it&apos;s read once to extract
+            text, sent to Groq to summarize, and then discarded — the file itself is never stored.
+          </li>
+          <li>
             • Deleting your account permanently removes your transcripts, feedback, and session
             history — this cannot be undone.
           </li>

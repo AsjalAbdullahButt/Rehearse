@@ -28,6 +28,8 @@ across sessions. Portfolio-grade MVP — polish and correctness over feature cou
   `user_id` explicitly in `apps/api/app/services/repo.py`. Treat a missing `user_id` filter there
   as a cross-user data leak, not a style nit.
 - **STT/LLM:** Groq (`whisper-large-v3-turbo`, Llama via JSON mode + Pydantic validation)
+- **Resume parsing:** `pypdf` (pure-Python PDF text extraction, no native deps — serverless-
+  friendly), feeding the same Groq LLM for extraction; see the "Resume upload" status entry below.
 - **Free tiers only:** Vercel Hobby, Groq free API, [Aiven free-tier MySQL](https://aiven.io/free-mysql-database)
   (or local Docker MySQL 8 for dev)
 
@@ -398,6 +400,25 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
     place every BFF route handler (`login`/`register`/`refresh`/`proxyAuthedRequest`) builds an
     `{error: {code, message, request_id}}` response, replacing four copies of the same object
     literal per the "no duplicate logic" rule above.
+  - **Resume upload, to pre-fill personalization instead of typing it by hand.** `POST
+    /v1/resume/parse` (auth-required, rate-limited 10/hour/user) accepts a PDF (2MB cap, magic-
+    byte-sniffed like audio uploads), extracts its text in memory via `pypdf`
+    (`services/resume_parser.py` — capped at 6 pages / 20k characters regardless of how much a
+    pathological PDF contains, and rejects a password-protected or text-less/scanned-image PDF
+    with a specific error rather than silently returning nothing), and sends that text to Groq
+    (`llm.extract_resume_data`, `prompts/resume.py`) to pull out `candidate_background`,
+    `skills`, and `years_experience` — same one-retry-on-validation-failure shape and the same
+    "quoted JSON data, never instructions" injection defense as `generate_feedback`. The file and
+    its extracted text are never persisted — parsed and discarded within the request, exactly
+    like answer audio. Response fields only ever *pre-fill* `SessionSetupForm`'s existing
+    personalization inputs (`ResumeUpload` component); nothing is auto-submitted, so a wrong or
+    incomplete extraction is always visible and editable before a session starts. Also exposed
+    `years_experience` in that form for the first time (the API already accepted it; there was
+    just no input for it yet) and tightened `SessionCreate.skills`, which had no length/count cap
+    before this (`MAX_SKILLS`/`MAX_SKILL_LENGTH`, mirroring the existing `focus_topics` caps) —
+    needed so a resume-derived skills list can't produce something the session schema would
+    reject downstream. `AccountPrivacyPanel`'s copy was extended to disclose this new data flow.
+    Known gap: no OCR, so a scanned-image PDF with no text layer is rejected rather than read.
 
 ## Known gaps / deliberate scope cuts from Phase 2
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { ResumeUpload } from "@/components/interview/resume-upload";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ import type {
   ExperienceLevel,
   Focus,
   InterviewerStyle,
+  ResumeExtraction,
   Role,
   SessionCreateInput,
 } from "@/lib/interview/types";
@@ -60,11 +62,22 @@ export function SessionSetupForm({
   const [jobDescription, setJobDescription] = useState("");
   const [candidateBackground, setCandidateBackground] = useState("");
   const [skills, setSkills] = useState("");
+  const [yearsExperience, setYearsExperience] = useState("");
   const [focusTopics, setFocusTopics] = useState("");
   const [interviewerStyle, setInterviewerStyle] = useState<InterviewerStyle | null>(null);
 
+  function handleResumeExtracted(extraction: ResumeExtraction) {
+    setShowPersonalize(true);
+    if (extraction.candidate_background) setCandidateBackground(extraction.candidate_background);
+    if (extraction.skills.length > 0) setSkills(extraction.skills.join(", "));
+    if (extraction.years_experience !== null) {
+      setYearsExperience(String(extraction.years_experience));
+    }
+  }
+
   function handleSubmit() {
     if (!role) return;
+    const parsedYearsExperience = Number.parseInt(yearsExperience, 10);
     onSubmit({
       role,
       difficulty,
@@ -77,6 +90,7 @@ export function SessionSetupForm({
       job_description: jobDescription.trim() || undefined,
       candidate_background: candidateBackground.trim() || undefined,
       skills: skills.trim() ? splitList(skills, 20) : undefined,
+      years_experience: Number.isFinite(parsedYearsExperience) ? parsedYearsExperience : undefined,
       focus_topics: focusTopics.trim() ? splitList(focusTopics, MAX_FOCUS_TOPICS) : undefined,
       interviewer_style: interviewerStyle ?? undefined,
     });
@@ -91,6 +105,8 @@ export function SessionSetupForm({
           required — everything else helps personalize your questions.
         </p>
       </div>
+
+      <ResumeUpload onExtracted={handleResumeExtracted} />
 
       <div className="flex flex-col gap-3">
         <span className="text-muted text-xs font-medium tracking-wide uppercase">Role</span>
@@ -258,6 +274,20 @@ export function SessionSetupForm({
                 value={skills}
                 onChange={(event) => setSkills(event.target.value)}
                 placeholder="e.g. Python, React, SQL"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-muted text-xs font-medium tracking-wide uppercase">
+                Years of experience
+              </span>
+              <Input
+                type="number"
+                min={0}
+                max={80}
+                value={yearsExperience}
+                onChange={(event) => setYearsExperience(event.target.value)}
+                placeholder="e.g. 5"
               />
             </div>
 
