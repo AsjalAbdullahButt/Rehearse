@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AnswerReport } from "@/lib/interview/types";
 
-// jsdom has no IntersectionObserver; framer-motion's whileInView (used by ScoreRing/StarBars)
+// jsdom has no IntersectionObserver; framer-motion's whileInView (used by ScoreRing/RubricBars)
 // needs one to mount at all, even though this test never scrolls anything into view.
 class FakeIntersectionObserver {
   observe(): void {}
@@ -24,23 +24,36 @@ function baseReport(): AnswerReport {
     session_id: "session-1",
     question_id: "question-1",
     session_question_id: "session-question-1",
+    category: "behavioral",
     question_text: "Tell me about a time you resolved a conflict.",
     transcript: "I once had a disagreement with a teammate...",
     transcript_parts: [{ type: "text", text: "I once had a disagreement.", seconds: null }],
     duration_s: 90,
     wpm: 120,
+    word_count: 180,
     filler_count: 2,
     filler_breakdown: {},
+    possible_filler_count: 0,
+    possible_filler_breakdown: {},
+    filler_rate_per_100_words: 1.1,
     long_pauses: 0,
+    max_pause_s: 1.2,
+    total_long_pause_s: 0,
+    avg_pause_s: 0.4,
     rambling: null,
     confidence_note: null,
+    transcription_quality_warning: null,
     feedback: {
-      star: { situation: 7, task: 7, action: 8, result: 7 },
+      rubric: { category: "behavioral", situation: 7, task: 7, action: 8, result: 7 },
       clarity: 8,
       on_topic: true,
+      strengths: ["Clear structure."],
+      improvements: ["Quantify the impact."],
+      evidence: [],
       rambling_notes: "",
-      tips: ["a", "b", "c"],
-      sample_answer: "A stronger answer would...",
+      rewritten_answer: "A cleaned-up version of the candidate's own answer.",
+      reference_answer: null,
+      missing_information: [],
       follow_up_question: "What would you do differently?",
     },
     created_at: new Date().toISOString(),
@@ -74,11 +87,14 @@ describe("ReportPage", () => {
     expect(screen.getByText("Feedback unavailable")).toBeInTheDocument();
   });
 
-  it("renders a 'feedback unavailable' state when feedback.star is null", async () => {
+  it("renders a 'feedback unavailable' state when feedback.rubric is null", async () => {
     const report = baseReport();
     fetchAnswerReportMock.mockResolvedValue({
       ...report,
-      feedback: { ...report.feedback, star: null as unknown as AnswerReport["feedback"]["star"] },
+      feedback: {
+        ...report.feedback,
+        rubric: null as unknown as AnswerReport["feedback"]["rubric"],
+      },
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
@@ -97,11 +113,14 @@ describe("ReportPage", () => {
     expect(screen.getByText("Tell me about a time you resolved a conflict.")).toBeInTheDocument();
   });
 
-  it("praises the strongest STAR area by name when it clears the highlight threshold", async () => {
+  it("praises the strongest rubric area by name when it clears the highlight threshold", async () => {
     const report = baseReport();
     fetchAnswerReportMock.mockResolvedValue({
       ...report,
-      feedback: { ...report.feedback, star: { situation: 5, task: 6, action: 9, result: 6 } },
+      feedback: {
+        ...report.feedback,
+        rubric: { category: "behavioral" as const, situation: 5, task: 6, action: 9, result: 6 },
+      },
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
@@ -113,17 +132,50 @@ describe("ReportPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("omits the strength callout when no STAR area clears the highlight threshold", async () => {
+  it("omits the strength callout when no rubric area clears the highlight threshold", async () => {
     const report = baseReport();
     fetchAnswerReportMock.mockResolvedValue({
       ...report,
-      feedback: { ...report.feedback, star: { situation: 4, task: 5, action: 6, result: 3 } },
+      feedback: {
+        ...report.feedback,
+        rubric: { category: "behavioral" as const, situation: 4, task: 5, action: 6, result: 3 },
+      },
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
     render(element);
 
     expect(screen.queryByText("Nice work —", { exact: false })).not.toBeInTheDocument();
+  });
+
+  it("renders a technical rubric with technical labels, never STAR labels", async () => {
+    const report = baseReport();
+    fetchAnswerReportMock.mockResolvedValue({
+      ...report,
+      category: "technical",
+      feedback: {
+        ...report.feedback,
+        rubric: {
+          category: "technical" as const,
+          correctness: 8,
+          depth: 7,
+          tradeoffs: 6,
+          communication: 8,
+        },
+        rewritten_answer: null,
+        reference_answer: "A fresh example answer.",
+      },
+    });
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    expect(screen.getByText("Technical assessment")).toBeInTheDocument();
+    // "Correctness" legitimately appears twice (the rubric bar label and the strongest-area
+    // callout naming it by name) — getAllByText just confirms it rendered at all.
+    expect(screen.getAllByText("Correctness").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Situation")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reference answer" })).toBeInTheDocument();
   });
 
   it("shows the confidence coaching note when the API returns one", async () => {
@@ -136,6 +188,31 @@ describe("ReportPage", () => {
     render(element);
 
     expect(screen.getByText(/leaned on filler words/)).toBeInTheDocument();
+  });
+
+  it("shows the transcription quality warning when the API returns one", async () => {
+    fetchAnswerReportMock.mockResolvedValue({
+      ...baseReport(),
+      transcription_quality_warning: "This transcription may be unreliable.",
+    });
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    expect(screen.getByText("This transcription may be unreliable.")).toBeInTheDocument();
+  });
+
+  it("renders evidence quotes when present", async () => {
+    const report = baseReport();
+    fetchAnswerReportMock.mockResolvedValue({
+      ...report,
+      feedback: { ...report.feedback, evidence: ["I led the migration."] },
+    });
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    expect(screen.getByText("“I led the migration.”")).toBeInTheDocument();
   });
 
   it("offers to continue the interview when more questions remain", async () => {

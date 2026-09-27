@@ -5,10 +5,12 @@ phases land.
 
 ## What this is
 
-Rehearse is an AI mock interview coach. Pick a role, answer a spoken question into the mic, get
-transcription, filler/pace/pause metrics (computed in code, never guessed by an LLM), STAR and
-clarity scoring, a stronger sample answer, and progress tracking across sessions. Portfolio-grade
-2-week MVP — polish and correctness over feature count.
+Rehearse is an AI mock interview coach. Pick a role, run a full multi-question mock interview
+(server-orchestrated, optionally personalized to a company/job description/candidate background),
+answer each spoken question into the mic, get transcription, filler/pace/pause metrics (computed
+in code, never guessed by an LLM), category-specific rubric scoring (behavioral/technical/
+situational — not a one-size-fits-all STAR shape), a stronger sample answer, and progress tracking
+across sessions. Portfolio-grade MVP — polish and correctness over feature count.
 
 ## Stack
 
@@ -36,9 +38,12 @@ clarity scoring, a stronger sample answer, and progress tracking across sessions
 - Python fully type-hinted, `pyright` strict mode on `app/`/`api/` (tests dir is relaxed for
   third-party stub gaps — see `apps/api/pyproject.toml`; `scripts/` is not pyright-checked,
   matching how the old `supabase/` folder never was). Every LLM output is validated with
-  Pydantic (`app/schemas/feedback.py`); the LLM never emits filler counts, WPM, or pauses —
-  those are computed in code (`apps/api/app/services/metrics.py`), retried once on validation
-  failure with the error fed back, 502 on a second failure.
+  Pydantic (`app/schemas/feedback.py`'s `LLMFeedback`, a discriminated union of category-specific
+  rubrics); the LLM never emits filler counts, WPM, or pauses — those are computed in code
+  (`apps/api/app/services/metrics.py`), retried once on validation failure (or on a rubric
+  category mismatch) with the error fed back, 502 on a second failure. Evidence quotes the LLM
+  cites are verified against the real transcript before being shown back to the user — a quote
+  that doesn't actually appear in the transcript is dropped, never surfaced as if it were real.
 - Secrets only in env vars, validated at startup: `apps/web/src/lib/env.ts` (zod) and
   `apps/api/app/core/config.py` (pydantic-settings). Never commit `.env`/`.env.local`.
   `DATABASE_URL` and `JWT_SECRET` are `SecretStr` in `config.py` so they never leak into logs,
@@ -64,15 +69,20 @@ See the master spec (section 2) for the full target layout. Highlights:
   there isn't one — belt-and-suspenders on top of `proxy.ts`'s cookie-presence gate; `interview/
   page.tsx` and `report/[answerId]/page.tsx` live here), plus `styleguide/` (dev-only
   token/primitive showcase).
-- `apps/web/src/components/{ui,effects,landing,interview,report,theme}` — `ui` is
-  token-driven primitives (Button, Card, Badge, Input, Stat, Toggle, Tooltip); `effects` holds
-  reusable motion pieces (Aurora, TiltCard, WordReveal, MagneticButton, CountUp, QuestionTicker,
-  BeamBorder, RippleRings); `landing` composes the full landing page sections; `report` holds
-  ScoreRing/StarBars/TranscriptHighlight/BeforeAfterToggle, shared between the landing sample
-  report and the real `/report/[answerId]` page; `interview` has `MicOrb` (shared between the
-  hero and `/interview` via `layoutId="mic-orb"`; takes an optional `recording` prop that swaps
-  it lime→coral, defaulted off so the landing usage is unaffected), `RolePicker`,
-  `InterviewFlow` (the recording state machine), and `Waveform` (real mic input via
+- `apps/web/src/components/{ui,effects,landing,interview,report,progress,settings,theme}` — `ui`
+  is token-driven primitives (Button, Card, Badge, Input, Stat, Toggle, Tooltip, OptionPill);
+  `effects` holds reusable motion pieces (Aurora, TiltCard, WordReveal, MagneticButton, CountUp,
+  QuestionTicker, BeamBorder, RippleRings); `landing` composes the full landing page sections;
+  `report` holds ScoreRing/RubricBars/TranscriptHighlight/BeforeAfterToggle, shared between the
+  landing sample report and the real `/report/[answerId]` page (`RubricBars` replaced `StarBars`
+  once scoring went category-specific — it takes a generic `{key,label,score}[]`, not a fixed
+  S/T/A/R shape); `progress` holds `TrendChart` (hand-rolled SVG line chart, no charting library)
+  and `ProgressView` (the `/progress` page's client component: role filter, four trend charts,
+  session cards with delete); `settings` holds `AccountPrivacyPanel` (password change + account
+  deletion, alongside `SettingsForm`'s time-cap/voice/theme prefs); `interview` has `MicOrb`
+  (shared between the hero and `/interview` via `layoutId="mic-orb"`; takes an optional
+  `recording` prop that swaps it lime→coral, defaulted off so the landing usage is unaffected),
+  `RolePicker`, `InterviewFlow` (the recording state machine), and `Waveform` (real mic input via
   `AnalyserNode`, not the landing's canned bar animation).
 - `apps/web/src/hooks/` — `use-audio-recorder` wraps `getUserMedia`/`MediaRecorder` (webm/opus
   @32kbps)/`AnalyserNode`; `use-countdown` ticks a cap down and fires once on expiry;
@@ -96,37 +106,51 @@ See the master spec (section 2) for the full target layout. Highlights:
   token and forwards; not interview-specific despite living next to session/cookie code, since
   `/api/profile` needs it too); `interview/` has the wire types mirroring the API's Pydantic
   schemas (despite the folder name, this covers the whole product domain — questions, sessions,
-  answers, progress, profile — not just the recording flow), `server.ts` (direct API reads for
-  Server Components, one `fetchFromApi<T>` helper underneath `fetchCurrentUser`/
+  answers, progress, profile — not just the recording flow; `Rubric` is a discriminated union of
+  `BehavioralRubric`/`TechnicalRubric`/`SituationalRubric`, `FeedbackReport` is the lenient
+  read-side shape), `rubric-insights.ts` (`RUBRIC_FIELD_INFO`/`rubricAreas`/
+  `strongestRubricArea`, keyed by category — replaced `star-insights.ts`), `server.ts` (direct
+  API reads for Server Components, one `fetchFromApi<T>` helper underneath `fetchCurrentUser`/
   `fetchAnswerReport`/`fetchProgress`/`fetchProfile`), and `transcript.ts` (maps the API's flat
   `TranscriptPart` shape into `TranscriptHighlight`'s discriminated union).
 - `apps/web/src/app/api/{auth,interview,profile}/**/route.ts` — every one of these proxies
   server-side to the FastAPI `/v1/*` API and never runs in the browser; `auth/*` sets the
-  session as httpOnly cookies, the rest attach the bearer token read from those cookies via
-  `proxyAuthedRequest` (`interview/answers/route.ts` forwards the browser's multipart
-  `FormData` — including the audio `Blob` — unchanged). `proxy.ts` (Next middleware, at
-  `src/proxy.ts` — not to be confused with `lib/auth/proxy.ts` above) gates `APP_PREFIXES` on
-  cookie presence/expiry as a UX-only redirect; the real authorization boundary is always
-  `get_current_user` on the API side.
+  session as httpOnly cookies (including `change-password/route.ts` and `account/route.ts` —
+  the latter's `DELETE` also clears the session cookies on a successful 204), the rest attach the
+  bearer token read from those cookies via `proxyAuthedRequest` (`interview/answers/route.ts`
+  forwards the browser's multipart `FormData` — including the audio `Blob` — unchanged;
+  `interview/sessions/[sessionId]/route.ts` has both `GET` and `DELETE`). `proxy.ts` (Next
+  middleware, at `src/proxy.ts` — not to be confused with `lib/auth/proxy.ts` above) gates
+  `APP_PREFIXES` on cookie presence/expiry as a UX-only redirect; the real authorization boundary
+  is always `get_current_user` on the API side.
 - `apps/api/app/models/` — SQLAlchemy models (`User`, `Profile`, `Question`, `InterviewSession`,
-  `Answer`, `RefreshToken`); `apps/api/app/db.py` — async engine/session factory; `apps/api/alembic/`
-  — migrations, `alembic upgrade head` builds the schema.
+  `SessionQuestion`, `Answer`, `RefreshToken`, `RateLimitHit`); `apps/api/app/db.py` — async
+  engine/session factory; `apps/api/alembic/` — migrations, `alembic upgrade head` builds the
+  schema.
 - `apps/api/app/{core,routers,schemas,services,prompts}` — `core` has config/errors/logging/auth
-  (JWT issue/verify, password hashing, `get_current_user`); `routers` are thin
-  (`questions`/`sessions`/`answers`/`progress`/`profile`, all `/v1`, auth-required);
-  `services/repo.py`
-  holds every DB query, each one scoped to the caller's `user_id`; `services/stt.py` (Groq
-  Whisper, verbose_json, one retry on 429/5xx), `services/metrics.py` (pure, 100%-tested filler/
-  WPM/pause/rambling functions — see Hard rules), `services/llm.py` (Groq Llama JSON mode,
-  temperature 0.3, one retry on Pydantic validation failure), `services/feedback.py` (the single
-  place that splits an `LLMFeedback` + computed metrics into the persisted `Answer` row, and
-  joins them back for the API response — see its docstring before adding a second place that
-  does this). `app/prompts/feedback.py` holds the STAR-scoring system prompt.
-  `metrics.build_transcript_parts` rebuilds the transcript into text/filler/pause segments for
-  the report page's word-level highlighting (`AnswerReport.transcript_parts`) — the single
-  source of truth for what's a filler, so the web app never re-implements that heuristic in
-  TypeScript (only single-word fillers are flagged there, not the multi-word phrases
-  `count_fillers` also matches — see its docstring).
+  (JWT issue/verify with issuer/audience claims, password hashing, `get_current_user`); `routers`
+  are thin (`questions`/`sessions`/`answers`/`progress`/`profile`, all `/v1`, auth-required —
+  `sessions` also has `DELETE /sessions/{id}` for the privacy-controls "delete this session's
+  data" flow); `services/repo.py` holds every DB query, each one scoped to the caller's
+  `user_id`, including `delete_session_and_all_data`; `services/stt.py` (Groq Whisper,
+  verbose_json, one retry on 429/5xx, extracts `avg_logprob`/`avg_no_speech_prob` from segments
+  for transcription-confidence signalling — never fabricated, only ever propagated),
+  `services/metrics.py` (pure, 100%-tested filler/WPM/pause/rambling functions — definite vs.
+  possible filler tiers, category-scaled rambling thresholds, `assess_transcription_quality` —
+  see Hard rules), `services/llm.py` (Groq Llama JSON mode, temperature 0.3, one retry on
+  Pydantic validation failure or rubric-category mismatch), `services/feedback.py` (the single
+  place that splits an `LLMFeedback` + computed metrics into the persisted `Answer` row, verifies
+  evidence quotes against the real transcript, and joins them back for the API response — see its
+  docstring before adding a second place that does this), `services/question_orchestrator.py`
+  (server-controlled multi-question session flow — picks each session's next question by
+  category round-robin for "mixed" focus, avoids repeats). `app/prompts/feedback.py` holds the
+  category-specific rubric-scoring system prompt, with an explicit injection-defense paragraph
+  and untrusted transcript/candidate-context data serialized as a quoted JSON payload, never
+  interpolated into prompt text. `metrics.build_transcript_parts` rebuilds the transcript into
+  text/filler/pause segments for the report page's word-level highlighting
+  (`AnswerReport.transcript_parts`) — the single source of truth for what's a filler, so the web
+  app never re-implements that heuristic in TypeScript (only single-word fillers are flagged
+  there, not the multi-word phrases `count_fillers` also matches — see its docstring).
 - `apps/api/api/index.py` — Vercel entry point (`from app.main import app`).
 - `apps/api/scripts/seed.py` — the 96-question seed bank (12 per role × 8 roles), idempotent
   per role. `apps/api/scripts/try_answer.py` — posts a sample audio file to `POST /v1/answers`
@@ -270,25 +294,110 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   covered 404s/thrown errors app-wide from Phase 1, so no new error boundary was needed there —
   each page instead handles its own *expected* fetch failures inline, e.g. `/progress`'s
   "couldn't load" state, which a thrown-error boundary wouldn't catch since nothing throws).
-- **Phase 6:** not started. See the master spec for scope.
-- **Post-Phase-5 hardening pass:** in progress, tracked against a separate "UX polish +
-  production hardening" master prompt (not the phase spec above). Completed so far: **A** (UI/UX
-  audit of the auth'd flow — mic-permission recovery copy, `aria-live` countdown announcements,
-  answer-upload retry that preserves the recording instead of discarding it, a shared toast
-  system + session-expiry redirect, sign-in password toggle, report-specific not-found/loading
-  states); **B** (fixed an N+1 in `get_progress_for_user`, added `limit`/`offset` pagination to
-  `GET /sessions`/`GET /progress`, added `GET /v1/health/ready`, gave the LLM call the same
-  timeout+retry policy STT already had via new `services/groq_retry.py`); **C** (explicit MySQL
-  pool sizing in `db.py` for serverless — indexes/audio-non-persistence/naive-UTC/migration
-  downgrade were all already correct); **D** (added `POST /v1/auth/logout-all`; cookie
-  flags/JWT/argon2/refresh-token revocation were all already correct; no password-reset flow
-  still a named, unbuilt gap); **F** (slowapi in-memory rate limiting on login/register/answers,
-  429s carry `Retry-After`; explicitly instance-local, not shared across concurrent Vercel
-  invocations); **I** (in-process TTL cache for `GET /v1/questions`; `GET /progress` caching
-  skipped as unnecessary once B's N+1 fix landed); **H** (`docs/runbook.md`, `vercel.json`'s
-  `maxDuration` raised to Hobby's 60s cap). Not started: **E** (CI/CD deploy stage, dependency/
-  static-analysis scanning, branch protection) and **G** (Sentry, structured logging, request
-  IDs) — both need external accounts/credentials this environment doesn't have.
+- **Post-Phase-5 hardening pass:** done. Tracked against a separate "UX polish + production
+  hardening" master prompt (not the phase spec above). **A** (UI/UX audit of the auth'd flow —
+  mic-permission recovery copy, `aria-live` countdown announcements, answer-upload retry that
+  preserves the recording instead of discarding it, a shared toast system + session-expiry
+  redirect, sign-in password toggle, report-specific not-found/loading states); **B** (fixed an
+  N+1 in `get_progress_for_user`, added `limit`/`offset` pagination to `GET /sessions`/
+  `GET /progress`, added `GET /v1/health/ready`, gave the LLM call the same timeout+retry policy
+  STT already had via `services/groq_retry.py`); **C** (explicit MySQL pool sizing in `db.py` for
+  serverless); **D** (added `POST /v1/auth/logout-all`); **F** (slowapi in-memory rate limiting on
+  login/register/answers, 429s carry `Retry-After`; explicitly instance-local, not shared across
+  concurrent Vercel invocations); **I** (in-process TTL cache for `GET /v1/questions`); **H**
+  (`docs/runbook.md`, `vercel.json`'s `maxDuration` raised to Hobby's 60s cap). **E** (CI/CD
+  deploy stage, dependency/static-analysis scanning, branch protection) and **G** (Sentry,
+  structured logging, request IDs) were left unstarted at the time — both needed external
+  accounts/credentials this environment doesn't have; **G**'s scope (request IDs, structured
+  logging) was picked back up and shipped separately, see below.
+- **Multi-question sessions, security hardening, and category-specific rubrics** (a second,
+  larger round of work after Phase 5, superseding the original spec's "Phase 6" placeholder):
+  done, and this is the current shape of the product.
+  - **Server-orchestrated multi-question interviews.** A session (`POST /v1/sessions`) no longer
+    grades one answer — it now runs a configurable number of questions (`question_count`,
+    5/10/15), optionally personalized with `company`/`industry`/`job_description`/
+    `candidate_background`/`skills`/`focus_topics`/`years_experience`/`interviewer_style`/
+    `language` (all optional, all size-capped and validated server-side — see
+    `test_sessions_router.py`'s oversized-field tests). `services/question_orchestrator.py`
+    picks each question server-side (round-robin across behavioral/technical/situational for
+    "mixed" focus, avoiding repeats within a session) rather than the client choosing one
+    up-front; `SessionQuestion` is a new model tracking each question actually asked, its
+    category, and its source. The web `/interview` flow and a new `/session/[sessionId]/summary`
+    page were rewritten around this — an interview is now "answer question N of M, see a
+    running summary at the end" instead of "answer one question, see one report."
+  - **Category-specific rubrics, not a single STAR shape.** `schemas/feedback.py`'s `Rubric` is
+    now a `Literal`-discriminated union of `BehavioralRubric` (STAR-based), `TechnicalRubric`
+    (correctness/depth/communication + `reference_answer`), and `SituationalRubric` — each
+    category is scored on what actually matters for it, rather than forcing a technical answer
+    into Situation/Task/Action/Result. `StarBars` was replaced by the generic `RubricBars`;
+    `star-insights.ts` was replaced by `rubric-insights.ts`. `answer_example`/`rubric` replaced
+    the old `sample_answer`/`star` column names (migration `0007`). Legacy rows default to
+    `category="behavioral"` so old data still reads correctly through the new (lenient)
+    `FeedbackReport` read-side schema.
+  - **Prompt-injection hardening.** `prompts/feedback.py` serializes the transcript and any
+    candidate-supplied context (job description, background) as a quoted JSON data payload with
+    an explicit system-prompt paragraph telling the model to treat it as data, never as
+    instructions — tested with an adversarial transcript/context in
+    `test_prompts_feedback.py` asserting the injected text never leaks into prompt structure.
+    `llm.py` additionally validates that the LLM's returned rubric `category` matches the
+    question's actual category, retrying (same path as a Pydantic validation failure) on
+    mismatch rather than silently trusting the model's self-report.
+  - **Evidence-quote verification.** `services/feedback.py` checks every evidence quote the LLM
+    cites against the real transcript (normalized substring match) before it reaches the user —
+    a fabricated quote is dropped rather than shown as if it were real. `/report/[answerId]`
+    renders only verified evidence.
+  - **Deterministic metrics got sharper.** `count_fillers` now separates definite fillers (always
+    counted) from possible ones (single ambiguous words like "so"/"right"), reported separately
+    rather than conflated into one number. `assess_rambling` is now category- and
+    density/repetition-aware (a long *technical* answer gets a larger duration allowance than a
+    long *behavioral* one; a long-but-dense, non-repetitive answer isn't flagged just for being
+    long). `assess_transcription_quality` surfaces a "this transcript may be unreliable" warning
+    from Groq's own `avg_logprob`/`avg_no_speech_prob` confidence signals — propagated, never
+    invented.
+  - **Auth/security hardening**, on top of what Phase 2.5/D already had: timing-safe login
+    (`hmac.compare_digest`-equivalent constant-time comparison, avoiding a user-enumeration
+    timing oracle), JWT issuer/audience claims, startup rejection of a weak `JWT_SECRET`, an
+    idempotency key on answer submission (client-generated UUID reused on retry, preventing
+    duplicate processing/double-billing of the same recording), refresh-token reuse detection
+    with a grace period (a rotated-out token replayed within the grace window is tolerated as a
+    likely race, replayed after it triggers full revocation of that token family), a
+    trusted-proxy client-IP header for rate limiting gated behind a shared `INTERNAL_PROXY_SECRET`
+    compared with `hmac.compare_digest`, a request-body-size cap enforced before multipart
+    parsing buffers the body (denial-of-service hardening), audio magic-byte sniffing instead of
+    trusting the client's `Content-Type` header, and security response headers (CSP, HSTS,
+    frame-options, referrer-policy, permissions-policy) on every response.
+  - **Progress trends (supersedes the original spec's basic progress list).** `GET /v1/progress`
+    now also returns `avg_filler_rate_per_100_words` and a per-category `category_scores` map per
+    session. `/progress` (`ProgressView`) renders four hand-rolled SVG line charts (`TrendChart`
+    — no charting library dependency, consistent with `ScoreRing`/`RubricBars`'s existing
+    hand-rolled pattern; fixed lime/violet/mint categorical colors, legend only for 2+ series, an
+    `sr-only` accessible `<table>` fallback, per-point `<title>` tooltips) for overall score,
+    score by category, filler rate, and pace, plus a role filter and the per-session card list.
+  - **Privacy controls.** `DELETE /v1/sessions/{id}` (`repo.delete_session_and_all_data`,
+    ownership-checked) removes one interview's answers/questions without touching the account;
+    `POST /v1/auth/change-password` and `DELETE /v1/auth/me` (both require the current password)
+    round out account lifecycle. `/settings` gained `AccountPrivacyPanel`: explicit plain-language
+    copy on what's stored (transcript, not raw audio) and where it goes (Groq, for transcription
+    and feedback generation), a password-change form, and a two-step confirm-before-delete
+    account-deletion flow that signs the user out and redirects home on success. `/progress`'s
+    session cards gained a matching confirm-before-delete control for per-session deletion.
+  - **Observability: request IDs + structured, PII-free error logging.** `RequestIdMiddleware`
+    (`app/core/middleware.py`, outermost of all middleware so it covers even a request
+    `MaxBodySizeMiddleware` rejects) reuses an incoming `X-Request-Id` header when the Next BFF
+    forwarded a well-formed one, otherwise generates a `uuid4`; the ID lives in a `ContextVar`
+    (`app/core/request_context.py`) for the request's lifetime, is echoed back as a response
+    header on every response, and is folded into every log line (`core/logging.py`'s
+    `_RequestIdFilter`) and every JSON error body (`core/errors.py`'s `_error_response`) — so a
+    user-reported failure can be traced to exact server-side log lines without ever needing to
+    log the request/response content itself. `apps/web/src/lib/auth/api.ts`'s `apiFetch`
+    generates the ID for every outbound call to the API (reusing one if the caller already set
+    it) and `parseApiError` reads it back off the response (body first, header as fallback) and
+    emits one structured `console.error` JSON line — status/code/request_id only, never the
+    request or response body, since those can hold passwords, transcripts, job descriptions, or
+    candidate background text. Bundled with this: `apiErrorResponse()` was pulled out as the one
+    place every BFF route handler (`login`/`register`/`refresh`/`proxyAuthedRequest`) builds an
+    `{error: {code, message, request_id}}` response, replacing four copies of the same object
+    literal per the "no duplicate logic" rule above.
 
 ## Known gaps / deliberate scope cuts from Phase 2
 
@@ -306,3 +415,24 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
 - **GitHub footer link** points at this repo's own real remote
   (`github.com/AsjalAbdullahButt/Rehearse`); no LinkedIn link was added since no real profile URL
   was available and the rules here forbid inventing one.
+
+## Known gaps — current
+
+- **No password-reset flow.** Change-password (requires knowing the current password) and full
+  account deletion exist; there's no "forgot password" email flow, since that needs a transactional
+  email provider this environment has no credentials for.
+- **No CI/CD deploy stage, dependency/static-analysis scanning, or branch protection.** Needs a
+  GitHub Actions setup and repo-settings changes this environment can write but not exercise
+  end-to-end without a real GitHub Actions run.
+- **No production error-tracking service** (e.g. Sentry) — needs an external account/credential
+  this environment doesn't have. Request-ID correlation and structured, PII-free error logging
+  *are* in place without one (see the "Observability" bullet above); a Sentry/APM integration
+  would consume the same request ID rather than replace it.
+- **No end-to-end browser test suite** (e.g. Playwright) exercising the real
+  `MediaRecorder`/`getUserMedia`/`speechSynthesis` flow — this environment has no browser to run
+  or verify one in. Everything upstream of the browser APIs (multipart forwarding, auth, cookie
+  refresh, ownership checks, error propagation, the full session-orchestration and rubric-scoring
+  pipeline) is covered by the API's pytest suite and the web app's Vitest/RTL suite instead.
+- **Live Groq STT/LLM integration is still unverified against real credentials** — this environment
+  has no `GROQ_API_KEY`. STT/LLM calls are mocked in every automated test;
+  `apps/api/scripts/try_answer.py` remains the way to smoke-test the real integration.

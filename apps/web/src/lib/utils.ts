@@ -19,7 +19,7 @@ export function getTimerTone(remainingSeconds: number): "text-coral" | "text-amb
   return "text-text";
 }
 
-/** Clamps a score/max pair to a 0-1 fraction — shared by ScoreRing and StarBars so an
+/** Clamps a score/max pair to a 0-1 fraction — shared by ScoreRing and RubricBars so an
  * out-of-range score (a bad LLM response, a future bug) can't overflow a filled bar past 100%
  * or draw it negative, even though the label text beside it still shows the raw score. */
 export function clampFraction(value: number, max: number): number {

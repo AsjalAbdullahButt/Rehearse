@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { apiFetch, parseApiError, type TokenResponse } from "@/lib/auth/api";
+import { apiErrorResponse, apiFetch, parseApiError, type TokenResponse } from "@/lib/auth/api";
 import { clearSessionCookies, REFRESH_TOKEN_COOKIE, setSessionCookies } from "@/lib/auth/cookies";
 
 export async function POST(): Promise<NextResponse> {
@@ -21,11 +21,7 @@ export async function POST(): Promise<NextResponse> {
   });
 
   if (!apiResponse.ok) {
-    const error = await parseApiError(apiResponse);
-    const response = NextResponse.json(
-      { error: { code: error.code, message: error.message } },
-      { status: error.status },
-    );
+    const response = apiErrorResponse(await parseApiError(apiResponse));
     clearSessionCookies(response);
     return response;
   }

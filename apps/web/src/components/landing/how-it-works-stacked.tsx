@@ -3,7 +3,7 @@
 import { motion } from "motion/react";
 
 import { MicOrb } from "@/components/interview/mic-orb";
-import { StarBars } from "@/components/report/star-bars";
+import { RubricBars } from "@/components/report/rubric-bars";
 import { fadeUp } from "@/lib/motion";
 
 const STEPS = [
@@ -49,7 +49,16 @@ export function HowItWorksStacked() {
               <MicOrb size={100} animate={false} />
             </div>
           ) : null}
-          {i === 1 ? <StarBars scores={{ s: 8, t: 7, a: 9, r: 6 }} /> : null}
+          {i === 1 ? (
+            <RubricBars
+              items={[
+                { key: "situation", label: "Situation", score: 8 },
+                { key: "task", label: "Task", score: 7 },
+                { key: "action", label: "Action", score: 9 },
+                { key: "result", label: "Result", score: 6 },
+              ]}
+            />
+          ) : null}
           {i === 2 ? (
             <span className="bg-mint/15 text-mint w-fit rounded-[var(--radius-pill)] px-3 py-1 text-xs">
               Fillers removed · STAR structure added

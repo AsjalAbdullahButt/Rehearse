@@ -3,8 +3,8 @@
 import { motion } from "motion/react";
 
 import { BeforeAfterToggle } from "@/components/report/before-after-toggle";
+import { RubricBars } from "@/components/report/rubric-bars";
 import { ScoreRing } from "@/components/report/score-ring";
-import { StarBars } from "@/components/report/star-bars";
 import type { TranscriptPart } from "@/components/report/transcript-highlight";
 import { Card } from "@/components/ui/card";
 import { Stat } from "@/components/ui/stat";
@@ -78,7 +78,14 @@ export function SampleReport() {
                 <h3 className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
                   STAR structure
                 </h3>
-                <StarBars scores={{ s: 8, t: 7, a: 9, r: 6 }} />
+                <RubricBars
+                  items={[
+                    { key: "situation", label: "Situation", score: 8 },
+                    { key: "task", label: "Task", score: 7 },
+                    { key: "action", label: "Action", score: 9 },
+                    { key: "result", label: "Result", score: 6 },
+                  ]}
+                />
               </div>
 
               <div>

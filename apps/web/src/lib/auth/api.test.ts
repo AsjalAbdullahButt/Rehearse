@@ -9,7 +9,7 @@ vi.mock("@/lib/env", () => ({
 
 import { env } from "@/lib/env";
 
-import { apiFetch, getClientIp } from "./api";
+import { apiErrorResponse, apiFetch, getClientIp, parseApiError } from "./api";
 
 describe("getClientIp", () => {
   it("returns the first hop of x-forwarded-for", () => {
@@ -73,5 +73,86 @@ describe("apiFetch trusted-proxy headers", () => {
       "x-internal-proxy-secret": "a-strong-shared-secret-value-1234567890",
       "x-internal-client-ip": "198.51.100.7",
     });
+  });
+
+  it("generates a fresh X-Request-Id when the caller didn't set one", async () => {
+    await apiFetch("/v1/whatever");
+
+    const requestId = sentHeaders()["x-request-id"];
+    expect(requestId).toBeTruthy();
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("reuses a caller-supplied X-Request-Id instead of generating a new one", async () => {
+    await apiFetch("/v1/whatever", { headers: { "X-Request-Id": "caller-set-id" } });
+
+    expect(sentHeaders()["x-request-id"]).toBe("caller-set-id");
+  });
+});
+
+describe("parseApiError", () => {
+  const originalConsoleError = console.error;
+
+  beforeEach(() => {
+    console.error = vi.fn();
+  });
+
+  afterEach(() => {
+    console.error = originalConsoleError;
+  });
+
+  it("prefers the request_id from the error body over the response header", async () => {
+    const response = new Response(
+      JSON.stringify({ error: { code: "boom", message: "Boom", request_id: "from-body" } }),
+      { status: 500, headers: { "x-request-id": "from-header" } },
+    );
+
+    const error = await parseApiError(response);
+
+    expect(error.requestId).toBe("from-body");
+  });
+
+  it("falls back to the response header when the body has no request_id", async () => {
+    const response = new Response(JSON.stringify({ error: { code: "boom", message: "Boom" } }), {
+      status: 500,
+      headers: { "x-request-id": "from-header" },
+    });
+
+    const error = await parseApiError(response);
+
+    expect(error.requestId).toBe("from-header");
+  });
+
+  it("never logs the response body, only status/code/request_id", async () => {
+    const response = new Response(
+      JSON.stringify({
+        error: { code: "invalid_credentials", message: "super secret password hint" },
+      }),
+      { status: 401 },
+    );
+
+    await parseApiError(response);
+
+    const logged = vi.mocked(console.error).mock.calls[0]![0] as string;
+    expect(logged).not.toContain("secret password hint");
+    expect(JSON.parse(logged)).toMatchObject({ status: 401, code: "invalid_credentials" });
+  });
+});
+
+describe("apiErrorResponse", () => {
+  it("builds a NextResponse carrying the error's code, message, and request_id", async () => {
+    const response = new Response(
+      JSON.stringify({ error: { code: "boom", message: "Boom", request_id: "req-1" } }),
+      { status: 500 },
+    );
+    const error = await parseApiError(response);
+
+    const built = apiErrorResponse(error);
+    const body = (await built.json()) as {
+      error: { code: string; message: string; request_id: string | null };
+    };
+
+    expect(built.status).toBe(500);
+    expect(body).toEqual({ error: { code: "boom", message: "Boom", request_id: "req-1" } });
   });
 });

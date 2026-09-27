@@ -7,26 +7,27 @@ import { cn } from "@/lib/utils";
 
 import { TranscriptHighlight, type TranscriptPart } from "./transcript-highlight";
 
-const TABS = [
-  { key: "before", label: "Your answer" },
-  { key: "after", label: "Stronger answer" },
-] as const;
-
-type TabKey = (typeof TABS)[number]["key"];
+type TabKey = "before" | "after";
 
 export function BeforeAfterToggle({
   before,
   after,
+  afterLabel = "Stronger answer",
 }: {
   before: TranscriptPart[];
   after: TranscriptPart[];
+  afterLabel?: string;
 }) {
   const [tab, setTab] = useState<TabKey>("before");
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: "before", label: "Your answer" },
+    { key: "after", label: afterLabel },
+  ];
 
   return (
     <div className="flex flex-col gap-4">
       <div className="border-line bg-surface-2 inline-flex w-fit gap-1 rounded-[var(--radius-pill)] border p-1">
-        {TABS.map(({ key, label }) => (
+        {tabs.map(({ key, label }) => (
           <button
             key={key}
             type="button"

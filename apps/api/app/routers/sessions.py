@@ -99,6 +99,21 @@ async def list_sessions(
     return [SessionOut.model_validate(session) for session in sessions]
 
 
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Lets a user remove one interview's transcripts/feedback without deleting their whole
+    account — see AGENTS.md Phase 10's privacy-controls scope."""
+    deleted = await repo.delete_session_and_all_data(db, session_id=session_id, user_id=user.id)
+    if not deleted:
+        raise ApiError(
+            "session_not_found", "Session not found.", status_code=status.HTTP_404_NOT_FOUND
+        )
+
+
 @router.get("/sessions/{session_id}", response_model=SessionSummary)
 async def get_session_summary(
     session_id: str,

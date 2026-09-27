@@ -127,7 +127,7 @@ export interface InterviewSession {
 
 export interface AnswerCategoryBreakdown {
   category: Category;
-  avg_star: number | null;
+  avg_score: number | null;
 }
 
 export interface SessionSummary {
@@ -146,20 +146,45 @@ export interface ApiTranscriptPart {
   seconds: number | null;
 }
 
-export interface StarScores {
+export interface BehavioralRubric {
+  category: "behavioral";
   situation: number;
   task: number;
   action: number;
   result: number;
 }
 
-export interface LLMFeedback {
-  star: StarScores;
+export interface TechnicalRubric {
+  category: "technical";
+  correctness: number;
+  depth: number;
+  tradeoffs: number;
+  communication: number;
+}
+
+export interface SituationalRubric {
+  category: "situational";
+  problem_framing: number;
+  prioritization: number;
+  judgment: number;
+  communication: number;
+}
+
+export type Rubric = BehavioralRubric | TechnicalRubric | SituationalRubric;
+
+/** Mirrors apps/api/app/schemas/feedback.py's FeedbackReport — the permissive read-side shape
+ * (not LLMFeedback's strict generation-time contract, which the web app never sees directly). */
+export interface FeedbackReport {
+  rubric: Rubric;
   clarity: number;
   on_topic: boolean;
+  strengths: string[];
+  improvements: string[];
+  evidence: string[];
   rambling_notes: string;
-  tips: string[];
-  sample_answer: string;
+  rewritten_answer: string | null;
+  reference_answer: string | null;
+  missing_information: string[];
   follow_up_question: string;
 }
 
@@ -168,17 +193,26 @@ export interface AnswerReport {
   session_id: string;
   question_id: string | null;
   session_question_id: string | null;
+  category: Category;
   question_text: string;
   transcript: string;
   transcript_parts: ApiTranscriptPart[];
   duration_s: number;
   wpm: number;
+  word_count: number;
   filler_count: number;
   filler_breakdown: Record<string, number>;
+  possible_filler_count: number;
+  possible_filler_breakdown: Record<string, number>;
+  filler_rate_per_100_words: number;
   long_pauses: number;
+  max_pause_s: number | null;
+  total_long_pause_s: number;
+  avg_pause_s: number | null;
   rambling: string | null;
   confidence_note: string | null;
-  feedback: LLMFeedback;
+  transcription_quality_warning: string | null;
+  feedback: FeedbackReport;
   created_at: string;
   question_number: number;
   question_count: number;
@@ -195,7 +229,9 @@ export interface ProgressRow {
   avg_wpm: number | null;
   avg_filler_count: number | null;
   avg_clarity: number | null;
-  avg_star: number | null;
+  avg_overall_score: number | null;
+  avg_filler_rate_per_100_words: number | null;
+  category_scores: Partial<Record<Category, number>>;
 }
 
 export interface ProgressOut {

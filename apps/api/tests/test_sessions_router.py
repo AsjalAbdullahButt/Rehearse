@@ -266,3 +266,55 @@ async def test_get_session_summary_before_any_answers(
     assert body["overall_score"] is None
     assert body["category_breakdown"] == []
     assert body["session"]["id"] == session_id
+
+
+def test_delete_session_requires_auth(client: TestClient) -> None:
+    response = client.delete("/v1/sessions/does-not-matter")
+
+    assert response.status_code == 401
+
+
+async def test_delete_session_requires_ownership(
+    client: TestClient, db_session: AsyncSession, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    owner = register_user("owner@example.com")
+    other = register_user("other@example.com")
+    await _seed_question(db_session)
+    session_id = client.post(
+        "/v1/sessions", json=_session_payload(), headers=_auth_headers(owner)
+    ).json()["id"]
+
+    response = client.delete(f"/v1/sessions/{session_id}", headers=_auth_headers(other))
+
+    assert response.status_code == 404
+    # Not actually deleted by the failed attempt — the owner can still see it.
+    still_there = client.get(f"/v1/sessions/{session_id}", headers=_auth_headers(owner))
+    assert still_there.status_code == 200
+
+
+async def test_delete_session_removes_it_and_its_questions(
+    client: TestClient, db_session: AsyncSession, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+    await _seed_question(db_session)
+    session_id = client.post(
+        "/v1/sessions", json=_session_payload(), headers=_auth_headers(user)
+    ).json()["id"]
+
+    response = client.delete(f"/v1/sessions/{session_id}", headers=_auth_headers(user))
+
+    assert response.status_code == 204
+    gone = client.get(f"/v1/sessions/{session_id}", headers=_auth_headers(user))
+    assert gone.status_code == 404
+    listed = client.get("/v1/sessions", headers=_auth_headers(user))
+    assert session_id not in [row["id"] for row in listed.json()]
+
+
+def test_delete_session_returns_404_for_an_unknown_session(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.delete("/v1/sessions/does-not-exist", headers=_auth_headers(user))
+
+    assert response.status_code == 404

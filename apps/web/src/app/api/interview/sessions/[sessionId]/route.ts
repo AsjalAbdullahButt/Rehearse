@@ -9,3 +9,13 @@ export async function GET(
   const { sessionId } = await params;
   return proxyAuthedRequest(`/v1/sessions/${encodeURIComponent(sessionId)}`);
 }
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ sessionId: string }> },
+): Promise<NextResponse> {
+  const { sessionId } = await params;
+  return proxyAuthedRequest(`/v1/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });
+}

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { apiFetch, getClientIp, parseApiError, type TokenResponse } from "@/lib/auth/api";
+import {
+  apiErrorResponse,
+  apiFetch,
+  getClientIp,
+  parseApiError,
+  type TokenResponse,
+} from "@/lib/auth/api";
 import { setSessionCookies } from "@/lib/auth/cookies";
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -13,11 +19,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   );
 
   if (!apiResponse.ok) {
-    const error = await parseApiError(apiResponse);
-    return NextResponse.json(
-      { error: { code: error.code, message: error.message } },
-      { status: error.status },
-    );
+    return apiErrorResponse(await parseApiError(apiResponse));
   }
 
   const tokens = (await apiResponse.json()) as TokenResponse;

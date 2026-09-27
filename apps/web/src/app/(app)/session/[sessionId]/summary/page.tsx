@@ -33,7 +33,7 @@ export default async function SessionSummaryPage({
   }
 
   const sortedCategories = [...summary.category_breakdown].sort(
-    (a, b) => (a.avg_star ?? 10) - (b.avg_star ?? 10),
+    (a, b) => (a.avg_score ?? 10) - (b.avg_score ?? 10),
   );
   const weakest = sortedCategories[0];
   const strongest = sortedCategories[sortedCategories.length - 1];
@@ -83,7 +83,7 @@ export default async function SessionSummaryPage({
                 >
                   <span className="text-text">{CATEGORY_LABELS[row.category] ?? row.category}</span>
                   <span className="text-muted font-mono-metric tabular-nums">
-                    {row.avg_star !== null ? `${row.avg_star.toFixed(1)}/10` : "—"}
+                    {row.avg_score !== null ? `${row.avg_score.toFixed(1)}/10` : "—"}
                   </span>
                 </li>
               ))}

@@ -23,6 +23,7 @@ from app.models.session_question import SessionQuestion
 from app.models.user import User
 from app.schemas.feedback import rubric_overall_score
 from app.schemas.progress import ProgressRow
+from app.services import metrics
 
 # ─── users ───────────────────────────────────────────────────────────────
 
@@ -312,6 +313,24 @@ async def list_sessions_for_user(
     return list(result.scalars().all())
 
 
+async def delete_session_and_all_data(db: AsyncSession, *, session_id: str, user_id: str) -> bool:
+    """Ownership-scoped: the WHERE on the session delete only ever matches a row that's both
+    this id and this user's, so a caller can't delete someone else's session by guessing an id.
+    Explicit dependent deletes first for the same reason as delete_user_and_all_data — SQLite
+    (tests) doesn't enforce FK cascades unless PRAGMA foreign_keys is turned on, which this
+    codebase doesn't do. Returns False (and deletes nothing) if the session doesn't exist or
+    isn't this user's."""
+    session = await get_session_for_user(db, session_id=session_id, user_id=user_id)
+    if session is None:
+        return False
+
+    await db.execute(delete(Answer).where(Answer.session_id == session_id))
+    await db.execute(delete(SessionQuestion).where(SessionQuestion.session_id == session_id))
+    await db.execute(delete(InterviewSession).where(InterviewSession.id == session_id))
+    await db.commit()
+    return True
+
+
 async def mark_session_completed(db: AsyncSession, *, session_id: str) -> None:
     await db.execute(
         update(InterviewSession)
@@ -511,6 +530,19 @@ async def get_progress_for_user(
             if (score := rubric_overall_score(answer.rubric)) is not None
         ]
 
+        scores_by_category: dict[str, list[float]] = defaultdict(list)
+        for answer in answers:
+            if answer.category is None:
+                continue
+            score = rubric_overall_score(answer.rubric)
+            if score is not None:
+                scores_by_category[answer.category].append(score)
+
+        filler_rates = [
+            metrics.filler_rate_per_100_words(answer.filler_count, len(answer.words))
+            for answer in answers
+        ]
+
         rows.append(
             ProgressRow(
                 session_id=session.id,
@@ -522,6 +554,12 @@ async def get_progress_for_user(
                 avg_filler_count=_avg([float(a.filler_count) for a in answers]),
                 avg_clarity=_avg([float(a.clarity) for a in answers if a.clarity is not None]),
                 avg_overall_score=_avg(overall_scores),
+                avg_filler_rate_per_100_words=_avg(filler_rates),
+                category_scores={
+                    category: score
+                    for category, values in scores_by_category.items()
+                    if (score := _avg(values)) is not None
+                },
             )
         )
     return rows

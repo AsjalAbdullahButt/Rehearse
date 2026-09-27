@@ -65,13 +65,16 @@ async def test_progress_aggregates_answers_per_session(
     await _seed_question(db_session)
     session_id = _create_session(client, user)
 
+    word = {"word": "hi", "start": 0.0, "end": 0.1}
     db_session.add_all(
         [
             Answer(
                 session_id=session_id,
                 user_id=user["user"]["id"],
+                category="behavioral",
                 question_text="Q1",
                 transcript="A1",
+                words=[word] * 100,
                 duration_s=60,
                 wpm=100,
                 filler_count=2,
@@ -87,8 +90,10 @@ async def test_progress_aggregates_answers_per_session(
             Answer(
                 session_id=session_id,
                 user_id=user["user"]["id"],
+                category="behavioral",
                 question_text="Q2",
                 transcript="A2",
+                words=[word] * 100,
                 duration_s=80,
                 wpm=120,
                 filler_count=4,
@@ -117,6 +122,65 @@ async def test_progress_aggregates_answers_per_session(
     assert row["avg_filler_count"] == 3.0
     assert row["avg_clarity"] == 7.0
     assert row["avg_overall_score"] == 7.0
+    assert row["avg_filler_rate_per_100_words"] == 3.0
+    assert row["category_scores"] == {"behavioral": 7.0}
+
+
+async def test_progress_breaks_down_scores_by_category_within_one_session(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    """A mixed-focus session can have answers across multiple categories — the trend chart
+    needs each category's own average, not one number that blends technical and behavioral
+    scoring together."""
+    user = register_user()
+    await _seed_question(db_session)
+    session_id = _create_session(client, user)
+
+    db_session.add_all(
+        [
+            Answer(
+                session_id=session_id,
+                user_id=user["user"]["id"],
+                category="behavioral",
+                question_text="Q1",
+                transcript="A1",
+                duration_s=60,
+                wpm=100,
+                rubric={
+                    "category": "behavioral",
+                    "situation": 8,
+                    "task": 8,
+                    "action": 8,
+                    "result": 8,
+                },
+            ),
+            Answer(
+                session_id=session_id,
+                user_id=user["user"]["id"],
+                category="technical",
+                question_text="Q2",
+                transcript="A2",
+                duration_s=60,
+                wpm=100,
+                rubric={
+                    "category": "technical",
+                    "correctness": 4,
+                    "depth": 4,
+                    "tradeoffs": 4,
+                    "communication": 4,
+                },
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = client.get("/v1/progress", headers=_auth_headers(user))
+
+    assert response.status_code == 200
+    row = response.json()["sessions"][0]
+    assert row["category_scores"] == {"behavioral": 8.0, "technical": 4.0}
 
 
 async def test_progress_keeps_each_sessions_answers_separate(

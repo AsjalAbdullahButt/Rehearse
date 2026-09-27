@@ -5,6 +5,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.request_context import get_request_id
+
 logger = logging.getLogger("rehearse.api")
 
 
@@ -28,9 +30,11 @@ class ApiError(Exception):
 def _error_response(
     code: str, message: str, status_code: int, headers: dict[str, str] | None = None
 ) -> JSONResponse:
+    # request_id lets a user-reported failure be traced back to this exact request's server-side
+    # log lines (see app/core/request_context.py) without needing to log the request itself.
     return JSONResponse(
         status_code=status_code,
-        content={"error": {"code": code, "message": message}},
+        content={"error": {"code": code, "message": message, "request_id": get_request_id()}},
         headers=headers,
     )
 

@@ -5,30 +5,25 @@ import { motion, useReducedMotion } from "motion/react";
 import { brandEase } from "@/lib/motion";
 import { clampFraction } from "@/lib/utils";
 
-const LABELS = {
-  s: "Situation",
-  t: "Task",
-  a: "Action",
-  r: "Result",
-} as const;
-
-export interface StarScore {
-  s: number;
-  t: number;
-  a: number;
-  r: number;
+export interface RubricBarItem {
+  key: string;
+  label: string;
+  score: number;
 }
 
-export function StarBars({ scores, max = 10 }: { scores: StarScore; max?: number }) {
+/** Renders whichever rubric fields the caller passes in — generic over behavioral/technical/
+ * situational so this component never hardcodes STAR (or any other category's) labels. See
+ * lib/interview/rubric-insights.ts's rubricAreas() for building this list from a Rubric. */
+export function RubricBars({ items, max = 10 }: { items: RubricBarItem[]; max?: number }) {
   const reduce = useReducedMotion();
 
   return (
     <div className="flex flex-col gap-3">
-      {(Object.keys(LABELS) as Array<keyof StarScore>).map((key, i) => {
-        const fraction = clampFraction(scores[key], max);
+      {items.map((item, i) => {
+        const fraction = clampFraction(item.score, max);
         return (
-          <div key={key} className="flex items-center gap-3">
-            <span className="font-mono-metric text-muted w-6 text-xs uppercase">{key}</span>
+          <div key={item.key} className="flex items-center gap-3">
+            <span className="text-muted w-28 shrink-0 text-xs">{item.label}</span>
             <div className="bg-surface-2 h-2 flex-1 overflow-hidden rounded-[var(--radius-pill)]">
               <motion.div
                 className="bg-violet h-full rounded-[var(--radius-pill)]"
@@ -43,9 +38,8 @@ export function StarBars({ scores, max = 10 }: { scores: StarScore; max?: number
               />
             </div>
             <span className="font-mono-metric text-muted w-10 text-right text-xs tabular-nums">
-              {scores[key]}/{max}
+              {item.score}/{max}
             </span>
-            <span className="sr-only">{LABELS[key]}</span>
           </div>
         );
       })}

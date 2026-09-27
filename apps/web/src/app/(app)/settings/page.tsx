@@ -1,3 +1,4 @@
+import { AccountPrivacyPanel } from "@/components/settings/account-privacy-panel";
 import { SettingsForm } from "@/components/settings/settings-form";
 import { Card } from "@/components/ui/card";
 import { fetchProfile } from "@/lib/interview/server";
@@ -17,8 +18,9 @@ export default async function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-16">
+    <div className="flex flex-1 flex-col items-center gap-8 px-6 py-16">
       <SettingsForm initialProfile={profile} />
+      <AccountPrivacyPanel />
     </div>
   );
 }

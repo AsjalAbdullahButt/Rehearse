@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { apiFetch, parseApiError } from "@/lib/auth/api";
+import { apiErrorResponse, apiFetch, parseApiError } from "@/lib/auth/api";
 import { getValidAccessToken } from "@/lib/auth/session";
 
 /** Shared body for every authed `/api/*` route handler (interview, profile, ...): attach a
@@ -33,11 +33,7 @@ export async function proxyAuthedRequest(
   );
 
   if (!response.ok) {
-    const error = await parseApiError(response);
-    return NextResponse.json(
-      { error: { code: error.code, message: error.message } },
-      { status: error.status },
-    );
+    return apiErrorResponse(await parseApiError(response));
   }
 
   if (response.status === 204) {

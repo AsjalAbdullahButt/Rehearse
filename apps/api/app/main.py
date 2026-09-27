@@ -5,7 +5,7 @@ from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.limits import MAX_REQUEST_BODY_BYTES
 from app.core.logging import configure_logging
-from app.core.middleware import MaxBodySizeMiddleware
+from app.core.middleware import MaxBodySizeMiddleware, RequestIdMiddleware
 from app.routers import answers, auth, health, profile, progress, questions, sessions
 
 
@@ -20,11 +20,15 @@ def create_app() -> FastAPI:
         allow_origins=settings.allowed_origins_list,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-Id"],
+        expose_headers=["X-Request-Id"],
     )
     # Added after CORS so it wraps outside it (Starlette's user_middleware runs
     # last-added-outermost) — an oversized body is rejected before any other processing at all.
     app.add_middleware(MaxBodySizeMiddleware, max_bytes=MAX_REQUEST_BODY_BYTES)
+    # Outermost of all: every request (including one MaxBodySizeMiddleware rejects) gets a
+    # correlation ID before anything else runs.
+    app.add_middleware(RequestIdMiddleware)
 
     register_exception_handlers(app)
 
