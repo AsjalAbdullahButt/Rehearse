@@ -31,12 +31,22 @@ def upgrade() -> None:
         batch_op.add_column(
             sa.Column("possible_filler_count", sa.Integer(), nullable=False, server_default="0")
         )
-        batch_op.add_column(
-            sa.Column("possible_filler_breakdown", sa.JSON(), nullable=False, server_default="{}")
-        )
+        # Nullable for now — MySQL rejects a literal DEFAULT on a JSON column outright ("BLOB,
+        # TEXT, GEOMETRY or JSON column ... can't have a default value"), unlike SQLite, which
+        # silently accepts one. Backfilled below via UPDATE, then tightened to NOT NULL once
+        # every existing row actually has a value.
+        batch_op.add_column(sa.Column("possible_filler_breakdown", sa.JSON(), nullable=True))
         batch_op.add_column(sa.Column("transcription_quality_warning", sa.Text(), nullable=True))
         batch_op.alter_column("star", new_column_name="rubric")
         batch_op.alter_column("sample_answer", new_column_name="answer_example")
+
+    op.execute(
+        "UPDATE answers SET possible_filler_breakdown = '{}' "
+        "WHERE possible_filler_breakdown IS NULL"
+    )
+
+    with op.batch_alter_table("answers") as batch_op:
+        batch_op.alter_column("possible_filler_breakdown", existing_type=sa.JSON(), nullable=False)
 
 
 def downgrade() -> None:
