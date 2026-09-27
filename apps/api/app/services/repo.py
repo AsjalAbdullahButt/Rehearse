@@ -2,6 +2,7 @@
 user_id here — MySQL has no Postgres-RLS equivalent, so this module is the only place a
 cross-user data leak can be caught before it ships. See tests/test_cross_user_authorization.py."""
 
+import random
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -338,12 +339,28 @@ async def get_progress_for_user(
 # ─── rate limiting ───────────────────────────────────────────────────────
 
 
+GLOBAL_RATE_LIMIT_CLEANUP_PROBABILITY = 0.02
+"""~1 in 50 calls also runs a global sweep (see below) — frequent enough that the table stays
+bounded under real traffic, rare enough that the extra DELETE isn't paid on every single hit."""
+
+GLOBAL_RATE_LIMIT_RETENTION_S = 60 * 60
+"""Comfortably above every window_seconds currently in use (all <= 60s — see
+app/routers/auth.py, app/routers/answers.py) — this is a dead-row safety net, not a limit
+window, so it only needs to be *bigger* than the largest real window, not tight."""
+
+
 async def record_rate_limit_hit(db: AsyncSession, *, key: str, window_seconds: int) -> int:
     """Records one hit for `key` and returns how many hits (including this one) fall within the
     trailing `window_seconds` — a durable, cross-instance rate limit backed by real rows, the
     same pattern count_answers_today uses for the daily answer cap. Commits immediately so the
-    hit is counted even if the rest of the request goes on to fail or raise. Also opportunistically
-    deletes this key's hits already outside the window, so the table doesn't grow unboundedly."""
+    hit is counted even if the rest of the request goes on to fail or raise.
+
+    Two layers of cleanup, both needed: the per-key delete below only ever runs when that same
+    key is hit *again*, so a one-time visitor's row would otherwise sit in the table forever no
+    matter how small its own window is. The probabilistic global sweep catches those too,
+    independent of whether their key ever recurs — a plain age-based DELETE, not a
+    dialect-specific upsert, so it runs identically against the SQLite used in tests and the
+    real MySQL used in production."""
     now = utcnow()
     window_start = now - timedelta(seconds=window_seconds)
 
@@ -358,5 +375,10 @@ async def record_rate_limit_hit(db: AsyncSession, *, key: str, window_seconds: i
     await db.execute(
         delete(RateLimitHit).where(RateLimitHit.key == key, RateLimitHit.created_at < window_start)
     )
+
+    if random.random() < GLOBAL_RATE_LIMIT_CLEANUP_PROBABILITY:
+        cleanup_cutoff = now - timedelta(seconds=GLOBAL_RATE_LIMIT_RETENTION_S)
+        await db.execute(delete(RateLimitHit).where(RateLimitHit.created_at < cleanup_cutoff))
+
     await db.commit()
     return count

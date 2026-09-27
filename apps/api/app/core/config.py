@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")
     daily_answer_limit: int = Field(default=30, alias="DAILY_ANSWER_LIMIT")
 
+    # Shared with the Next.js BFF (apps/web/src/lib/env.ts's INTERNAL_PROXY_SECRET). When set,
+    # app/core/rate_limit.py trusts a caller-reported client IP only if the request also carries
+    # this secret — proving it came through our own BFF rather than an arbitrary caller spoofing
+    # a forwarded-for-style header directly against the public API. Left unset, the mechanism is
+    # simply off and every request is keyed on its raw TCP connection IP (safe, just less
+    # granular for traffic that actually did come through the BFF).
+    internal_proxy_secret: SecretStr | None = Field(default=None, alias="INTERNAL_PROXY_SECRET")
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]

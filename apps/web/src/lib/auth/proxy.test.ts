@@ -62,4 +62,14 @@ describe("proxyAuthedRequest", () => {
     expect(response.status).toBe(401);
     expect(apiFetch).not.toHaveBeenCalled();
   });
+
+  it("forwards the clientIp option through to apiFetch", async () => {
+    vi.mocked(apiFetch).mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    await proxyAuthedRequest("/v1/whatever", undefined, { clientIp: "198.51.100.7" });
+
+    expect(apiFetch).toHaveBeenCalledWith("/v1/whatever", expect.anything(), {
+      clientIp: "198.51.100.7",
+    });
+  });
 });

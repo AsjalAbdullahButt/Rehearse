@@ -5,6 +5,7 @@ starts — a fresh instance's empty in-memory state let a burst blow straight th
 right after a cold start. This is free-tier-friendly (no Redis/Upstash account needed) and
 correct across instances, at the cost of one extra DB round trip per rate-limited request."""
 
+import hmac
 from collections.abc import Callable
 
 from fastapi import Request, status
@@ -15,6 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.services.repo import record_rate_limit_hit
+
+# Must match apps/web/src/lib/auth/api.ts's header names exactly.
+INTERNAL_PROXY_SECRET_HEADER = "X-Internal-Proxy-Secret"
+INTERNAL_CLIENT_IP_HEADER = "X-Internal-Client-Ip"
 
 
 def user_or_ip_key(request: Request) -> str:
@@ -42,7 +47,28 @@ def user_or_ip_key(request: Request) -> str:
     return client_ip_key(request)
 
 
+def _trusted_forwarded_ip(request: Request) -> str | None:
+    """Only trusts a caller-reported client IP when the request also carries the shared secret
+    configured in settings.internal_proxy_secret — proving it was forwarded by our own Next.js
+    BFF (the only other party who knows that secret), not sent directly by an arbitrary caller
+    hitting the public API with a spoofed header. `hmac.compare_digest` avoids leaking the
+    secret's value one byte at a time via a timing side channel on the comparison itself."""
+    secret = get_settings().internal_proxy_secret
+    if secret is None:
+        return None
+    provided = request.headers.get(INTERNAL_PROXY_SECRET_HEADER)
+    if not provided or not hmac.compare_digest(provided, secret.get_secret_value()):
+        return None
+    forwarded_ip = request.headers.get(INTERNAL_CLIENT_IP_HEADER)
+    return forwarded_ip.strip() if forwarded_ip and forwarded_ip.strip() else None
+
+
 def client_ip_key(request: Request) -> str:
+    trusted_ip = _trusted_forwarded_ip(request)
+    if trusted_ip is not None:
+        return f"ip:{trusted_ip}"
+    # Direct API traffic (no proven BFF hop): the real connection IP is the only thing that
+    # can't be spoofed by the caller, so it's used as-is rather than trusting any header.
     return f"ip:{request.client.host}" if request.client else "ip:unknown"
 
 

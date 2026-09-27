@@ -39,6 +39,7 @@ describe("POST /api/interview/answers", () => {
     expect(proxyAuthedRequest).toHaveBeenCalledWith(
       "/v1/answers",
       expect.objectContaining({ headers: { "Idempotency-Key": "retry-key-1" } }),
+      expect.objectContaining({ clientIp: null }),
     );
   });
 
@@ -48,6 +49,7 @@ describe("POST /api/interview/answers", () => {
     expect(proxyAuthedRequest).toHaveBeenCalledWith(
       "/v1/answers",
       expect.objectContaining({ headers: undefined }),
+      expect.anything(),
     );
   });
 
@@ -65,5 +67,23 @@ describe("POST /api/interview/answers", () => {
 
     expect(response.status).toBe(201);
     expect(proxyAuthedRequest).toHaveBeenCalled();
+  });
+
+  it("forwards the real client IP from x-forwarded-for", async () => {
+    await POST(requestWith({ "x-forwarded-for": "198.51.100.7, 10.0.0.1" }));
+
+    expect(proxyAuthedRequest).toHaveBeenCalledWith("/v1/answers", expect.anything(), {
+      clientIp: "198.51.100.7",
+    });
+  });
+
+  it("rejects a declared oversized body with 413 before calling formData or the API", async () => {
+    const request = requestWith({ "content-length": String(6 * 1024 * 1024) });
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("payload_too_large");
+    expect(proxyAuthedRequest).not.toHaveBeenCalled();
   });
 });
