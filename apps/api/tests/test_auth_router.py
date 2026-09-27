@@ -1,6 +1,11 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.interview_session import InterviewSession
+from app.models.profile import Profile
+from app.models.user import User
 from app.routers import auth as auth_router
 
 
@@ -228,3 +233,151 @@ def test_logout_all_revokes_every_refresh_token(client: TestClient) -> None:
     assert first_reuse.status_code == 401
     second_reuse = client.post("/v1/auth/refresh", json={"refresh_token": second_refresh_token})
     assert second_reuse.status_code == 401
+
+
+def test_register_normalizes_email_to_lowercase(client: TestClient) -> None:
+    response = client.post(
+        "/v1/auth/register",
+        json={"email": "MixedCase@Example.com", "password": "correct-horse-battery-staple"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["user"]["email"] == "mixedcase@example.com"
+
+
+def test_login_is_case_insensitive_on_email(client: TestClient) -> None:
+    _register(client, email="user@example.com")
+
+    response = client.post(
+        "/v1/auth/login",
+        json={"email": "User@Example.com", "password": "correct-horse-battery-staple"},
+    )
+
+    assert response.status_code == 200
+
+
+def test_register_rejects_a_duplicate_email_regardless_of_case(client: TestClient) -> None:
+    _register(client, email="user@example.com")
+
+    response = client.post(
+        "/v1/auth/register",
+        json={"email": "User@Example.com", "password": "another-password-123"},
+    )
+
+    assert response.status_code == 409
+
+
+def test_change_password_requires_correct_current_password(client: TestClient) -> None:
+    body = _register(client)
+
+    response = client.post(
+        "/v1/auth/change-password",
+        json={"current_password": "wrong-password", "new_password": "a-new-password-456"},
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_credentials"
+
+
+def test_change_password_requires_auth(client: TestClient) -> None:
+    response = client.post(
+        "/v1/auth/change-password",
+        json={"current_password": "whatever", "new_password": "a-new-password-456"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_change_password_updates_credentials_and_revokes_refresh_tokens(
+    client: TestClient,
+) -> None:
+    body = _register(client)
+    old_refresh_token = body["refresh_token"]
+
+    response = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "correct-horse-battery-staple",
+            "new_password": "a-brand-new-password-789",
+        },
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+    assert response.status_code == 204
+
+    old_login = client.post(
+        "/v1/auth/login",
+        json={"email": "user@example.com", "password": "correct-horse-battery-staple"},
+    )
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/v1/auth/login",
+        json={"email": "user@example.com", "password": "a-brand-new-password-789"},
+    )
+    assert new_login.status_code == 200
+
+    stale_refresh = client.post("/v1/auth/refresh", json={"refresh_token": old_refresh_token})
+    assert stale_refresh.status_code == 401
+
+
+def test_delete_account_requires_correct_password(client: TestClient) -> None:
+    body = _register(client)
+
+    response = client.request(
+        "DELETE",
+        "/v1/auth/me",
+        json={"current_password": "wrong-password"},
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_credentials"
+
+
+def test_delete_account_requires_auth(client: TestClient) -> None:
+    response = client.request("DELETE", "/v1/auth/me", json={"current_password": "whatever"})
+
+    assert response.status_code == 401
+
+
+async def test_delete_account_removes_the_user_and_related_rows(
+    client: TestClient, db_session: AsyncSession
+) -> None:
+    body = _register(client)
+    user_id = body["user"]["id"]  # type: ignore[index]
+
+    db_session.add(InterviewSession(user_id=user_id, role="backend", difficulty="medium"))
+    await db_session.commit()
+
+    response = client.request(
+        "DELETE",
+        "/v1/auth/me",
+        json={"current_password": "correct-horse-battery-staple"},
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+    assert response.status_code == 204
+
+    # Old credentials no longer authenticate, and the previously-issued access token stops
+    # working once the user row it points to is gone.
+    login_attempt = client.post(
+        "/v1/auth/login",
+        json={"email": "user@example.com", "password": "correct-horse-battery-staple"},
+    )
+    assert login_attempt.status_code == 401
+    me_attempt = client.get(
+        "/v1/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+    )
+    assert me_attempt.status_code == 401
+
+    db_session.expire_all()
+    assert (await db_session.execute(select(User).where(User.id == user_id))).first() is None
+    assert (await db_session.execute(select(Profile).where(Profile.id == user_id))).first() is None
+    session_count = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(InterviewSession)
+            .where(InterviewSession.user_id == user_id)
+        )
+    ).scalar_one()
+    assert session_count == 0

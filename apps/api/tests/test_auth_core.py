@@ -6,6 +6,7 @@ from jwt.utils import base64url_encode
 
 from app.core.auth import (
     decode_token,
+    dummy_password_hash,
     hash_password,
     issue_access_token,
     verify_password,
@@ -77,3 +78,60 @@ def test_decode_token_rejects_none_algorithm() -> None:
         decode_token(forged, expected_type="access")
 
     assert exc_info.value.code == "token_invalid"
+
+
+def test_decode_token_rejects_a_valid_signature_with_the_wrong_audience() -> None:
+    # A correctly-signed token (same secret/algorithm) is still rejected if it wasn't actually
+    # issued for this deployment — proves the audience claim is really being checked, not just
+    # present-but-ignored.
+    settings = get_settings()
+    now = int(time.time())
+    token = jwt.encode(
+        {
+            "sub": "user-1",
+            "type": "access",
+            "iat": now,
+            "exp": now + 3600,
+            "iss": settings.jwt_issuer,
+            "aud": "some-other-deployment",
+        },
+        settings.jwt_secret.get_secret_value(),
+        algorithm=settings.jwt_algorithm,
+    )
+
+    with pytest.raises(ApiError) as exc_info:
+        decode_token(token, expected_type="access")
+
+    assert exc_info.value.code == "token_invalid"
+
+
+def test_decode_token_rejects_a_valid_signature_with_the_wrong_issuer() -> None:
+    settings = get_settings()
+    now = int(time.time())
+    token = jwt.encode(
+        {
+            "sub": "user-1",
+            "type": "access",
+            "iat": now,
+            "exp": now + 3600,
+            "iss": "some-other-issuer",
+            "aud": settings.jwt_audience,
+        },
+        settings.jwt_secret.get_secret_value(),
+        algorithm=settings.jwt_algorithm,
+    )
+
+    with pytest.raises(ApiError) as exc_info:
+        decode_token(token, expected_type="access")
+
+    assert exc_info.value.code == "token_invalid"
+
+
+def test_dummy_password_hash_never_matches_a_real_password() -> None:
+    assert verify_password("correct horse battery staple", dummy_password_hash()) is False
+
+
+def test_dummy_password_hash_is_stable_across_calls() -> None:
+    # login() relies on this being a fixed hash, not freshly hashed per call — otherwise every
+    # call would pay the (different, and non-comparable) hashing cost for no reason.
+    assert dummy_password_hash() == dummy_password_hash()

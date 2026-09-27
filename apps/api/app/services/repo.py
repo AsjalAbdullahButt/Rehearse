@@ -48,6 +48,27 @@ async def create_user(
     return user
 
 
+async def update_user_password(db: AsyncSession, *, user_id: str, password_hash: str) -> None:
+    await db.execute(update(User).where(User.id == user_id).values(password_hash=password_hash))
+    await db.commit()
+
+
+async def delete_user_and_all_data(db: AsyncSession, *, user_id: str) -> None:
+    """Explicit, dependency-ordered deletes rather than relying solely on each table's
+    ON DELETE CASCADE — that's still declared on every FK to users.id for defense in depth and
+    to keep real MySQL consistent even if a row is ever deleted some other way, but SQLite (used
+    in tests) doesn't enforce FK cascades unless PRAGMA foreign_keys is turned on per connection,
+    which this codebase doesn't do — relying on cascade alone here would pass silently against
+    MySQL while leaving orphaned rows undetected in SQLite tests. Answers are deleted before
+    their session (rather than trusting the session's own cascade) for the same reason."""
+    await db.execute(delete(Answer).where(Answer.user_id == user_id))
+    await db.execute(delete(InterviewSession).where(InterviewSession.user_id == user_id))
+    await db.execute(delete(RefreshToken).where(RefreshToken.user_id == user_id))
+    await db.execute(delete(Profile).where(Profile.id == user_id))
+    await db.execute(delete(User).where(User.id == user_id))
+    await db.commit()
+
+
 # ─── profiles ────────────────────────────────────────────────────────────
 
 

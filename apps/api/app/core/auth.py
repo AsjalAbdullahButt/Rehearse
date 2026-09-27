@@ -18,6 +18,19 @@ _password_hasher = PasswordHasher()
 
 TokenType = Literal["access", "refresh"]
 
+# Hashed once at import time so login() always has something to run Argon2 against, even when
+# the email doesn't match any user — see dummy_password_hash()'s docstring.
+_DUMMY_PASSWORD_HASH = _password_hasher.hash(secrets.token_urlsafe(32))
+
+
+def dummy_password_hash() -> str:
+    """A precomputed, never-matching Argon2 hash for login()'s timing defense: verifying against
+    it costs the same as a real verification, so "email not found" and "email found, wrong
+    password" take roughly the same time — without this, an attacker could distinguish the two
+    by response latency alone (a real Argon2 verify vs. skipping it entirely) and use that to
+    enumerate registered emails."""
+    return _DUMMY_PASSWORD_HASH
+
 
 def hash_password(password: str) -> str:
     return _password_hasher.hash(password)
@@ -46,6 +59,8 @@ def _encode_token(user_id: str, token_type: TokenType, ttl: timedelta) -> str:
         "iat": int(now.timestamp()),
         "exp": int((now + ttl).timestamp()),
         "jti": secrets.token_hex(16),
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
     }
     return jwt.encode(
         payload, settings.jwt_secret.get_secret_value(), algorithm=settings.jwt_algorithm
@@ -71,6 +86,8 @@ def decode_token(token: str, expected_type: TokenType) -> dict[str, str | int]:
             # Explicit allow-list: PyJWT will never fall back to accepting an unsigned
             # ("none" alg) token, even if a client tries to supply one.
             algorithms=[settings.jwt_algorithm],
+            issuer=settings.jwt_issuer,
+            audience=settings.jwt_audience,
         )
     except jwt.ExpiredSignatureError as exc:
         raise ApiError(

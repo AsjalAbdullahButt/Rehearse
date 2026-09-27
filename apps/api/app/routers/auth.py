@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import (
     decode_token,
+    dummy_password_hash,
     get_current_user,
     hash_password,
     hash_token,
@@ -21,6 +22,8 @@ from app.db import get_db
 from app.models.base import utcnow
 from app.models.user import User
 from app.schemas.auth import (
+    ChangePasswordRequest,
+    DeleteAccountRequest,
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
@@ -97,7 +100,14 @@ async def login(
     await enforce_rate_limit(request, db, scope="login", limit=10, window_seconds=60)
 
     user = await repo.get_user_by_email(db, email=body.email)
-    if user is None or not verify_password(body.password, user.password_hash):
+    # Argon2-verify against something either way — a real hash when the user exists, a fixed
+    # dummy one when they don't — so "email not found" and "email found, wrong password" cost
+    # roughly the same wall-clock time. Skipping verify_password entirely for an unknown email
+    # would make the two cases distinguishable by response latency alone.
+    password_ok = verify_password(
+        body.password, user.password_hash if user is not None else dummy_password_hash()
+    )
+    if user is None or not password_ok:
         raise ApiError(
             "invalid_credentials",
             "Incorrect email or password.",
@@ -214,3 +224,45 @@ async def logout_all(
 @router.get("/auth/me", response_model=UserPublic)
 async def me(user: User = Depends(get_current_user)) -> UserPublic:
     return UserPublic(id=user.id, email=user.email)
+
+
+@router.post("/auth/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    if not verify_password(body.current_password, user.password_hash):
+        raise ApiError(
+            "invalid_credentials",
+            "Current password is incorrect.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    await repo.update_user_password(
+        db, user_id=user.id, password_hash=hash_password(body.new_password)
+    )
+    # Every refresh token dies, including this session's own — a changed password should force
+    # re-authentication everywhere, the same policy logout-all uses for a reported compromise.
+    # The access token already in the caller's hand keeps working until its own short TTL
+    # expires (see JWT_ACCESS_TTL_MIN), same tradeoff logout-all already makes.
+    await repo.revoke_all_refresh_tokens(db, user_id=user.id)
+
+
+@router.delete("/auth/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    body: DeleteAccountRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Ownership is inherent — get_current_user resolves `user` from the caller's own access
+    token, so this can only ever delete the caller's own account. The current password is still
+    required as a confirmation step, given how irreversible this is."""
+    if not verify_password(body.current_password, user.password_hash):
+        raise ApiError(
+            "invalid_credentials",
+            "Current password is incorrect.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    await repo.delete_user_and_all_data(db, user_id=user.id)
