@@ -129,10 +129,18 @@ async def test_logout_all_does_not_revoke_another_users_refresh_token(
     expires_at = utcnow() + timedelta(days=1)
 
     await repo.store_refresh_token(
-        db_session, user_id=user_a_id, token_hash="hash-a", expires_at=expires_at
+        db_session,
+        user_id=user_a_id,
+        family_id="family-a",
+        token_hash="hash-a",
+        expires_at=expires_at,
     )
     await repo.store_refresh_token(
-        db_session, user_id=user_b_id, token_hash="hash-b", expires_at=expires_at
+        db_session,
+        user_id=user_b_id,
+        family_id="family-b",
+        token_hash="hash-b",
+        expires_at=expires_at,
     )
 
     await repo.revoke_all_refresh_tokens(db_session, user_id=user_a_id)

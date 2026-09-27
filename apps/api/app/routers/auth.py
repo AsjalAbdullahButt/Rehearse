@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -33,7 +34,12 @@ router = APIRouter()
 logger = logging.getLogger("rehearse.api")
 
 
-async def _issue_token_pair(db: AsyncSession, user: User) -> TokenResponse:
+async def _issue_token_pair(
+    db: AsyncSession, user: User, *, family_id: str | None = None
+) -> TokenResponse:
+    """`family_id` is omitted for a fresh login/register (starts a new lineage) and passed
+    through on every rotation, so every token descended from one login shares an id — see
+    refresh()'s docstring for what that's for."""
     settings = get_settings()
     access_token = issue_access_token(user.id)
     refresh_token = issue_refresh_token(user.id)
@@ -41,6 +47,7 @@ async def _issue_token_pair(db: AsyncSession, user: User) -> TokenResponse:
     await repo.store_refresh_token(
         db,
         user_id=user.id,
+        family_id=family_id or str(uuid.uuid4()),
         token_hash=hash_token(refresh_token),
         expires_at=utcnow() + timedelta(days=settings.jwt_refresh_ttl_days),
     )
@@ -100,12 +107,41 @@ async def login(
     return await _issue_token_pair(db, user)
 
 
+REFRESH_REUSE_GRACE_PERIOD_S = 5
+"""How long after a token is rotated a replay of it is treated as a benign concurrent-tab race
+rather than theft. Deliberately short: a real attacker racing a stolen token against the
+legitimate rotation inside this window could hijack the session instead of tripping reuse
+detection (see refresh()'s docstring) — an accepted, documented tradeoff of grace-period
+rotation (the same shape as e.g. Auth0's "reuse interval"), not an oversight. Widening this
+value trades more tolerance for slow/racy clients against a wider hijack window."""
+
+
 @router.post("/auth/refresh", response_model=TokenResponse)
 async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+    """Rotation race strategy — two browser tabs share one httpOnly refresh-token cookie, so
+    two near-simultaneous refreshes (e.g. both tabs loading a guarded page at once) can easily
+    present the *same* token. Naively, whichever request loses that race would see the token
+    already revoked by the winner and — correctly, in the real-theft case — nuke every session
+    for the user. That's a false positive here, not an attack, so two things prevent it:
+
+    1. `get_refresh_token_by_hash_for_update` locks the row for this transaction. If both
+       requests really do race on the identical token, the second one's read blocks until the
+       first commits its rotation, so it can never independently observe `revoked_at IS NULL`
+       and rotate a second time from the same starting point.
+    2. Once a request does see an already-revoked token, `family_id` (shared by every token
+       descended from one login through rotation) is what tells "a sibling request rotated this
+       a moment ago" apart from "replayed long after — real reuse": within
+       REFRESH_REUSE_GRACE_PERIOD_S, it looks up the family's current active token and rotates
+       from *that* instead of raising, so the losing tab still ends up with a valid session.
+       Outside the grace period — or if no active token is left in the family even though the
+       rotation was recent (an ambiguous case: a third concurrent loser, or a logout that
+       happened at the same moment) — this still revokes every token for the user and forces
+       re-authentication everywhere, exactly as before.
+    """
     payload = decode_token(body.refresh_token, expected_type="refresh")
     token_hash = hash_token(body.refresh_token)
 
-    stored = await repo.get_refresh_token_by_hash(db, token_hash=token_hash)
+    stored = await repo.get_refresh_token_by_hash_for_update(db, token_hash=token_hash)
     if stored is None or stored.expires_at < utcnow():
         raise ApiError(
             "token_invalid",
@@ -114,9 +150,30 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
         )
 
     if stored.revoked_at is not None:
-        # This token was already rotated out — a legitimate client never presents a refresh
-        # token it has already exchanged. Reuse like this is the standard signal of a stolen
-        # refresh token being replayed, so every active token for this user is revoked,
+        age_s = (utcnow() - stored.revoked_at).total_seconds()
+        if age_s <= REFRESH_REUSE_GRACE_PERIOD_S:
+            active = await repo.get_active_token_for_family(db, family_id=stored.family_id)
+            if active is not None:
+                user = await repo.get_user_by_id(db, user_id=active.user_id)
+                if user is None:
+                    raise ApiError(
+                        "unauthorized",
+                        "User no longer exists.",
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                    )
+                await repo.revoke_refresh_token(db, token_hash=active.token_hash)
+                return await _issue_token_pair(db, user, family_id=active.family_id)
+            # Recent rotation, but nothing active left in the family — ambiguous rather than a
+            # clear theft signal (see docstring), so this just asks the client to retry/re-auth
+            # instead of escalating to a full cross-device logout.
+            raise ApiError(
+                "token_invalid",
+                "Refresh token is invalid or has been revoked.",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Rotated out well outside the grace period and replayed anyway — the standard signal
+        # of a stolen refresh token being used, so every active token for this user is revoked,
         # forcing re-authentication everywhere rather than just rejecting this one request.
         logger.warning(
             "refresh_token_reuse_detected user_id=%s token_id=%s", stored.user_id, stored.id
@@ -134,11 +191,10 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
             "unauthorized", "User no longer exists.", status_code=status.HTTP_401_UNAUTHORIZED
         )
 
-    # Rotate on every refresh: revoke the presented token, issue a brand new pair. A stolen
-    # refresh token that gets replayed after the legitimate client already rotated it will
-    # find its hash already revoked.
+    # Rotate on every refresh: revoke the presented token, issue a brand new pair carrying the
+    # same family_id forward.
     await repo.revoke_refresh_token(db, token_hash=token_hash)
-    return await _issue_token_pair(db, user)
+    return await _issue_token_pair(db, user, family_id=stored.family_id)
 
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)

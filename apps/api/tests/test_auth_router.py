@@ -1,4 +1,7 @@
+import pytest
 from fastapi.testclient import TestClient
+
+from app.routers import auth as auth_router
 
 
 def _register(client: TestClient, email: str = "user@example.com") -> dict[str, object]:
@@ -110,26 +113,58 @@ def test_me_returns_current_user(client: TestClient) -> None:
     assert response.json()["email"] == "user@example.com"
 
 
-def test_refresh_rotates_tokens_and_invalidates_the_old_one(client: TestClient) -> None:
+def test_refresh_rotates_tokens(client: TestClient) -> None:
     body = _register(client)
     old_refresh_token = body["refresh_token"]
 
     response = client.post("/v1/auth/refresh", json={"refresh_token": old_refresh_token})
+
     assert response.status_code == 200
     new_tokens = response.json()
     assert new_tokens["access_token"] != body["access_token"]
     assert new_tokens["refresh_token"] != old_refresh_token
 
-    replay = client.post("/v1/auth/refresh", json={"refresh_token": old_refresh_token})
-    assert replay.status_code == 401
 
-
-def test_replaying_a_rotated_out_refresh_token_revokes_every_token_for_that_user(
+def test_replaying_a_just_rotated_token_within_the_grace_period_recovers_a_new_session(
     client: TestClient,
 ) -> None:
-    """Reuse of an already-rotated-out refresh token is the standard signal of token theft —
-    the response is to revoke every refresh token for that user, not just the replayed one, so
-    both the attacker's and the legitimate client's sessions are forced to re-authenticate."""
+    """Two tabs sharing one refresh-token cookie can both fire a refresh at nearly the same
+    moment; whichever one's request reaches the server second sees a token its sibling already
+    rotated out. Within REFRESH_REUSE_GRACE_PERIOD_S, that's treated as this benign race rather
+    than theft — the loser still gets a valid session instead of being reuse-detected into a
+    full logout. See refresh()'s docstring in app/routers/auth.py."""
+    body = _register(client)
+    rotated_out_token = body["refresh_token"]
+
+    winner = client.post("/v1/auth/refresh", json={"refresh_token": rotated_out_token})
+    assert winner.status_code == 200
+    winner_refresh_token = winner.json()["refresh_token"]
+
+    loser = client.post("/v1/auth/refresh", json={"refresh_token": rotated_out_token})
+
+    assert loser.status_code == 200
+    loser_tokens = loser.json()
+    # A fresh pair, distinct from both the original and the winner's — the loser is recovered
+    # onto the family's current lineage, not handed back anything already issued.
+    assert loser_tokens["refresh_token"] != rotated_out_token
+    assert loser_tokens["refresh_token"] != winner_refresh_token
+
+    # The very latest token in the family (the loser's) is still valid...
+    still_valid = client.post(
+        "/v1/auth/refresh", json={"refresh_token": loser_tokens["refresh_token"]}
+    )
+    assert still_valid.status_code == 200
+
+
+def test_replaying_a_rotated_out_refresh_token_after_the_grace_period_revokes_everything(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past the grace period, replaying an already-rotated-out token is the standard signal of
+    token theft — the response is to revoke every refresh token for that user, not just the
+    replayed one, so both the attacker's and the legitimate client's sessions are forced to
+    re-authenticate."""
+    monkeypatch.setattr(auth_router, "REFRESH_REUSE_GRACE_PERIOD_S", 0)
+
     body = _register(client)
     rotated_out_token = body["refresh_token"]
 

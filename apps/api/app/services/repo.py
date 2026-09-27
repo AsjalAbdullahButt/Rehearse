@@ -75,9 +75,11 @@ async def update_profile(db: AsyncSession, *, user_id: str, updates: dict[str, A
 
 
 async def store_refresh_token(
-    db: AsyncSession, *, user_id: str, token_hash: str, expires_at: datetime
+    db: AsyncSession, *, user_id: str, family_id: str, token_hash: str, expires_at: datetime
 ) -> RefreshToken:
-    row = RefreshToken(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
+    row = RefreshToken(
+        user_id=user_id, family_id=family_id, token_hash=token_hash, expires_at=expires_at
+    )
     db.add(row)
     await db.commit()
     await db.refresh(row)
@@ -98,6 +100,35 @@ async def get_refresh_token_by_hash(db: AsyncSession, *, token_hash: str) -> Ref
     endpoint needs to distinguish "never existed" from "presented again after being rotated
     out" (a signal of token theft) rather than treating both as the same generic invalid case."""
     result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
+    return result.scalar_one_or_none()
+
+
+async def get_refresh_token_by_hash_for_update(
+    db: AsyncSession, *, token_hash: str
+) -> RefreshToken | None:
+    """Like get_refresh_token_by_hash, but with a locking read (SELECT ... FOR UPDATE) — see
+    count_answers_today's docstring for how this closes a TOCTOU gap on MySQL/InnoDB. Here it
+    means two requests racing on the *identical* token hash can't both independently observe
+    `revoked_at IS NULL` and both rotate it: the second blocks until the first's transaction
+    commits, then re-reads and correctly sees the now-revoked row. SQLite (tests) compiles FOR
+    UPDATE away entirely — same caveat as count_answers_today, exercised there for real only
+    against MySQL in CI."""
+    result = await db.execute(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash).with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_active_token_for_family(db: AsyncSession, *, family_id: str) -> RefreshToken | None:
+    """The current, not-yet-rotated token for a lineage — used by refresh()'s grace-period path
+    to recover a losing concurrent request instead of revoking the whole family. Also a locking
+    read, for the same reason as get_refresh_token_by_hash_for_update: two losing requests
+    racing each other in the grace-period path must not both rotate this same row."""
+    result = await db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
+        .with_for_update()
+    )
     return result.scalar_one_or_none()
 
 
