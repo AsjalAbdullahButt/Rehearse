@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -7,6 +9,22 @@ from app.models.interview_session import InterviewSession
 from app.models.profile import Profile
 from app.models.user import User
 from app.routers import auth as auth_router
+from app.services import repo as repo_module
+
+# A fixed instant for tests that fire several rate-limited requests in a loop and assert the
+# N+1th one trips the limit. record_rate_limit_hit buckets by wall-clock epoch // window_seconds
+# (see its docstring) — real time, not per-request elapsed time. Login/register both run Argon2
+# (deliberately slow, ~50-100ms+ per call even for the dummy-hash timing-safe path — see
+# core/auth.py's dummy_password_hash), so ~10 sequential requests can take a second or more on a
+# loaded CI runner; if that loop happens to straddle a real minute boundary, the hit count splits
+# across two window buckets and neither alone trips the limit — a rare but real flake. Freezing
+# `utcnow` for the duration of these tests removes that dependency on real wall-clock timing
+# entirely, regardless of how slow the request loop actually runs.
+_FIXED_NOW = datetime(2026, 1, 1, tzinfo=UTC).replace(tzinfo=None)
+
+
+def _freeze_rate_limit_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(repo_module, "utcnow", lambda: _FIXED_NOW)
 
 
 def _register(client: TestClient, email: str = "user@example.com") -> dict[str, object]:
@@ -63,11 +81,12 @@ def test_login_rejects_wrong_password(client: TestClient) -> None:
 
 
 def test_login_ip_bucket_triggers_across_different_emails_from_the_same_ip(
-    client: TestClient,
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The IP-keyed login bucket (added alongside the per-email one) must catch a credential-
     stuffing pattern — many different target accounts, one attacking IP — that a purely
     per-email bucket would never trip since no single email is ever repeated."""
+    _freeze_rate_limit_clock(monkeypatch)
     for i in range(10):
         client.post(
             "/v1/auth/login",
@@ -83,7 +102,8 @@ def test_login_ip_bucket_triggers_across_different_emails_from_the_same_ip(
     assert response.json()["error"]["code"] == "rate_limited"
 
 
-def test_login_is_rate_limited_per_ip(client: TestClient) -> None:
+def test_login_is_rate_limited_per_ip(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    _freeze_rate_limit_clock(monkeypatch)
     for _ in range(10):
         client.post(
             "/v1/auth/login", json={"email": "nobody@example.com", "password": "whatever-123"}
@@ -98,7 +118,10 @@ def test_login_is_rate_limited_per_ip(client: TestClient) -> None:
     assert "Retry-After" in response.headers
 
 
-def test_register_is_rate_limited_per_ip(client: TestClient) -> None:
+def test_register_is_rate_limited_per_ip(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _freeze_rate_limit_clock(monkeypatch)
     for i in range(5):
         client.post(
             "/v1/auth/register",
