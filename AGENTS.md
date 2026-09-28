@@ -27,7 +27,11 @@ across sessions. Portfolio-grade MVP — polish and correctness over feature cou
 - **Authorization:** no RLS equivalent on MySQL — every session/answer read or write is scoped to
   `user_id` explicitly in `apps/api/app/services/repo.py`. Treat a missing `user_id` filter there
   as a cross-user data leak, not a style nit.
-- **STT/LLM:** Groq (`whisper-large-v3-turbo`, Llama via JSON mode + Pydantic validation)
+- **STT/LLM:** Groq (`whisper-large-v3-turbo`, `openai/gpt-oss-120b` via JSON mode + Pydantic
+  validation — the model name is env-configurable (`GROQ_LLM_MODEL`) since Groq's hosted catalog
+  changes over time; the original default, `llama-3.3-70b-versatile`, was retired from Groq at
+  some point and now 404s — see `app/core/config.py`'s `groq_llm_model` docstring before
+  assuming a 502 `llm_failed` is a code bug)
 - **Resume parsing:** `pypdf` (pure-Python PDF text extraction, no native deps — serverless-
   friendly), feeding the same Groq LLM for extraction; see the "Resume upload" status entry below.
 - **Free tiers only:** Vercel Hobby, Groq free API, [Aiven free-tier MySQL](https://aiven.io/free-mysql-database)

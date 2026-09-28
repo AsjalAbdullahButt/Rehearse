@@ -32,7 +32,15 @@ class Settings(BaseSettings):
 
     groq_api_key: str = Field(alias="GROQ_API_KEY")
     groq_stt_model: str = Field(default="whisper-large-v3-turbo", alias="GROQ_STT_MODEL")
-    groq_llm_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_LLM_MODEL")
+    groq_llm_model: str = Field(default="openai/gpt-oss-120b", alias="GROQ_LLM_MODEL")
+    """llama-3.3-70b-versatile (the original default) was retired from Groq's hosted catalog at
+    some point after this project was first built — a request naming it now 404s at Groq, which
+    services/llm.py surfaces as a generic "feedback model is unavailable" 502. Confirmed against
+    a real Groq API key on 2026-09-29 via GET https://api.groq.com/openai/v1/models: this model
+    id is live and supports response_format={"type": "json_object"} (llm.py's JSON mode), which
+    every LLMFeedback/ResumeExtraction call here depends on. Groq's available model catalog
+    changes over time independent of this codebase — if this default ever 404s again, check
+    that endpoint again rather than guessing a replacement."""
 
     database_url: SecretStr = Field(alias="DATABASE_URL")
 
