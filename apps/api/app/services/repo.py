@@ -4,20 +4,24 @@ cross-user data leak can be caught before it ships. See tests/test_cross_user_au
 
 import random
 import time
+import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.answer import Answer
 from app.models.base import utcnow
 from app.models.enums import Category, Difficulty, Focus, InterviewerStyle, Role, SessionStatus
 from app.models.interview_session import InterviewSession
 from app.models.profile import Profile
 from app.models.question import Question
-from app.models.rate_limit_hit import RateLimitHit
+from app.models.rate_limit_counter import RateLimitCounter
 from app.models.refresh_token import RefreshToken
 from app.models.session_question import SessionQuestion
 from app.models.user import User
@@ -53,6 +57,18 @@ async def create_user(
 
 async def update_user_password(db: AsyncSession, *, user_id: str, password_hash: str) -> None:
     await db.execute(update(User).where(User.id == user_id).values(password_hash=password_hash))
+    await db.commit()
+
+
+async def increment_token_version(db: AsyncSession, *, user_id: str) -> None:
+    """Bumps User.token_version by one, invalidating every access/refresh JWT already issued to
+    this user (see core/auth.py's check_token_version) — called by change-password and
+    logout-all. `User.token_version + 1` (an in-DB expression) rather than reading-then-writing
+    a Python int, so two near-simultaneous calls (e.g. a double-click) can't race and lose one
+    of the increments."""
+    await db.execute(
+        update(User).where(User.id == user_id).values(token_version=User.token_version + 1)
+    )
     await db.commit()
 
 
@@ -573,41 +589,74 @@ GLOBAL_RATE_LIMIT_CLEANUP_PROBABILITY = 0.02
 bounded under real traffic, rare enough that the extra DELETE isn't paid on every single hit."""
 
 GLOBAL_RATE_LIMIT_RETENTION_S = 60 * 60
-"""Comfortably above every window_seconds currently in use (all <= 60s — see
-app/routers/auth.py, app/routers/answers.py) — this is a dead-row safety net, not a limit
-window, so it only needs to be *bigger* than the largest real window, not tight."""
+"""Comfortably above every window_seconds currently in use (all <= 3600s — see
+app/routers/auth.py, app/routers/answers.py, app/routers/resume.py) — this is a dead-row safety
+net, not a limit window, so it only needs to be *bigger* than the largest real window, not tight."""
 
 
-async def record_rate_limit_hit(db: AsyncSession, *, key: str, window_seconds: int) -> int:
-    """Records one hit for `key` and returns how many hits (including this one) fall within the
-    trailing `window_seconds` — a durable, cross-instance rate limit backed by real rows, the
-    same pattern count_answers_today uses for the daily answer cap. Commits immediately so the
-    hit is counted even if the rest of the request goes on to fail or raise.
+def _rate_limit_dialect_is_mysql() -> bool:
+    # Mirrors app/db.py's own dialect check (DATABASE_URL's scheme) rather than introspecting
+    # the session's bind — cheap, and avoids any doubt about what AsyncSession.bind exposes.
+    return get_settings().database_url.get_secret_value().startswith("mysql")
 
-    Two layers of cleanup, both needed: the per-key delete below only ever runs when that same
-    key is hit *again*, so a one-time visitor's row would otherwise sit in the table forever no
-    matter how small its own window is. The probabilistic global sweep catches those too,
+
+async def record_rate_limit_hit(
+    db: AsyncSession, *, key: str, window_seconds: int
+) -> tuple[int, int]:
+    """Records one hit against `key`'s current fixed window and returns
+    `(hits_in_this_window, seconds_until_the_window_resets)` — a durable, cross-instance rate
+    limit backed by a real row, the same pattern count_answers_today uses for the daily answer
+    cap.
+
+    Concurrency safety: the increment is one atomic UPSERT statement (`INSERT ... ON DUPLICATE
+    KEY UPDATE hits = hits + 1` on MySQL, `INSERT ... ON CONFLICT DO UPDATE` on the SQLite used
+    in tests), serialized by the unique index on (key, window_start) — see
+    RateLimitCounter's docstring for exactly what this does and doesn't guarantee (in particular:
+    real atomicity per bucket, but a fixed rather than sliding window, so a burst straddling a
+    window boundary can briefly exceed the configured limit). This replaces an earlier design
+    that inserted a row and then ran a separate, unlocked SELECT COUNT(*) — two requests racing
+    inside the same window could both read a count under the limit and both be let through.
+    Commits immediately so the hit is counted even if the rest of the request goes on to fail or
+    raise.
+
+    Two layers of cleanup, both needed: the per-key-and-window row this function itself
+    maintains only ever grows for keys that keep recurring, so a one-time visitor's bucket would
+    otherwise sit in the table forever. The probabilistic global sweep catches those too,
     independent of whether their key ever recurs — a plain age-based DELETE, not a
     dialect-specific upsert, so it runs identically against the SQLite used in tests and the
     real MySQL used in production."""
     now = utcnow()
-    window_start = now - timedelta(seconds=window_seconds)
+    epoch_s = int(now.replace(tzinfo=UTC).timestamp())
+    bucket_start_epoch_s = (epoch_s // window_seconds) * window_seconds
+    window_start = datetime.fromtimestamp(bucket_start_epoch_s, tz=UTC).replace(tzinfo=None)
+    seconds_until_reset = window_seconds - (epoch_s - bucket_start_epoch_s)
 
-    db.add(RateLimitHit(key=key, created_at=now))
-    count_result = await db.execute(
-        select(func.count())
-        .select_from(RateLimitHit)
-        .where(RateLimitHit.key == key, RateLimitHit.created_at >= window_start)
-    )
-    count = count_result.scalar_one()
+    values = {"id": str(uuid.uuid4()), "key": key, "window_start": window_start, "hits": 1}
+    if _rate_limit_dialect_is_mysql():
+        insert_stmt = mysql_insert(RateLimitCounter).values(**values)
+        upsert_stmt = insert_stmt.on_duplicate_key_update(
+            hits=RateLimitCounter.hits + 1, updated_at=now
+        )
+    else:
+        insert_stmt = sqlite_insert(RateLimitCounter).values(**values)
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[RateLimitCounter.key, RateLimitCounter.window_start],
+            set_={"hits": RateLimitCounter.hits + 1, "updated_at": now},
+        )
+    await db.execute(upsert_stmt)
 
-    await db.execute(
-        delete(RateLimitHit).where(RateLimitHit.key == key, RateLimitHit.created_at < window_start)
+    hits_result = await db.execute(
+        select(RateLimitCounter.hits).where(
+            RateLimitCounter.key == key, RateLimitCounter.window_start == window_start
+        )
     )
+    hits = hits_result.scalar_one()
 
     if random.random() < GLOBAL_RATE_LIMIT_CLEANUP_PROBABILITY:
         cleanup_cutoff = now - timedelta(seconds=GLOBAL_RATE_LIMIT_RETENTION_S)
-        await db.execute(delete(RateLimitHit).where(RateLimitHit.created_at < cleanup_cutoff))
+        await db.execute(
+            delete(RateLimitCounter).where(RateLimitCounter.window_start < cleanup_cutoff)
+        )
 
     await db.commit()
-    return count
+    return hits, seconds_until_reset

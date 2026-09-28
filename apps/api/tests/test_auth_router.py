@@ -62,6 +62,27 @@ def test_login_rejects_wrong_password(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "invalid_credentials"
 
 
+def test_login_ip_bucket_triggers_across_different_emails_from_the_same_ip(
+    client: TestClient,
+) -> None:
+    """The IP-keyed login bucket (added alongside the per-email one) must catch a credential-
+    stuffing pattern — many different target accounts, one attacking IP — that a purely
+    per-email bucket would never trip since no single email is ever repeated."""
+    for i in range(10):
+        client.post(
+            "/v1/auth/login",
+            json={"email": f"victim{i}@example.com", "password": "whatever-123"},
+        )
+
+    response = client.post(
+        "/v1/auth/login",
+        json={"email": "yet-another-victim@example.com", "password": "whatever-123"},
+    )
+
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "rate_limited"
+
+
 def test_login_is_rate_limited_per_ip(client: TestClient) -> None:
     for _ in range(10):
         client.post(
@@ -240,6 +261,26 @@ def test_logout_all_revokes_every_refresh_token(client: TestClient) -> None:
     assert second_reuse.status_code == 401
 
 
+def test_logout_all_invalidates_the_caller_s_own_access_token_immediately(
+    client: TestClient,
+) -> None:
+    """Before token_version existed, the access token used to *call* logout-all kept working
+    until its own TTL expired even though every refresh token was revoked — a compromised
+    session's already-issued access token stayed live for up to JWT_ACCESS_TTL_MIN. This proves
+    it's now rejected on its very next use instead."""
+    body = _register(client)
+    access_token = body["access_token"]
+
+    logout_response = client.post(
+        "/v1/auth/logout-all", headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert logout_response.status_code == 204
+
+    me_response = client.get("/v1/auth/me", headers={"Authorization": f"Bearer {access_token}"})
+    assert me_response.status_code == 401
+    assert me_response.json()["error"]["code"] == "session_invalidated"
+
+
 def test_register_normalizes_email_to_lowercase(client: TestClient) -> None:
     response = client.post(
         "/v1/auth/register",
@@ -324,6 +365,61 @@ def test_change_password_updates_credentials_and_revokes_refresh_tokens(
 
     stale_refresh = client.post("/v1/auth/refresh", json={"refresh_token": old_refresh_token})
     assert stale_refresh.status_code == 401
+
+
+def test_change_password_invalidates_the_access_token_used_to_change_it(
+    client: TestClient,
+) -> None:
+    body = _register(client)
+    old_access_token = body["access_token"]
+
+    change_response = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "correct-horse-battery-staple",
+            "new_password": "a-brand-new-password-789",
+        },
+        headers={"Authorization": f"Bearer {old_access_token}"},
+    )
+    assert change_response.status_code == 204
+
+    me_response = client.get("/v1/auth/me", headers={"Authorization": f"Bearer {old_access_token}"})
+    assert me_response.status_code == 401
+    assert me_response.json()["error"]["code"] == "session_invalidated"
+
+
+def test_register_rejects_a_password_shorter_than_the_new_minimum(client: TestClient) -> None:
+    response = client.post(
+        "/v1/auth/register",
+        json={"email": "user@example.com", "password": "short1234567"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_register_rejects_a_common_password(client: TestClient) -> None:
+    response = client.post(
+        "/v1/auth/register",
+        # 15+ characters but still a well-known weak password once digits are normalized away.
+        json={"email": "user@example.com", "password": "qwertyuiop12345"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_change_password_rejects_a_common_new_password(client: TestClient) -> None:
+    body = _register(client)
+
+    response = client.post(
+        "/v1/auth/change-password",
+        json={
+            "current_password": "correct-horse-battery-staple",
+            "new_password": "iloveyou123456789",
+        },
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_delete_account_requires_correct_password(client: TestClient) -> None:

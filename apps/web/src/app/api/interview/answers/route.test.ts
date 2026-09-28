@@ -86,4 +86,24 @@ describe("POST /api/interview/answers", () => {
     expect(body.error.code).toBe("payload_too_large");
     expect(proxyAuthedRequest).not.toHaveBeenCalled();
   });
+
+  it("rejects a request between the old 5MB cap and Vercel's ~4.5MB hard limit", async () => {
+    // This project must never accept a body this large on Vercel — a request this size would
+    // be rejected by the platform itself before this function even ran. The old constant
+    // (4MB audio + 1MB overhead = 5MB) would have let this through the BFF's own check; the
+    // corrected constant (~4.25MB) catches it here instead.
+    const request = requestWith({ "content-length": String(4.6 * 1024 * 1024) });
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(proxyAuthedRequest).not.toHaveBeenCalled();
+  });
+
+  it("allows a declared length just under the corrected ~4.25MB cap", async () => {
+    const request = requestWith({ "content-length": String(4 * 1024 * 1024 + 100 * 1024) });
+    const response = await POST(request);
+
+    expect(response.status).toBe(201);
+    expect(proxyAuthedRequest).toHaveBeenCalled();
+  });
 });

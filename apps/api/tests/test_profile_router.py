@@ -84,6 +84,98 @@ def test_update_profile_rejects_out_of_range_voice_rate(
     assert response.status_code == 422
 
 
+def test_update_profile_accepts_a_valid_target_role(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.patch(
+        "/v1/profile", json={"target_role": "backend"}, headers=_auth_headers(user)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["target_role"] == "backend"
+
+
+def test_update_profile_rejects_a_target_role_outside_the_role_enum(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    """target_role must be one of the real Role values, not an arbitrary client-supplied
+    string — otherwise a bogus value could round-trip back out through GET /v1/profile and
+    break anything downstream that assumes it's always a valid Role (e.g. /interview's
+    initialRole fallback)."""
+    user = register_user()
+
+    response = client.patch(
+        "/v1/profile", json={"target_role": "astronaut"}, headers=_auth_headers(user)
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_profile_clears_target_role_with_an_explicit_null(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+    client.patch("/v1/profile", json={"target_role": "backend"}, headers=_auth_headers(user))
+
+    response = client.patch("/v1/profile", json={"target_role": None}, headers=_auth_headers(user))
+
+    assert response.status_code == 200
+    assert response.json()["target_role"] is None
+
+
+def test_update_profile_rejects_a_display_name_over_the_column_length(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.patch(
+        "/v1/profile", json={"display_name": "x" * 256}, headers=_auth_headers(user)
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_profile_rejects_a_voice_name_over_the_column_length(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.patch(
+        "/v1/profile", json={"voice_name": "x" * 129}, headers=_auth_headers(user)
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_profile_trims_whitespace_from_display_name(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.patch(
+        "/v1/profile", json={"display_name": "  Ada Lovelace  "}, headers=_auth_headers(user)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Ada Lovelace"
+
+
+def test_update_profile_clears_display_name_with_a_whitespace_only_value(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+    client.patch("/v1/profile", json={"display_name": "Ada"}, headers=_auth_headers(user))
+
+    response = client.patch(
+        "/v1/profile", json={"display_name": "   "}, headers=_auth_headers(user)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["display_name"] is None
+
+
 def test_profiles_are_independent_per_user(
     client: TestClient, register_user: Callable[..., dict[str, Any]]
 ) -> None:

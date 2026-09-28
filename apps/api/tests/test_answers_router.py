@@ -9,7 +9,7 @@ from app.core.errors import ApiError
 from app.models.answer import Answer
 from app.models.enums import Category, Difficulty, Role
 from app.models.question import Question
-from app.routers.answers import MAX_AUDIO_BYTES, UPLOAD_CHUNK_BYTES, _read_capped
+from app.routers.answers import MAX_AUDIO_FILE_BYTES, UPLOAD_CHUNK_BYTES, _read_capped
 from app.schemas.feedback import LLMFeedback, TechnicalRubric
 from app.schemas.transcription import TranscriptionResult, WordTiming
 from app.services import llm, repo, stt
@@ -715,6 +715,54 @@ async def test_create_answer_enforces_the_per_minute_burst_limit(
     assert "Retry-After" in responses[6].headers
 
 
+async def test_create_answer_rejects_an_audio_field_over_the_file_size_limit(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    """Router-level companion to _read_capped's own unit tests below — proves the same 413
+    behavior through the real endpoint, not just the helper function in isolation."""
+    user = register_user()
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
+    oversized = b"\x1a\x45\xdf\xa3" + b"x" * (MAX_AUDIO_FILE_BYTES + 1)
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        session_question_id=session_question_id,
+        user=user,
+        audio_bytes=oversized,
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
+
+
+async def test_create_answer_accepts_audio_right_at_the_file_size_limit(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
+    at_limit = b"\x1a\x45\xdf\xa3" + b"x" * (MAX_AUDIO_FILE_BYTES - len(b"\x1a\x45\xdf\xa3"))
+    assert len(at_limit) == MAX_AUDIO_FILE_BYTES
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        session_question_id=session_question_id,
+        user=user,
+        audio_bytes=at_limit,
+    )
+
+    assert response.status_code == 201
+
+
 async def test_get_answer_returns_the_full_report(
     client: TestClient,
     db_session: AsyncSession,
@@ -776,20 +824,20 @@ class _FakeUploadFile:
 async def test_read_capped_aborts_without_buffering_the_full_oversized_payload() -> None:
     # 100x the cap: if `_read_capped` buffered/consumed the whole thing before checking the
     # size, this would take hundreds of read() calls. It should abort after only a handful.
-    huge_upload = _FakeUploadFile(total_bytes=MAX_AUDIO_BYTES * 100)
+    huge_upload = _FakeUploadFile(total_bytes=MAX_AUDIO_FILE_BYTES * 100)
 
     with pytest.raises(ApiError) as exc_info:
-        await _read_capped(huge_upload, MAX_AUDIO_BYTES)
+        await _read_capped(huge_upload, MAX_AUDIO_FILE_BYTES)
 
     assert exc_info.value.status_code == 413
     assert exc_info.value.code == "payload_too_large"
-    max_expected_calls = (MAX_AUDIO_BYTES // UPLOAD_CHUNK_BYTES) + 2
+    max_expected_calls = (MAX_AUDIO_FILE_BYTES // UPLOAD_CHUNK_BYTES) + 2
     assert huge_upload.read_calls <= max_expected_calls
 
 
 async def test_read_capped_returns_full_bytes_when_under_the_cap() -> None:
     upload = _FakeUploadFile(total_bytes=1024)
 
-    result = await _read_capped(upload, MAX_AUDIO_BYTES)
+    result = await _read_capped(upload, MAX_AUDIO_FILE_BYTES)
 
     assert result == b"0" * 1024

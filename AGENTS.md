@@ -461,6 +461,85 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
     covered: `SessionSetupForm`'s prop-driven defaults (`session-setup-form.test.tsx`, new) and
     `SettingsForm`'s target-role save/clear behavior (`settings-form.test.tsx`, new) — both were
     previously untested files.
+- **Security/reliability hardening pass, round 1 (2026-09-28) — critical fixes + immediate
+  session invalidation + password policy.** Tracked against a large, multi-phase hardening
+  prompt (auth/rate-limiting/upload-limits/schema-validation/prod-config, then session
+  management, API security, UI/a11y, CSP, logging, DB/availability, CI, encryption, async
+  reliability — 12 phases). This round implemented Phase 1 in full and the parts of Phase 2 that
+  don't need external provider credentials; **later phases (API security audit beyond what
+  already existed, UI/UX and accessibility work, CSP nonce migration, structured-logging/Sentry
+  hooks, DB TLS enforcement, CI security scanning, email/passkey auth, async answer processing)
+  are not yet started** — see the new "Known gaps" entries below for what's deferred and why.
+  - **Rate-limit key validation no longer duplicates JWT logic.** `core/rate_limit.py`'s
+    `user_or_ip_key` used to call `jwt.decode` directly with only signature+algorithm checking —
+    a second, partial validation path alongside `core/auth.py`'s real one, missing issuer/
+    audience/expiry/token-type checks. It now goes through a new `core/auth.py:try_decode_token`
+    (a non-raising wrapper around the same `decode_token` `get_current_user` uses), so a forged,
+    expired, wrong-issuer/audience, or refresh-typed-as-access token can no longer buy a bigger
+    per-user rate-limit bucket than an invalid token should get — it now correctly falls back to
+    the IP bucket in every one of those cases (`tests/test_rate_limit.py`).
+  - **Rate limiting is now a real atomic counter, not an unlocked count-then-insert.** The old
+    `RateLimitHit` design (one row per request, counted via a separate unlocked
+    `SELECT COUNT(*)`) could let two concurrent requests both read a count under the limit and
+    both be let through. Replaced with `RateLimitCounter` (`app/models/rate_limit_counter.py`) —
+    one row per `(key, window_start)` fixed-window bucket, incremented via a single atomic UPSERT
+    (`INSERT ... ON DUPLICATE KEY UPDATE` on MySQL, `INSERT ... ON CONFLICT DO UPDATE` on the
+    SQLite used in tests). Proven race-free by a genuine multi-connection concurrency test
+    (`tests/test_rate_limit.py`'s `..._atomically_across_connections`, using N separate
+    engine/session pairs against one on-disk SQLite file, not one shared `AsyncSession`). This is
+    a fixed window, not the previous sliding one — see the runbook's new "Rate limiting" section
+    for the documented boundary-burst tradeoff and what upgrading to Redis/Upstash would look
+    like. Migration `0009` drops `rate_limit_hits` and creates `rate_limit_counters` (safe:
+    transient bookkeeping only, nothing worth migrating across). Also added dedicated buckets
+    login didn't have before: an IP bucket *and* a normalized-email bucket for login (catches
+    both "one attacker, many target accounts" and "many IPs, one target account", neither a
+    permanent lockout), an IP bucket for `/auth/refresh` (previously unlimited), and a defensive
+    IP bucket alongside the existing per-user one for `/answers`.
+  - **Upload-size constants now match reality, not a stale promise.** `MAX_REQUEST_BODY_BYTES`
+    was `4MB + 1MB = 5MB` — *above* Vercel Functions' real ~4.5MB hard request-body ceiling,
+    meaning the platform itself would reject some requests this app's own middleware claimed to
+    accept. `app/core/limits.py` now derives it as `MAX_AUDIO_FILE_BYTES + 256KB ≈ 4.25MB`, with
+    a `VERCEL_FUNCTION_BODY_LIMIT_BYTES` constant documenting the real ceiling this must stay
+    under. Separately, the resume BFF route (`apps/web/.../interview/resume/route.ts`) compared
+    the *whole request's* `Content-Length` against the bare 2MB file cap, which could reject a
+    legitimate ~2MB resume once its own multipart overhead was added — it now compares against a
+    dedicated `MAX_RESUME_REQUEST_BYTES` (file cap + overhead allowance) instead. New tests on
+    both sides cover the boundary in each direction (`tests/test_resume_router.py`'s
+    `..._close_to_the_size_limit`, `tests/test_answers_router.py`'s file-size-limit tests, both
+    BFF route `.test.ts` files' Content-Length boundary tests).
+  - **Immediate session invalidation via `users.token_version`.** Before this, password-change
+    and logout-all only revoked refresh tokens — an already-issued *access* token kept working
+    until its own short TTL expired even after a reported compromise. `users.token_version`
+    (migration `0008`, default `1`) is now baked into every access/refresh JWT's `ver` claim
+    (`core/auth.py`'s `_encode_token`/`check_token_version`) and checked on every authenticated
+    request and every refresh; password-change and logout-all both bump it
+    (`repo.increment_token_version`), which rejects every previously-issued credential — the one
+    used to make that very call included — on its very next use, with a distinct
+    `session_invalidated` error code. See `tests/test_auth_router.py`'s
+    `..._invalidates_the_access_token_used_to_...` tests.
+  - **Password policy raised, with a local common-password blocklist.** New-password minimum
+    raised from 8 to `NEW_PASSWORD_MIN_LENGTH = 15` characters (max 128), no composition rules
+    (length, not forced character classes, per NIST SP 800-63B), spaces/unicode allowed.
+    `app/core/common_passwords.py` is a small offline blocklist (not a live HIBP-style
+    k-anonymity call — no credential/infra for that in this environment) checked on register and
+    change-password, normalizing case/punctuation and trailing digit runs so obvious variants
+    ("Password123!") are still caught. **Not done in this round:** a password-strength meter in
+    the sign-in/settings UI (Phase 4's ask) — deferred to the next round alongside the rest of
+    the UI/a11y work.
+  - **`ProfileUpdate` and auth request schemas mirror real DB/business constraints.**
+    `target_role` is now the real `Role` enum (was an arbitrary string up to 64 chars);
+    `display_name`/`voice_name` gained max-lengths matching their DB columns plus whitespace
+    trimming (an explicit empty/whitespace value clears the field, same as `null`);
+    `refresh_token` (both `/auth/refresh` and `/auth/logout`) gained a `MAX_JWT_LENGTH` bound.
+    No blanket HTML-stripping was added anywhere — free-form interview/job-description text
+    still allows arbitrary punctuation/technical syntax, per this file's existing hard rules.
+  - **Production-only startup checks.** New `Settings.environment` (`ENVIRONMENT`, default
+    `development`) gates: `INTERNAL_PROXY_SECRET` becomes required and minimum-length-checked in
+    production (previously always optional); `/docs`/`/redoc`/`/openapi.json` are disabled in
+    production unless `ENABLE_API_DOCS=true`; `JWT_ALGORITHM` is validated against an HMAC-only
+    allow-list (`HS256`/`HS384`/`HS512`) in every environment, not just production, since this
+    project only ever signs with one shared secret. See `docs/runbook.md`'s new "Production
+    config" section for what a startup `ValidationError` here means operationally.
 
 ## Known gaps / deliberate scope cuts from Phase 2
 
@@ -499,3 +578,23 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
 - **Live Groq STT/LLM integration is still unverified against real credentials** — this environment
   has no `GROQ_API_KEY`. STT/LLM calls are mocked in every automated test;
   `apps/api/scripts/try_answer.py` remains the way to smoke-test the real integration.
+- **The 2026-09-28 hardening pass's later phases are not started yet**, tracked separately from
+  the round-1 items above so they aren't mistaken for done:
+  - No email verification, password-reset, or passkey/WebAuthn support — all need either a
+    transactional email provider or a browser to actually exercise, neither available here.
+  - No further OWASP API Top-10 endpoint-by-endpoint re-audit beyond what already existed
+    (cross-user authorization tests, idempotency, magic-byte sniffing, etc.) or Groq
+    backoff/jitter hardening beyond the existing `groq_retry.py` timeout+retry-once policy.
+  - No UI/UX changes yet: session-setup progressive disclosure, mobile nav, `OptionPill` →
+    real radio-group semantics, light-mode semantic status-text tokens, end-interview
+    confirmation, unsaved-recording navigation warning, report-page recovery links, Settings
+    dirty-state tracking, or a password-strength meter.
+  - No CSP nonce migration (still `'unsafe-inline'` for scripts — replacing it needs a measured
+    App Router compatibility pass, not a blind swap), no structured-JSON-log/Sentry wiring beyond
+    the existing request-ID correlation, no DB-TLS-required startup check, and no CI security
+    scanning (Dependabot/CodeQL/Semgrep) beyond what git/GitHub already provide by default.
+  - No async job-queue redesign for answer processing (`POST answer → job_id` → polling) — not
+    justified without real production latency measurements first, per that phase's own
+    instructions.
+  Each of these is a distinct, schedulable follow-up; none should be assumed covered by the
+  round-1 work above just because "the hardening pass" ran once.

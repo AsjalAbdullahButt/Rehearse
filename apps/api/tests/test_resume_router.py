@@ -93,6 +93,25 @@ def test_parse_resume_rejects_an_oversized_file(
     assert response.json()["error"]["code"] == "payload_too_large"
 
 
+def test_parse_resume_accepts_a_real_pdf_close_to_the_size_limit(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    """A file just under MAX_RESUME_FILE_BYTES must not be rejected merely because the multipart
+    envelope (boundary, headers, other form fields) around it pushes the whole HTTP request
+    slightly past 2MB — _read_capped bounds only the `resume` field's own bytes, not the request
+    as a whole (see app/core/limits.py's MAX_RESUME_REQUEST_BYTES docstring for the matching BFF
+    fix). Uses a real, valid PDF (not the mock-magic-bytes fixture) padded via its own content
+    stream, so this exercises real PDF parsing at the boundary, not just the size check."""
+    user = register_user()
+    near_limit = pdf_with_text("A" * (2 * 1024 * 1024 - 2048))
+    assert near_limit != b""
+    assert len(near_limit) <= 2 * 1024 * 1024
+
+    response = _post_resume(client, user=user, resume_bytes=near_limit)
+
+    assert response.status_code == 200
+
+
 def test_parse_resume_returns_the_extracted_fields_for_a_real_pdf_with_text(
     client: TestClient, register_user: Callable[..., dict[str, Any]]
 ) -> None:

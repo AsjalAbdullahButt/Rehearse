@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -9,6 +9,20 @@ MIN_JWT_SECRET_LENGTH = 32
 rejects obviously-weak secrets ("changeme", "secret", ...) without trying to actually measure
 entropy. The README's generation command (secrets.token_urlsafe(64)) produces ~86 characters,
 comfortably above this floor."""
+
+MIN_INTERNAL_PROXY_SECRET_LENGTH = 32
+"""Same reasoning/floor as MIN_JWT_SECRET_LENGTH — this secret is what lets
+app/core/rate_limit.py's client_ip_key trust a caller-reported IP, so a weak or guessable value
+would defeat that trust boundary entirely."""
+
+ALLOWED_JWT_ALGORITHMS = frozenset({"HS256", "HS384", "HS512"})
+"""HMAC algorithms only — this project signs and verifies with one shared secret
+(Settings.jwt_secret), not a public/private keypair, so an asymmetric algorithm (RS256, ES256,
+...) would either fail outright or silently do the wrong thing depending on what's handed to it
+as a "secret". Restricting to this allow-list, checked at startup, turns a misconfigured
+JWT_ALGORITHM into an immediate, actionable startup failure instead of a confusing runtime one."""
+
+Environment = Literal["development", "staging", "production"]
 
 
 class Settings(BaseSettings):
@@ -21,6 +35,17 @@ class Settings(BaseSettings):
     groq_llm_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_LLM_MODEL")
 
     database_url: SecretStr = Field(alias="DATABASE_URL")
+
+    environment: Environment = Field(default="development", alias="ENVIRONMENT")
+    """Drives every other production-only check below (docs exposure, INTERNAL_PROXY_SECRET
+    requirement, ...). Left as "development" by default so a fresh local/CI checkout doesn't
+    need a new required env var just to boot — but every real deployment must set this
+    explicitly; see docs/runbook.md."""
+
+    enable_api_docs: bool = Field(default=False, alias="ENABLE_API_DOCS")
+    """/docs, /redoc and /openapi.json are always available outside production regardless of
+    this flag (local dev / staging convenience). In production they're served only if this is
+    explicitly set true — see `docs_enabled` below."""
 
     jwt_secret: SecretStr = Field(alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
@@ -43,6 +68,17 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("jwt_algorithm")
+    @classmethod
+    def _reject_unsupported_jwt_algorithm(cls, value: str) -> str:
+        if value not in ALLOWED_JWT_ALGORITHMS:
+            raise ValueError(
+                f"JWT_ALGORITHM must be one of {sorted(ALLOWED_JWT_ALGORITHMS)} — this project "
+                "signs and verifies with a single shared secret (JWT_SECRET), so an asymmetric "
+                "algorithm isn't supported without deliberately migrating the signing scheme."
+            )
+        return value
+
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")
     daily_answer_limit: int = Field(default=30, alias="DAILY_ANSWER_LIMIT")
 
@@ -58,6 +94,14 @@ class Settings(BaseSettings):
     def allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
 
+    @property
+    def docs_enabled(self) -> bool:
+        """/docs, /redoc and /openapi.json expose the full API surface (every route, every
+        schema) to anyone who can reach the deployment — fine as a local/staging convenience,
+        not something a public production deployment should serve by default. See main.py's
+        create_app, which wires this into FastAPI's docs_url/redoc_url/openapi_url."""
+        return self.environment != "production" or self.enable_api_docs
+
     @model_validator(mode="after")
     def _reject_wildcard_origin_with_credentials(self) -> Self:
         # main.py's CORSMiddleware always sets allow_credentials=True. A wildcard origin
@@ -65,12 +109,44 @@ class Settings(BaseSettings):
         # Starlette's CORSMiddleware fails cryptically at request time (it still runs, but every
         # credentialed cross-origin request just breaks). Catching this at startup, with an
         # actionable message, beats debugging a silently-broken CORS response later.
+        #
+        # Browsers never call this API directly in this project's architecture — only the
+        # Next.js BFF does, server-to-server (see AGENTS.md's proxy.ts notes) — so CORS here is
+        # a defense-in-depth header, not the authentication boundary; get_current_user's JWT
+        # check is. This validator still guards against a config that would silently break even
+        # that defense-in-depth layer.
         if "*" in self.allowed_origins_list:
             raise ValueError(
                 "ALLOWED_ORIGINS cannot include '*': this API always sends "
                 "Access-Control-Allow-Credentials: true, and browsers reject a wildcard "
                 "Access-Control-Allow-Origin combined with credentials. List explicit origins "
                 "instead, e.g. ALLOWED_ORIGINS=https://example.com,http://localhost:3000."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _enforce_production_requirements(self) -> Self:
+        """Fails startup — not just a warning — on the specific misconfigurations that would
+        otherwise only surface as a live security gap in a real deployment. Every check here is
+        gated on environment=="production" specifically: development/staging keep today's
+        permissive defaults (no INTERNAL_PROXY_SECRET required, docs on) so a fresh local
+        checkout or a staging deploy doesn't need production-grade secrets just to boot."""
+        if self.environment != "production":
+            return self
+
+        if self.internal_proxy_secret is None:
+            raise ValueError(
+                "INTERNAL_PROXY_SECRET is required when ENVIRONMENT=production: it's what lets "
+                "app/core/rate_limit.py trust the Next.js BFF's forwarded client IP instead of "
+                "falling back to treating every request as coming from one shared IP (the BFF's "
+                "own outbound connection). Generate one with: "
+                'python -c "import secrets; print(secrets.token_urlsafe(48))" and set the same '
+                "value in the web app's INTERNAL_PROXY_SECRET."
+            )
+        if len(self.internal_proxy_secret.get_secret_value()) < MIN_INTERNAL_PROXY_SECRET_LENGTH:
+            raise ValueError(
+                f"INTERNAL_PROXY_SECRET must be at least {MIN_INTERNAL_PROXY_SECRET_LENGTH} "
+                "characters in production."
             )
         return self
 

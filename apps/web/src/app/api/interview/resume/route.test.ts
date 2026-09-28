@@ -49,8 +49,20 @@ describe("POST /api/interview/resume", () => {
     expect(proxyAuthedRequest).not.toHaveBeenCalled();
   });
 
-  it("allows a declared length at the limit", async () => {
+  it("allows a declared length at the bare file cap", async () => {
     const request = requestWith({ "content-length": String(2 * 1024 * 1024) });
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(proxyAuthedRequest).toHaveBeenCalled();
+  });
+
+  it("allows a 2MB PDF whose multipart overhead pushes Content-Length slightly past 2MB", async () => {
+    // The bug this constant fixes: a resume file right at MAX_RESUME_FILE_BYTES, plus its own
+    // multipart boundary/headers, makes the whole request's Content-Length a bit over 2MB even
+    // though the file itself is within bounds. Comparing against the bare 2MB file cap here
+    // would incorrectly reject this legitimate upload.
+    const request = requestWith({ "content-length": String(2 * 1024 * 1024 + 50 * 1024) });
     const response = await POST(request);
 
     expect(response.status).toBe(200);

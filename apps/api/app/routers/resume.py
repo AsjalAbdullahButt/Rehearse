@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.errors import ApiError
-from app.core.limits import MAX_RESUME_BYTES
+from app.core.limits import MAX_RESUME_FILE_BYTES
 from app.core.rate_limit import enforce_rate_limit, user_or_ip_key
 from app.db import get_db
 from app.models.user import User
@@ -73,7 +73,7 @@ async def parse_resume(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
         )
 
-    resume_bytes = await _read_capped(resume, MAX_RESUME_BYTES)
+    resume_bytes = await _read_capped(resume, MAX_RESUME_FILE_BYTES)
 
     if not _looks_like_pdf(resume_bytes[: len(_PDF_MAGIC)]):
         raise ApiError(

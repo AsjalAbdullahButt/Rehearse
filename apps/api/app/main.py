@@ -13,7 +13,20 @@ def create_app() -> FastAPI:
     configure_logging()
     settings = get_settings()
 
-    app = FastAPI(title="Rehearse API", version="0.1.0")
+    # Outside production, docs/redoc/openapi stay on (local dev + staging convenience). In
+    # production they're off unless ENABLE_API_DOCS is explicitly set — see
+    # Settings.docs_enabled's docstring.
+    docs_url = "/docs" if settings.docs_enabled else None
+    redoc_url = "/redoc" if settings.docs_enabled else None
+    openapi_url = "/openapi.json" if settings.docs_enabled else None
+
+    app = FastAPI(
+        title="Rehearse API",
+        version="0.1.0",
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
+    )
 
     app.add_middleware(
         CORSMiddleware,

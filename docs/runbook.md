@@ -79,10 +79,45 @@ scenario: what to check first, in order, before digging further.
    to import at cold start (would show as a 500 at startup in Vercel's function logs, not a
    clean auth error).
 4. A specific user locked out and can't recover: there is currently no password-reset flow (a
-   known, named gap — not part of this hardening pass's scope). The only recovery path today is
-   a direct DB update of `users.password_hash` via `hash_password()`.
-5. Suspected compromised account: `POST /v1/auth/logout-all` (added in this hardening pass)
-   revokes every refresh token for a user in one call — use this over the single-token
-   `/v1/auth/logout` when the concern is "get this account off every device now."
+   known, named gap — see §8 of the 2026-09-28 security-hardening pass below). The only recovery
+   path today is a direct DB update of `users.password_hash` via `hash_password()`.
+5. Suspected compromised account: `POST /v1/auth/logout-all` revokes every refresh token for a
+   user *and* bumps `users.token_version` (added in the 2026-09-28 pass), which immediately
+   rejects every access token already issued to that user too — not just new refreshes. Use this
+   over the single-token `/v1/auth/logout` when the concern is "get this account off every
+   device right now," not just "the next refresh will fail."
+6. `{"code":"session_invalidated"}` on a request that used to work → expected, not a bug: the
+   user's `token_version` was bumped (password change or logout-all) since that access token was
+   issued. The client should silently redirect to sign-in, the same as any other 401.
+
+## Rate limiting — durable but not a real distributed limiter
+
+`app/core/rate_limit.py` / `app/services/repo.py`'s `record_rate_limit_hit` counts hits in a
+MySQL table (`rate_limit_counters`), using an atomically-upserted **fixed window** per
+`(scope+key, window_start)` bucket — the increment itself is race-free (proven by
+`tests/test_rate_limit.py`'s concurrency test), but a fixed window can still let a burst
+straddling a window boundary briefly exceed the configured limit by up to ~2x. This is a
+documented, accepted tradeoff for a free-tier MySQL-only deployment, not a true
+Redis/Upstash-backed distributed sliding-window limiter. If abuse patterns in production traffic
+ever actually exploit the boundary-burst characteristic, the fix is adding a Redis/Upstash
+instance and porting `record_rate_limit_hit` to an atomic `INCR`+`EXPIRE`, not tightening the
+MySQL-only implementation further.
+
+## Production config — startup will refuse to boot on a real misconfiguration
+
+Set `ENVIRONMENT=production` on every real deployment (defaults to `development`, which skips
+the checks below — see `app/core/config.py`'s `Settings._enforce_production_requirements`).
+With `ENVIRONMENT=production`:
+
+- `INTERNAL_PROXY_SECRET` becomes **required** (startup raises `ValidationError` without it) —
+  it's what lets rate limiting trust the Next.js BFF's forwarded client IP; see
+  `app/core/rate_limit.py`.
+- `/docs`, `/redoc`, `/openapi.json` are disabled unless `ENABLE_API_DOCS=true` is also set.
+- `JWT_ALGORITHM` is validated against an HMAC-only allow-list (`HS256`/`HS384`/`HS512`)
+  regardless of environment — this project signs and verifies with one shared secret, never a
+  keypair.
+
+If a production deploy fails to start with a `ValidationError` mentioning one of the above,
+that's this startup check working as intended, not a bug — set the missing/invalid env var.
 
 [Groq's status page]: https://status.groq.com

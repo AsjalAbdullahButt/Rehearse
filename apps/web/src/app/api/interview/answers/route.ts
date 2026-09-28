@@ -8,11 +8,15 @@ import { proxyAuthedRequest } from "@/lib/auth/proxy";
 // anyway.
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
 
-// Must match apps/api/app/core/limits.py's MAX_REQUEST_BODY_BYTES. This is a cheap first pass
-// on the declared Content-Length only, so an oversized upload never reaches request.formData()
-// at all — the ASGI-level MaxBodySizeMiddleware on the API is what actually protects against a
-// request that omits or lies about Content-Length (see its docstring for why).
-const MAX_REQUEST_BODY_BYTES = 5 * 1024 * 1024;
+// Must match apps/api/app/core/limits.py's MAX_REQUEST_BODY_BYTES (~4.25MB — deliberately well
+// under Vercel Functions' ~4.5MB hard request-body ceiling; see that module's
+// VERCEL_FUNCTION_BODY_LIMIT_BYTES docstring for why this must never be pushed up toward 5MB).
+// This is a cheap first pass on the declared Content-Length only, so an oversized upload never
+// reaches request.formData() at all — the ASGI-level MaxBodySizeMiddleware on the API is what
+// actually protects the API itself against a request that omits or lies about Content-Length
+// (see its docstring for why); this BFF check protects only the BFF's own request handling, not
+// the API.
+const MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024 + 256 * 1024;
 
 export async function POST(request: Request): Promise<NextResponse> {
   const declaredLength = Number(request.headers.get("content-length"));

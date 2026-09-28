@@ -50,7 +50,7 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _encode_token(user_id: str, token_type: TokenType, ttl: timedelta) -> str:
+def _encode_token(user_id: str, token_type: TokenType, ttl: timedelta, token_version: int) -> str:
     settings = get_settings()
     now = datetime.now(UTC)
     payload = {
@@ -61,20 +61,29 @@ def _encode_token(user_id: str, token_type: TokenType, ttl: timedelta) -> str:
         "jti": secrets.token_hex(16),
         "iss": settings.jwt_issuer,
         "aud": settings.jwt_audience,
+        # Checked against the live User.token_version by get_current_user/refresh() — see their
+        # docstrings. Defaults to 1 (User.token_version's own column default) so any caller that
+        # hasn't been updated to pass a real value still issues a token that validates against a
+        # freshly-created user.
+        "ver": token_version,
     }
     return jwt.encode(
         payload, settings.jwt_secret.get_secret_value(), algorithm=settings.jwt_algorithm
     )
 
 
-def issue_access_token(user_id: str) -> str:
+def issue_access_token(user_id: str, token_version: int = 1) -> str:
     settings = get_settings()
-    return _encode_token(user_id, "access", timedelta(minutes=settings.jwt_access_ttl_min))
+    return _encode_token(
+        user_id, "access", timedelta(minutes=settings.jwt_access_ttl_min), token_version
+    )
 
 
-def issue_refresh_token(user_id: str) -> str:
+def issue_refresh_token(user_id: str, token_version: int = 1) -> str:
     settings = get_settings()
-    return _encode_token(user_id, "refresh", timedelta(days=settings.jwt_refresh_ttl_days))
+    return _encode_token(
+        user_id, "refresh", timedelta(days=settings.jwt_refresh_ttl_days), token_version
+    )
 
 
 def decode_token(token: str, expected_type: TokenType) -> dict[str, str | int]:
@@ -106,6 +115,35 @@ def decode_token(token: str, expected_type: TokenType) -> dict[str, str | int]:
     return payload
 
 
+def try_decode_token(token: str, expected_type: TokenType) -> dict[str, str | int] | None:
+    """Best-effort variant of decode_token for callers that need to degrade gracefully on an
+    invalid/expired/wrong-type token rather than raise 401 themselves — e.g.
+    app/core/rate_limit.py's user_or_ip_key, where a bad token should just fall back to IP-based
+    keying and let get_current_user independently reject the request with 401. Reuses
+    decode_token itself (signature, algorithm allow-list, issuer, audience, expiry, token type)
+    rather than re-implementing any part of that validation."""
+    try:
+        return decode_token(token, expected_type)
+    except ApiError:
+        return None
+
+
+def check_token_version(payload: dict[str, str | int], user: User) -> None:
+    """Immediate session invalidation: password change / logout-all / a future compromise
+    response bump User.token_version, which is baked into every token issued from that point on
+    (see _encode_token's "ver" claim). A token minted before the bump still has a valid
+    signature and hasn't expired, but its "ver" no longer matches the live row, so it's rejected
+    here rather than trusted until its normal TTL runs out — closing the gap a refresh-token-only
+    revocation list leaves for already-issued access tokens (which have no revocation list of
+    their own)."""
+    if payload.get("ver") != user.token_version:
+        raise ApiError(
+            "session_invalidated",
+            "Your session is no longer valid. Please sign in again.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+
 async def get_current_user(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
@@ -126,5 +164,6 @@ async def get_current_user(
         raise ApiError(
             "unauthorized", "User no longer exists.", status_code=status.HTTP_401_UNAUTHORIZED
         )
+    check_token_version(payload, user)
 
     return user

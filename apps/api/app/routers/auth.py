@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import (
+    check_token_version,
     decode_token,
     dummy_password_hash,
     get_current_user,
@@ -17,7 +18,7 @@ from app.core.auth import (
 )
 from app.core.config import get_settings
 from app.core.errors import ApiError
-from app.core.rate_limit import enforce_rate_limit
+from app.core.rate_limit import client_ip_key, enforce_rate_limit
 from app.db import get_db
 from app.models.base import utcnow
 from app.models.user import User
@@ -44,8 +45,8 @@ async def _issue_token_pair(
     through on every rotation, so every token descended from one login shares an id — see
     refresh()'s docstring for what that's for."""
     settings = get_settings()
-    access_token = issue_access_token(user.id)
-    refresh_token = issue_refresh_token(user.id)
+    access_token = issue_access_token(user.id, user.token_version)
+    refresh_token = issue_refresh_token(user.id, user.token_version)
 
     await repo.store_refresh_token(
         db,
@@ -97,7 +98,20 @@ async def login(
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    await enforce_rate_limit(request, db, scope="login", limit=10, window_seconds=60)
+    # Two independent buckets: IP (catches one attacker trying many accounts) and normalized
+    # email (catches many IPs/a botnet trying one account — credential stuffing/password
+    # spraying against a single victim). Both are ordinary time-windowed throttles, not a
+    # lockout — a failed login never disables the account itself, so an attacker can't grief a
+    # real user out of their own account just by deliberately failing logins against it.
+    await enforce_rate_limit(request, db, scope="login_ip", limit=10, window_seconds=60)
+    await enforce_rate_limit(
+        request,
+        db,
+        scope="login_email",
+        limit=10,
+        window_seconds=60,
+        key_func=lambda _req: f"email:{body.email}",
+    )
 
     user = await repo.get_user_by_email(db, email=body.email)
     # Argon2-verify against something either way — a real hash when the user exists, a fixed
@@ -127,7 +141,9 @@ value trades more tolerance for slow/racy clients against a wider hijack window.
 
 
 @router.post("/auth/refresh", response_model=TokenResponse)
-async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def refresh(
+    request: Request, body: RefreshRequest, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
     """Rotation race strategy — two browser tabs share one httpOnly refresh-token cookie, so
     two near-simultaneous refreshes (e.g. both tabs loading a guarded page at once) can easily
     present the *same* token. Naively, whichever request loses that race would see the token
@@ -148,6 +164,16 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
        happened at the same moment) — this still revokes every token for the user and forces
        re-authentication everywhere, exactly as before.
     """
+    # IP-keyed, not user-keyed: the caller isn't authenticated yet at this point (that's the
+    # whole point of this endpoint), so there's no user identity to key on other than by first
+    # decoding the token — and a request bearing an invalid token should still be throttled, not
+    # given a free decode attempt. A generous limit: legitimate multi-tab usage can trigger
+    # several refreshes close together (see the docstring above), so this only needs to catch a
+    # genuine hammering pattern, not ordinary concurrent-tab behavior.
+    await enforce_rate_limit(
+        request, db, scope="refresh", limit=20, window_seconds=60, key_func=client_ip_key
+    )
+
     payload = decode_token(body.refresh_token, expected_type="refresh")
     token_hash = hash_token(body.refresh_token)
 
@@ -171,6 +197,7 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
                         "User no longer exists.",
                         status_code=status.HTTP_401_UNAUTHORIZED,
                     )
+                check_token_version(payload, user)
                 await repo.revoke_refresh_token(db, token_hash=active.token_hash)
                 return await _issue_token_pair(db, user, family_id=active.family_id)
             # Recent rotation, but nothing active left in the family — ambiguous rather than a
@@ -200,6 +227,7 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
         raise ApiError(
             "unauthorized", "User no longer exists.", status_code=status.HTTP_401_UNAUTHORIZED
         )
+    check_token_version(payload, user)
 
     # Rotate on every refresh: revoke the presented token, issue a brand new pair carrying the
     # same family_id forward.
@@ -217,8 +245,12 @@ async def logout_all(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> None:
     """Revokes every refresh token the current user has issued (every device/browser), not
-    just the one presented — for a reported compromise or a "sign out everywhere" action."""
+    just the one presented — for a reported compromise or a "sign out everywhere" action.
+    Also bumps token_version so any access token already issued to any device stops working
+    immediately too, rather than staying valid until its own short TTL expires (see
+    core/auth.py's check_token_version)."""
     await repo.revoke_all_refresh_tokens(db, user_id=user.id)
+    await repo.increment_token_version(db, user_id=user.id)
 
 
 @router.get("/auth/me", response_model=UserPublic)
@@ -242,11 +274,13 @@ async def change_password(
     await repo.update_user_password(
         db, user_id=user.id, password_hash=hash_password(body.new_password)
     )
-    # Every refresh token dies, including this session's own — a changed password should force
-    # re-authentication everywhere, the same policy logout-all uses for a reported compromise.
-    # The access token already in the caller's hand keeps working until its own short TTL
-    # expires (see JWT_ACCESS_TTL_MIN), same tradeoff logout-all already makes.
+    # Every refresh token dies, including this session's own, and token_version is bumped so
+    # every access token already issued — including the one the caller used to authenticate this
+    # very request — is rejected on its very next use (see core/auth.py's check_token_version).
+    # A changed password now invalidates every credential immediately, not just refresh tokens
+    # with a wait-out-the-TTL exception for access tokens.
     await repo.revoke_all_refresh_tokens(db, user_id=user.id)
+    await repo.increment_token_version(db, user_id=user.id)
 
 
 @router.delete("/auth/me", status_code=status.HTTP_204_NO_CONTENT)

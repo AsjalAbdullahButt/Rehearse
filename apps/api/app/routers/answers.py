@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.errors import ApiError
-from app.core.limits import MAX_AUDIO_BYTES
-from app.core.rate_limit import enforce_rate_limit, user_or_ip_key
+from app.core.limits import MAX_AUDIO_FILE_BYTES
+from app.core.rate_limit import client_ip_key, enforce_rate_limit, user_or_ip_key
 from app.db import get_db
 from app.models.user import User
 from app.schemas.answer import AnswerReport
@@ -111,9 +111,17 @@ async def create_answer(
 
     # Separate from (and tighter than) the 30/day business-rule cap below: each call costs real
     # Groq usage, so a short burst still needs its own limit even for a user nowhere near the
-    # daily cap. Keyed by user, not IP — the meaningful unit of abuse here is per-account.
+    # daily cap. Keyed by user (get_current_user has already run as a dependency by this point,
+    # so user_or_ip_key resolves to "user:<id>" in the overwhelming common case) — the primary
+    # unit of abuse here is per-account.
     await enforce_rate_limit(
         request, db, scope="answers", limit=6, window_seconds=60, key_func=user_or_ip_key
+    )
+    # A second, looser bucket keyed purely by connection IP: defends against one IP registering
+    # many accounts specifically to multiply past the per-user cap above — each account alone
+    # would stay under 6/min, but all of them together from one IP would not.
+    await enforce_rate_limit(
+        request, db, scope="answers_ip", limit=20, window_seconds=60, key_func=client_ip_key
     )
 
     settings = get_settings()
@@ -154,7 +162,7 @@ async def create_answer(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
         )
 
-    audio_bytes = await _read_capped(audio, MAX_AUDIO_BYTES)
+    audio_bytes = await _read_capped(audio, MAX_AUDIO_FILE_BYTES)
 
     if not _looks_like_audio(audio_bytes[: len(_WEBM_MAGIC)]):
         raise ApiError(
