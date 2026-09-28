@@ -32,15 +32,54 @@ describe("ResumeUpload", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("rejects a non-PDF file before ever calling the API", () => {
+  it("rejects a non-PDF file before ever calling the API, naming the format that's supported", () => {
     renderUpload();
 
     const input = screen.getByLabelText("Upload resume PDF");
     const textFile = new File(["hello"], "resume.txt", { type: "text/plain" });
     fireEvent.change(input, { target: { files: [textFile] } });
 
-    expect(screen.getByText("Please upload a PDF file.")).toBeInTheDocument();
+    expect(screen.getByText(/Only PDF files are supported/)).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("names Word documents specifically when one is uploaded", () => {
+    renderUpload();
+
+    const input = screen.getByLabelText("Upload resume PDF");
+    const wordFile = new File(["hello"], "resume.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    fireEvent.change(input, { target: { files: [wordFile] } });
+
+    expect(screen.getByText(/Word documents aren't supported/)).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("names images specifically when one is uploaded", () => {
+    renderUpload();
+
+    const input = screen.getByLabelText("Upload resume PDF");
+    const imageFile = new File(["hello"], "resume.jpg", { type: "image/jpeg" });
+    fireEvent.change(input, { target: { files: [imageFile] } });
+
+    expect(screen.getByText(/Images aren't supported/)).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("uploads a valid PDF dropped onto the dropzone", async () => {
+    const extraction = {
+      candidate_background: "I have five years of backend experience.",
+      skills: ["Python", "SQL"],
+      years_experience: 5,
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(extraction), { status: 200 }));
+    const onExtracted = renderUpload();
+
+    const dropzone = screen.getByText(/Drag & drop your resume/).closest("div")!;
+    fireEvent.drop(dropzone, { dataTransfer: { files: [pdfFile()] } });
+
+    await waitFor(() => expect(onExtracted).toHaveBeenCalledWith(extraction));
   });
 
   it("rejects a file over the 2MB limit before ever calling the API", () => {
@@ -49,7 +88,7 @@ describe("ResumeUpload", () => {
     const input = screen.getByLabelText("Upload resume PDF");
     fireEvent.change(input, { target: { files: [pdfFile("big.pdf", 2 * 1024 * 1024 + 1)] } });
 
-    expect(screen.getByText("That file is larger than 2MB.")).toBeInTheDocument();
+    expect(screen.getByText(/That file is larger than 2MB/)).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });
 
