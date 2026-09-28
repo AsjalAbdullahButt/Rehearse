@@ -8,10 +8,9 @@ apps/web/out/
 apps/web/next-env.d.ts
 apps/web/.vercel/
 
-# Env
-.env
-.env.local
-.env.*.local
+# Env — broad on purpose: any .env* file (including ones we haven't invented a name for yet,
+# like a local .env.run scratch file) is ignored except the checked-in .env.example template.
+.env*
 !.env.example
 
 # Python / API
