@@ -39,6 +39,36 @@ def _error_response(
     )
 
 
+_VALUE_ERROR_PREFIX = "Value error, "
+"""Pydantic prefixes a custom field_validator's raised ValueError with this boilerplate — our
+own validators (e.g. schemas/auth.py's common-password check) already write a complete,
+user-facing sentence, so this is stripped rather than shown verbatim."""
+
+
+def _first_validation_message(exc: RequestValidationError) -> str:
+    """Surfaces the first field-level validation error as a short, human-readable message
+    (e.g. "password: String should have at least 15 characters") instead of one blanket
+    "The request could not be validated." for every kind of bad input — a client (the sign-in
+    form, session setup, settings) can otherwise only ever show that one generic sentence,
+    leaving the user with no idea what to actually fix. Pydantic's error messages here (length/
+    format/enum-membership/range) never include secrets or internals — they describe the shape
+    of the input the request itself already contains — so this is a normal, expected amount of
+    detail for a validation error response, not an information disclosure."""
+    errors = exc.errors()
+    if not errors:
+        return "The request could not be validated."
+
+    first = errors[0]
+    # Drop the leading "body"/"query"/"header" location segment — it's implementation detail,
+    # not something a form field is labeled with — but keep everything after it (nested paths
+    # like "skills.0" still read fine).
+    field = ".".join(str(part) for part in first["loc"][1:])
+    message = str(first["msg"])
+    if message.startswith(_VALUE_ERROR_PREFIX):
+        message = message[len(_VALUE_ERROR_PREFIX) :]
+    return f"{field}: {message}" if field else message
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error_handler(_: Request, exc: ApiError) -> JSONResponse:
@@ -52,7 +82,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
         return _error_response(
             "validation_error",
-            "The request could not be validated.",
+            _first_validation_message(exc),
             status.HTTP_422_UNPROCESSABLE_ENTITY,
         )
 

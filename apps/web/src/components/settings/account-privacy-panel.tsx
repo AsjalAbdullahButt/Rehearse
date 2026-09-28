@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
+import { NEW_PASSWORD_MIN_LENGTH, PASSWORD_REQUIREMENTS_HINT } from "@/lib/auth/password-policy";
 
 type PasswordStatus = "idle" | "saving" | "saved" | "error";
 type DeleteStatus = "idle" | "confirming" | "deleting" | "error";
@@ -118,15 +119,24 @@ export function AccountPrivacyPanel() {
           type="password"
           placeholder="New password"
           autoComplete="new-password"
+          minLength={NEW_PASSWORD_MIN_LENGTH}
+          aria-describedby="account-privacy-password-hint"
           value={newPassword}
           onChange={(event) => setNewPassword(event.target.value)}
         />
+        <span id="account-privacy-password-hint" className="text-muted -mt-1 text-xs">
+          {PASSWORD_REQUIREMENTS_HINT}
+        </span>
         <div className="flex items-center gap-3">
           <Button
             variant="secondary"
             size="sm"
             className="w-fit"
-            disabled={passwordStatus === "saving" || !currentPassword || newPassword.length < 8}
+            disabled={
+              passwordStatus === "saving" ||
+              !currentPassword ||
+              newPassword.length < NEW_PASSWORD_MIN_LENGTH
+            }
             onClick={() => void handleChangePassword()}
           >
             {passwordStatus === "saving" ? "Updating…" : "Update password"}
