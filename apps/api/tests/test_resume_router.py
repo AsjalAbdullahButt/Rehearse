@@ -44,6 +44,7 @@ def _mock_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_extract_resume_data(resume_text: str) -> ResumeExtraction:
         assert resume_text  # the real extracted text was actually passed through
         return ResumeExtraction(
+            is_resume=True,
             candidate_background="I have five years of experience building backend services.",
             skills=["Python", "SQL"],
             years_experience=5,

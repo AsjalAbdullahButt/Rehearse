@@ -35,9 +35,25 @@ function describeUnsupportedFile(file: File): string {
   return "Only PDF files are supported — please upload your resume as a PDF.";
 }
 
-async function parseErrorMessage(response: Response): Promise<string> {
-  const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-  return body?.error?.message ?? "Couldn't read that file. Please try again.";
+interface UploadError {
+  message: string;
+  /** "resume_content_not_recognized" (see apps/api/app/services/llm.py's
+   * _reject_if_not_resume) gets its own calmer, amber "heads up" treatment below instead of the
+   * red failure styling every other error uses — the upload itself worked fine; the file just
+   * wasn't a resume (a certificate, transcript, etc.), which isn't a "something broke" moment. */
+  code: string | null;
+}
+
+const CONTENT_NOT_RECOGNIZED_CODE = "resume_content_not_recognized";
+
+async function parseError(response: Response): Promise<UploadError> {
+  const body = (await response.json().catch(() => null)) as {
+    error?: { message?: string; code?: string };
+  } | null;
+  return {
+    message: body?.error?.message ?? "Couldn't read that file. Please try again.",
+    code: body?.error?.code ?? null,
+  };
 }
 
 const UploadIcon = () => (
@@ -60,6 +76,22 @@ const SpinnerIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 animate-spin" aria-hidden="true">
     <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth={2} />
     <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+  </svg>
+);
+
+const InfoIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="h-4 w-4 shrink-0"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 8h.01M11 12h1v4h1" />
   </svg>
 );
 
@@ -95,7 +127,7 @@ export function ResumeUpload({
   const { push } = useToast();
   const reduceMotion = useReducedMotion();
   const [status, setStatus] = useState<Status>("idle");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UploadError | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -104,12 +136,12 @@ export function ResumeUpload({
 
     if (file.type !== ACCEPTED_TYPE) {
       setStatus("error");
-      setError(describeUnsupportedFile(file));
+      setError({ message: describeUnsupportedFile(file), code: null });
       return;
     }
     if (file.size > MAX_RESUME_BYTES) {
       setStatus("error");
-      setError("That file is larger than 2MB — try a smaller PDF.");
+      setError({ message: "That file is larger than 2MB — try a smaller PDF.", code: null });
       return;
     }
 
@@ -122,7 +154,7 @@ export function ResumeUpload({
       if (await handleSessionExpiry(response)) return;
       if (!response.ok) {
         setStatus("error");
-        setError(await parseErrorMessage(response));
+        setError(await parseError(response));
         return;
       }
       const extraction = (await response.json()) as ResumeExtraction;
@@ -131,7 +163,7 @@ export function ResumeUpload({
       push("Filled in your background, skills, and experience from your resume — review below.");
     } catch {
       setStatus("error");
-      setError("Couldn't reach the server. Please try again.");
+      setError({ message: "Couldn't reach the server. Please try again.", code: null });
     } finally {
       if (inputRef.current) inputRef.current.value = "";
     }
@@ -146,6 +178,8 @@ export function ResumeUpload({
   }
 
   const isBusy = status === "parsing";
+  const isContentWarning = status === "error" && error?.code === CONTENT_NOT_RECOGNIZED_CODE;
+  const isHardError = status === "error" && !isContentWarning;
 
   return (
     <div className="flex flex-col gap-2">
@@ -173,7 +207,8 @@ export function ResumeUpload({
         className={cn(
           "flex flex-col items-center gap-3 rounded-[var(--radius-tile)] border border-dashed px-6 py-6 text-center transition-colors duration-200",
           isDragOver && "border-lime bg-lime/5",
-          !isDragOver && status === "error" && "border-coral/40 bg-coral/5",
+          !isDragOver && isHardError && "border-coral/40 bg-coral/5",
+          !isDragOver && isContentWarning && "border-amber/40 bg-amber/5",
           !isDragOver && status !== "error" && "border-line bg-surface-2/40",
         )}
       >
@@ -184,10 +219,12 @@ export function ResumeUpload({
           aria-label="Upload resume"
           className={cn(
             "focus-visible:outline-lime flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none",
-            status === "error" ? "bg-coral/10 text-coral" : "bg-lime/10 text-lime hover:bg-lime/20",
+            isHardError && "bg-coral/10 text-coral",
+            isContentWarning && "bg-amber/10 text-amber",
+            !isHardError && !isContentWarning && "bg-lime/10 text-lime hover:bg-lime/20",
           )}
         >
-          {isBusy ? <SpinnerIcon /> : <UploadIcon />}
+          {isBusy ? <SpinnerIcon /> : isContentWarning ? <InfoIcon /> : <UploadIcon />}
         </button>
 
         <div className="flex flex-col items-center gap-1">
@@ -229,16 +266,26 @@ export function ResumeUpload({
 
       <AnimatePresence>
         {status === "error" && error && (
-          <motion.span
+          <motion.div
             role="alert"
             initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={{ duration: reduceMotion ? 0 : 0.2 }}
-            className="text-coral text-sm"
+            className={cn(
+              "flex items-start gap-2 rounded-[var(--radius-tile)] border px-3 py-2 text-sm",
+              isContentWarning
+                ? "border-amber/30 bg-amber/5 text-amber"
+                : "border-coral/30 bg-coral/5 text-coral",
+            )}
           >
-            {error}
-          </motion.span>
+            {isContentWarning && (
+              <span className="mt-0.5">
+                <InfoIcon />
+              </span>
+            )}
+            <span>{error.message}</span>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

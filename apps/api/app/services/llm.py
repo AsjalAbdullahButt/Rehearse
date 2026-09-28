@@ -1,4 +1,5 @@
-from typing import Any
+import logging
+from typing import Any, cast
 
 from fastapi import status
 from groq import APIStatusError, AsyncGroq
@@ -13,6 +14,24 @@ from app.prompts.resume import build_messages as build_resume_messages
 from app.schemas.feedback import LLMFeedback
 from app.schemas.resume import ResumeExtraction
 from app.services.groq_retry import REQUEST_TIMEOUT_S, is_retryable
+
+logger = logging.getLogger("rehearse.api")
+
+
+def _safe_groq_error_summary(exc: APIStatusError) -> str:
+    """A bounded, structure-only summary for logging — deliberately never the error's own
+    "message" field, since some providers echo fragments of the request back into it (e.g.
+    "Invalid 'messages[1].content': ..."), which could leak candidate resume/transcript text
+    into logs. Only the error "type"/"code" (a fixed, provider-defined enum-like string, not
+    user content) is logged, matching this project's no-PII-in-logs rule."""
+    body = exc.body
+    if isinstance(body, dict):
+        error = cast(dict[str, object], body).get("error")
+        if isinstance(error, dict):
+            typed_error = cast(dict[str, object], error)
+            return f"type={typed_error.get('type')!r} code={typed_error.get('code')!r}"
+    return "body=<unavailable>"
+
 
 _TEMPERATURE = 0.3
 # Generous enough for a rich feedback object (rubric + strengths/improvements/evidence + a
@@ -68,6 +87,16 @@ async def _complete(
         )
     except APIStatusError as exc:
         if not is_retryable(exc):
+            # Logged server-side only, never in the client-facing message — a 4xx here almost
+            # always means something about this specific request (not Groq being down), so the
+            # error's type/code is the only way to tell a bad model name from a content-policy
+            # rejection from a context-length overflow without guessing (see
+            # _safe_groq_error_summary's docstring for why the raw message is never logged).
+            logger.warning(
+                "groq_completion_failed status=%s %s",
+                exc.status_code,
+                _safe_groq_error_summary(exc),
+            )
             raise ApiError(
                 "llm_failed",
                 "The feedback model is unavailable.",
@@ -78,6 +107,11 @@ async def _complete(
                 client, settings.groq_llm_model, messages, max_tokens=max_tokens
             )
         except APIStatusError as retry_exc:
+            logger.warning(
+                "groq_completion_failed_after_retry status=%s %s",
+                retry_exc.status_code,
+                _safe_groq_error_summary(retry_exc),
+            )
             raise ApiError(
                 "llm_failed",
                 "The feedback model is unavailable after retry.",
@@ -153,6 +187,22 @@ async def generate_feedback(
             ) from second_error
 
 
+def _reject_if_not_resume(extraction: ResumeExtraction) -> ResumeExtraction:
+    """The model was asked to honestly report when the uploaded document doesn't actually read
+    like a resume (see app/prompts/resume.py's system prompt) — a certificate, transcript, cover
+    letter, or other mis-upload should never silently round-trip a half-fabricated extraction
+    back into SessionSetupForm's fields. Distinct from a validation failure: the model answered
+    correctly and honestly, so this doesn't go through the retry-on-invalid-shape path at all."""
+    if not extraction.is_resume:
+        raise ApiError(
+            "resume_content_not_recognized",
+            "We couldn't find resume information in that file — no work experience, skills, or "
+            "education. Please upload your actual resume instead.",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+    return extraction
+
+
 async def extract_resume_data(resume_text: str) -> ResumeExtraction:
     """Same one-retry-on-validation-failure shape as generate_feedback above, for the much
     smaller job of pulling a background summary/skills/years-of-experience out of resume text —
@@ -162,7 +212,7 @@ async def extract_resume_data(resume_text: str) -> ResumeExtraction:
 
     raw = await _complete(messages, max_tokens=_MAX_RESUME_COMPLETION_TOKENS)
     try:
-        return ResumeExtraction.model_validate_json(raw)
+        return _reject_if_not_resume(ResumeExtraction.model_validate_json(raw))
     except ValidationError as first_error:
         retry_messages: list[ChatCompletionMessageParam] = [
             *messages,
@@ -177,7 +227,7 @@ async def extract_resume_data(resume_text: str) -> ResumeExtraction:
         ]
         raw_retry = await _complete(retry_messages, max_tokens=_MAX_RESUME_COMPLETION_TOKENS)
         try:
-            return ResumeExtraction.model_validate_json(raw_retry)
+            return _reject_if_not_resume(ResumeExtraction.model_validate_json(raw_retry))
         except ValidationError as second_error:
             raise ApiError(
                 "llm_failed",

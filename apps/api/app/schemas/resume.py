@@ -8,11 +8,22 @@ from app.models.interview_session import (
 
 
 class ResumeExtraction(BaseModel):
-    """What `POST /v1/resume/parse` hands back to pre-fill (not auto-submit — the web form keeps
-    every field editable) SessionSetupForm's personalization inputs. Every field is optional: the
-    LLM is explicitly told never to guess a value the resume doesn't actually support, so a thin
-    or unusual resume should come back with nulls/an empty list rather than a fabricated
-    biography (see app/prompts/resume.py's system prompt)."""
+    """Both what the LLM returns and `POST /v1/resume/parse`'s response_model — but a response
+    only ever reaches the client with `is_resume=True`: app/services/llm.py's
+    extract_resume_data turns `is_resume=False` into a 422 ApiError instead of returning this
+    shape, so an unrecognized (non-resume) upload never round-trips a half-filled extraction
+    back to the form. Every content field is optional: the LLM is explicitly told never to guess
+    a value the resume doesn't actually support, so a thin or unusual resume should come back
+    with nulls/an empty list rather than a fabricated biography (see app/prompts/resume.py's
+    system prompt)."""
+
+    is_resume: bool
+    """Whether the uploaded document's text actually reads like a resume/CV (work experience,
+    skills, education, a professional summary) rather than some other document a candidate might
+    upload by mistake (a certificate, transcript, cover letter, offer letter, invoice, ...). No
+    default — the model must decide every time, the same way it must always decide every other
+    field, rather than this silently defaulting to "yes" if the model's response happens to omit
+    it (which would ship a validation-retry-worthy bug as an always-true field instead)."""
 
     candidate_background: str | None = Field(
         default=None, max_length=MAX_CANDIDATE_BACKGROUND_LENGTH

@@ -142,6 +142,33 @@ describe("ResumeUpload", () => {
     expect(onExtracted).not.toHaveBeenCalled();
   });
 
+  it("gives a distinct, calmer treatment to a file that isn't recognized as a resume", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "resume_content_not_recognized",
+            message:
+              "We couldn't find resume information in that file — no work experience, skills, or education. Please upload your actual resume instead.",
+          },
+        }),
+        { status: 422 },
+      ),
+    );
+    const onExtracted = renderUpload();
+
+    fireEvent.change(screen.getByLabelText("Upload resume PDF"), {
+      target: { files: [pdfFile("certificate.pdf")] },
+    });
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/couldn't find resume information/i);
+    // Not the same red "something broke" treatment a real failure gets.
+    expect(alert.className).toContain("amber");
+    expect(alert.className).not.toContain("coral");
+    expect(onExtracted).not.toHaveBeenCalled();
+  });
+
   it("defers to session-expiry handling on a 401 instead of showing its own error", async () => {
     handleSessionExpiryMock.mockResolvedValue(true);
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 401 }));
