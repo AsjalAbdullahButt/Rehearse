@@ -177,14 +177,18 @@ export function ResumeUpload({
           !isDragOver && status !== "error" && "border-line bg-surface-2/40",
         )}
       >
-        <span
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={isBusy}
+          aria-label="Upload resume"
           className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200",
-            status === "error" ? "bg-coral/10 text-coral" : "bg-lime/10 text-lime",
+            "focus-visible:outline-lime flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none",
+            status === "error" ? "bg-coral/10 text-coral" : "bg-lime/10 text-lime hover:bg-lime/20",
           )}
         >
           {isBusy ? <SpinnerIcon /> : <UploadIcon />}
-        </span>
+        </button>
 
         <div className="flex flex-col items-center gap-1">
           <p className="text-text text-sm font-medium">

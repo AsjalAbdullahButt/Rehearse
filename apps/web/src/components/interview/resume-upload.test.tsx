@@ -67,6 +67,16 @@ describe("ResumeUpload", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("opens the file browser when the upload icon is clicked, not just the 'Browse files' link", () => {
+    renderUpload();
+    const input = screen.getByLabelText("Upload resume PDF");
+    const clickSpy = vi.spyOn(input, "click");
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload resume" }));
+
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("uploads a valid PDF dropped onto the dropzone", async () => {
     const extraction = {
       candidate_background: "I have five years of backend experience.",
