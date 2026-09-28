@@ -233,6 +233,12 @@ export function InterviewFlow({
   // handleStopped to discard that blob instead of treating it as a submittable answer.
   const micCheckActiveRef = useRef(false);
 
+  // handleStopped (below) needs to call recorder.reset() after a discarded mic-check recording,
+  // but `recorder` is itself created from `useAudioRecorder(handleStopped)` — a ref updated via
+  // a no-deps effect (the same pattern useAudioRecorder's own onStoppedRef uses internally)
+  // breaks that cycle without referencing `recorder` before it's declared.
+  const recorderResetRef = useRef<() => void>(() => undefined);
+
   // Stopping a recording moves to "reviewing", not straight to upload — the user gets to
   // listen back and re-record before anything is sent. Called by useAudioRecorder's internal
   // MediaRecorder "stop" event, not from a render/effect — an ordinary async event callback, so
@@ -240,6 +246,12 @@ export function InterviewFlow({
   function handleStopped(blob: Blob) {
     if (micCheckActiveRef.current) {
       micCheckActiveRef.current = false;
+      // Without this, recorder.status stays "stopped" from the mic-check's own throwaway
+      // recording — the very next render (now on stage "ready" for the real question) would
+      // read that as `isFinalizing` and get stuck showing "Finishing up…" forever, with no
+      // "Start recording" button ever appearing. This was a real, confirmed bug: the mic-check
+      // left the recorder unable to ever start the actual answer recording.
+      recorderResetRef.current();
       return;
     }
     if (state.stage !== "ready") return;
@@ -254,6 +266,9 @@ export function InterviewFlow({
   }
 
   const recorder = useAudioRecorder(handleStopped);
+  useEffect(() => {
+    recorderResetRef.current = recorder.reset;
+  });
   // Recording is derived from the recorder's own status rather than mirrored into a separate
   // FlowState stage — one less place for the two to fall out of sync, and it sidesteps ever
   // needing a setState-in-effect to keep them aligned.
@@ -266,6 +281,12 @@ export function InterviewFlow({
 
   function handleReRecord() {
     if (state.stage !== "reviewing") return;
+    // Same class of stale-status gap the mic-check fix above addresses: recorder.status is
+    // still "stopped" from the recording that led here, and start() only flips it to
+    // "recording" once getUserMedia() resolves — without this reset, the instant this enters
+    // "ready" it would briefly (mis)render as `isFinalizing` ("Finishing up…") instead of
+    // "Requesting mic access…" while the new recording spins up.
+    recorder.reset();
     setState({ stage: "ready", session: state.session, question: state.question });
     void recorder.start();
   }
@@ -477,6 +498,12 @@ export function InterviewFlow({
           </h1>
           <p className="text-muted text-sm">Listen back before you submit.</p>
           {reviewAudioUrl ? <audio controls src={reviewAudioUrl} className="w-full" /> : null}
+          {!voiceActivity.hasSpokenAtAll ? (
+            <p role="alert" className="text-amber max-w-sm text-sm">
+              We didn&apos;t detect any voice in that recording — it may be silent. Check the
+              playback above, and re-record if you can&apos;t hear yourself.
+            </p>
+          ) : null}
           <div className="flex gap-3">
             <Button variant="secondary" onClick={handleReRecord}>
               Re-record
@@ -511,7 +538,12 @@ export function InterviewFlow({
           {question.text}
         </h1>
 
-        <MicOrb size={140} animate recording={isRecording} />
+        <MicOrb
+          size={140}
+          animate
+          recording={isRecording}
+          voiceActive={isRecording ? voiceActivity.isSpeaking : undefined}
+        />
 
         {isRecording ? (
           <>

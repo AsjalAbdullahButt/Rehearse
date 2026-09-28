@@ -22,6 +22,12 @@ export interface AudioRecorder {
   isStarting: boolean;
   start: () => Promise<void>;
   stop: () => void;
+  /** Clears a "stopped" status back to "idle" once the caller has fully consumed that
+   * recording's blob — needed after a throwaway recording (the interview flow's mic-check test)
+   * so a fresh, unrelated question doesn't inherit a stale "stopped" status and read as still
+   * finalizing a recording that never actually happened. A no-op while actively recording — it
+   * only ever moves "stopped" to "idle", never interrupts a live recording. */
+  reset: () => void;
 }
 
 const PREFERRED_MIME_TYPE = "audio/webm;codecs=opus";
@@ -165,5 +171,9 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
     setStatus("stopped");
   }, []);
 
-  return { status, error, analyser, isStarting, start, stop };
+  const reset = useCallback(() => {
+    setStatus((current) => (current === "stopped" ? "idle" : current));
+  }, []);
+
+  return { status, error, analyser, isStarting, start, stop, reset };
 }

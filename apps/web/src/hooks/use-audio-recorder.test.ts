@@ -132,4 +132,43 @@ describe("useAudioRecorder", () => {
     }
     expect(result.current.status).toBe("stopped");
   });
+
+  it("reset() clears a stopped status back to idle", async () => {
+    getUserMedia.mockResolvedValue(fakeStream(1));
+    const { result } = renderHook(() => useAudioRecorder(() => undefined));
+
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      result.current.stop();
+    });
+    expect(result.current.status).toBe("stopped");
+
+    act(() => {
+      result.current.reset();
+    });
+
+    // Regression for a real bug: after a throwaway recording (the interview flow's mic-check),
+    // the next question must be able to reach "idle" again — otherwise it reads as still
+    // finalizing a recording that never happened, and the real "Start recording" button never
+    // reappears (see interview-flow.tsx's handleStopped for where this is actually called).
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("reset() is a no-op while actively recording", async () => {
+    getUserMedia.mockResolvedValue(fakeStream(1));
+    const { result } = renderHook(() => useAudioRecorder(() => undefined));
+
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.status).toBe("recording");
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(result.current.status).toBe("recording");
+  });
 });
