@@ -9,7 +9,12 @@ from app.core.errors import ApiError
 from app.models.answer import Answer
 from app.models.enums import Category, Difficulty, Role
 from app.models.question import Question
-from app.routers.answers import MAX_AUDIO_FILE_BYTES, UPLOAD_CHUNK_BYTES, _read_capped
+from app.routers.answers import (
+    MAX_AUDIO_FILE_BYTES,
+    UPLOAD_CHUNK_BYTES,
+    _base_content_type,
+    _read_capped,
+)
 from app.schemas.feedback import LLMFeedback, TechnicalRubric
 from app.schemas.transcription import TranscriptionResult, WordTiming
 from app.services import llm, repo, stt
@@ -545,6 +550,55 @@ async def test_create_answer_accepts_a_real_ogg_signature(
     assert response.status_code == 201
 
 
+async def test_create_answer_accepts_the_codecs_qualified_content_type_the_browser_actually_sends(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    """Regression test for a real bug: use-audio-recorder.ts records with
+    `mimeType: "audio/webm;codecs=opus"` whenever the browser supports it (most do), and the
+    browser's own FormData/fetch sets that exact string — codecs parameter included — as the
+    upload's Content-Type. An exact-equality check against the bare "audio/webm" rejected the
+    app's own normal recordings with a 415 ("Audio must be webm or ogg.") even though nothing was
+    actually wrong with the audio."""
+    user = register_user()
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        session_question_id=session_question_id,
+        user=user,
+        content_type="audio/webm;codecs=opus",
+    )
+
+    assert response.status_code == 201
+
+
+async def test_create_answer_accepts_a_codecs_qualified_ogg_content_type(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
+
+    response = _post_answer(
+        client,
+        session_id=session_id,
+        session_question_id=session_question_id,
+        user=user,
+        content_type="audio/ogg; codecs=opus",
+        audio_bytes=b"OggSfake-ogg-bytes",
+    )
+
+    assert response.status_code == 201
+
+
 async def test_create_answer_rejects_uploads_over_4mb(
     client: TestClient,
     db_session: AsyncSession,
@@ -841,3 +895,19 @@ async def test_read_capped_returns_full_bytes_when_under_the_cap() -> None:
     result = await _read_capped(upload, MAX_AUDIO_FILE_BYTES)
 
     assert result == b"0" * 1024
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("audio/webm", "audio/webm"),
+        ("audio/webm;codecs=opus", "audio/webm"),
+        ("audio/webm; codecs=opus", "audio/webm"),
+        ("AUDIO/WEBM;codecs=opus", "audio/webm"),
+        ("audio/ogg;codecs=opus", "audio/ogg"),
+        (None, ""),
+        ("", ""),
+    ],
+)
+def test_base_content_type_strips_codec_parameters(raw: str | None, expected: str) -> None:
+    assert _base_content_type(raw) == expected

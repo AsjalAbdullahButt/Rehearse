@@ -28,6 +28,22 @@ DURATION_CAP_GRACE_S = 10
 IDEMPOTENCY_KEY_TTL_S = 24 * 60 * 60
 MAX_IDEMPOTENCY_KEY_LENGTH = 128
 
+
+def _base_content_type(content_type: str | None) -> str:
+    """Strips a MIME type down to its base ("audio/webm;codecs=opus" -> "audio/webm") before
+    comparing against ALLOWED_AUDIO_CONTENT_TYPES. Real bug this fixes: `MediaRecorder`
+    (use-audio-recorder.ts) records with `mimeType: "audio/webm;codecs=opus"` when the browser
+    supports it (most do), and the browser's own FormData/fetch sets that exact string — codecs
+    parameter included — as the multipart part's Content-Type. An exact-equality check against
+    the bare "audio/webm" rejected the app's own normal recordings with a 415; that's the actual
+    cause of "Audio must be webm or ogg." on an otherwise-valid upload, not a format the user
+    ever chose. Either way this header is just a cheap pre-filter — see the magic-byte sniffing
+    below for the real validation."""
+    if content_type is None:
+        return ""
+    return content_type.split(";", 1)[0].strip().lower()
+
+
 # Magic bytes for the two containers ALLOWED_AUDIO_CONTENT_TYPES claims to accept. WebM is
 # Matroska/EBML-based, so any WebM file starts with the EBML header; Ogg files start with the
 # ASCII capture pattern "OggS". A client-supplied Content-Type header is just a string the
@@ -155,7 +171,7 @@ async def create_answer(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    if audio.content_type not in ALLOWED_AUDIO_CONTENT_TYPES:
+    if _base_content_type(audio.content_type) not in ALLOWED_AUDIO_CONTENT_TYPES:
         raise ApiError(
             "unsupported_media_type",
             "Audio must be webm or ogg.",
