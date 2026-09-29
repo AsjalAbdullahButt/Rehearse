@@ -1,6 +1,5 @@
-import Link from "next/link";
-
 import { BeforeAfterToggle } from "@/components/report/before-after-toggle";
+import { ReportNextSteps } from "@/components/report/report-next-steps";
 import { RubricBars } from "@/components/report/rubric-bars";
 import { ScoreRing } from "@/components/report/score-ring";
 import { Card } from "@/components/ui/card";
@@ -219,34 +218,13 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
           <p className="text-text text-sm">{feedback.follow_up_question}</p>
         </div>
 
-        <div className="border-line flex flex-col items-center gap-3 border-t pt-6 text-center">
-          {report.session_status === "completed" || !report.next_question ? (
-            <>
-              <p className="text-muted text-sm">
-                That was the last question — your session is complete.
-              </p>
-              <Link
-                href={`/session/${report.session_id}/summary`}
-                className="bg-lime text-lime-ink inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] px-6 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
-              >
-                View session summary
-              </Link>
-            </>
-          ) : (
-            <>
-              <p className="text-muted text-sm">
-                Question {report.question_number} of {report.question_count} complete.
-              </p>
-              <Link
-                href={`/interview?session=${report.session_id}`}
-                className="bg-lime text-lime-ink inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] px-6 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
-              >
-                Continue interview — Question {report.question_number + 1} of{" "}
-                {report.question_count}
-              </Link>
-            </>
-          )}
-        </div>
+        <ReportNextSteps
+          sessionId={report.session_id}
+          questionNumber={report.question_number}
+          questionCount={report.question_count}
+          sessionStatus={report.session_status}
+          nextQuestion={report.next_question}
+        />
       </Card>
     </div>
   );

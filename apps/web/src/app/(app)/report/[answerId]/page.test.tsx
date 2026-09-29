@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AnswerReport } from "@/lib/interview/types";
 
 // jsdom has no IntersectionObserver; framer-motion's whileInView (used by ScoreRing/RubricBars)
-// needs one to mount at all, even though this test never scrolls anything into view.
+// and ReportNextSteps' own scroll-into-view auto-advance trigger both need one to mount at all,
+// even though this test never actually scrolls anything into view.
 class FakeIntersectionObserver {
   observe(): void {}
   unobserve(): void {}
@@ -14,6 +15,11 @@ class FakeIntersectionObserver {
 const { fetchAnswerReportMock } = vi.hoisted(() => ({ fetchAnswerReportMock: vi.fn() }));
 vi.mock("@/lib/interview/server", () => ({
   fetchAnswerReport: fetchAnswerReportMock,
+}));
+
+const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: pushMock }),
 }));
 
 import ReportPage from "./page";
@@ -73,6 +79,7 @@ function baseReport(): AnswerReport {
 describe("ReportPage", () => {
   beforeEach(() => {
     vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+    pushMock.mockClear();
   });
 
   it("renders a 'feedback unavailable' state instead of throwing when feedback is null", async () => {
@@ -221,8 +228,9 @@ describe("ReportPage", () => {
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
     render(element);
 
-    const link = screen.getByRole("link", { name: "Continue interview — Question 2 of 3" });
-    expect(link).toHaveAttribute("href", "/interview?session=session-1");
+    const button = screen.getByRole("button", { name: "Continue interview — Question 2 of 3" });
+    fireEvent.click(button);
+    expect(pushMock).toHaveBeenCalledWith("/interview?session=session-1");
   });
 
   it("offers the session summary once the session is complete", async () => {
@@ -236,7 +244,52 @@ describe("ReportPage", () => {
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
     render(element);
 
-    const link = screen.getByRole("link", { name: "View session summary" });
-    expect(link).toHaveAttribute("href", "/session/session-1/summary");
+    const button = screen.getByRole("button", { name: "View session summary" });
+    fireEvent.click(button);
+    expect(pushMock).toHaveBeenCalledWith("/session/session-1/summary");
+  });
+
+  it("offers to end the interview early, with a confirmation step", async () => {
+    fetchAnswerReportMock.mockResolvedValue(baseReport());
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    fireEvent.click(screen.getByRole("button", { name: "End interview here" }));
+    expect(pushMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Yes, end it here" }));
+    expect(pushMock).toHaveBeenCalledWith("/session/session-1/summary");
+  });
+
+  it("does not offer to end early once the session is already complete", async () => {
+    fetchAnswerReportMock.mockResolvedValue({
+      ...baseReport(),
+      question_number: 3,
+      session_status: "completed",
+      next_question: null,
+    });
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    expect(screen.queryByRole("button", { name: "End interview here" })).not.toBeInTheDocument();
+  });
+
+  it("persists the auto-advance preference per session in localStorage", async () => {
+    fetchAnswerReportMock.mockResolvedValue(baseReport());
+
+    const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
+    render(element);
+
+    const toggle = screen.getByRole("switch", {
+      name: "Automatically continue to the next question",
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(localStorage.getItem("rehearse:auto-advance:session-1")).toBe("true");
   });
 });
