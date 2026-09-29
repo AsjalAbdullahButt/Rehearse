@@ -46,7 +46,41 @@ describe("peekAccessToken (Server Component read path)", () => {
     expect(cookieStore.delete).not.toHaveBeenCalled();
   });
 
-  it("returns null instead of throwing when the access token is expired but a refresh token exists", async () => {
+  it("refreshes and returns the new access token when the cookie is expired, without touching cookies", async () => {
+    // Regression test for a real bug: this used to give up and return null the instant it saw
+    // an expired access-token cookie, trusting the middleware to have already refreshed it —
+    // which isn't a safe assumption, and produced a spurious "session expired" sign-out on any
+    // guarded navigation whose access token had simply aged out (unavoidable on a multi-question
+    // interview session running longer than JWT_ACCESS_TTL_MIN), even with a perfectly valid
+    // refresh token in hand.
+    const newAccess = makeJwt(900);
+    vi.mocked(apiFetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          access_token: newAccess,
+          refresh_token: makeJwt(30 * 24 * 60 * 60, "refresh"),
+          token_type: "bearer",
+          user: { id: "user-1", email: "a@b.com" },
+        }),
+        { status: 200 },
+      ),
+    );
+    cookieStore.get.mockImplementation((name) => {
+      if (name === ACCESS_TOKEN_COOKIE) return { value: makeJwt(-60) };
+      if (name === REFRESH_TOKEN_COOKIE) return { value: makeJwt(1000, "refresh") };
+      return undefined;
+    });
+
+    await expect(peekAccessToken()).resolves.toBe(newAccess);
+    // The refreshed pair is used for this render's own API calls but never persisted as
+    // cookies — Server Components can't write cookies mid-render; the middleware does that
+    // real persistence on the next request.
+    expect(cookieStore.set).not.toHaveBeenCalled();
+    expect(cookieStore.delete).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the access token is expired and the refresh call itself fails", async () => {
+    vi.mocked(apiFetch).mockResolvedValue(new Response(null, { status: 401 }));
     cookieStore.get.mockImplementation((name) => {
       if (name === ACCESS_TOKEN_COOKIE) return { value: makeJwt(-60) };
       if (name === REFRESH_TOKEN_COOKIE) return { value: makeJwt(1000, "refresh") };
@@ -56,7 +90,17 @@ describe("peekAccessToken (Server Component read path)", () => {
     await expect(peekAccessToken()).resolves.toBeNull();
     expect(cookieStore.set).not.toHaveBeenCalled();
     expect(cookieStore.delete).not.toHaveBeenCalled();
+  });
+
+  it("returns null without ever calling apiFetch when there is no refresh token either", async () => {
+    cookieStore.get.mockImplementation((name) =>
+      name === ACCESS_TOKEN_COOKIE ? { value: makeJwt(-60) } : undefined,
+    );
+
+    await expect(peekAccessToken()).resolves.toBeNull();
     expect(apiFetch).not.toHaveBeenCalled();
+    expect(cookieStore.set).not.toHaveBeenCalled();
+    expect(cookieStore.delete).not.toHaveBeenCalled();
   });
 
   it("returns null without touching cookies when there is no access token at all", async () => {
@@ -65,6 +109,32 @@ describe("peekAccessToken (Server Component read path)", () => {
     await expect(peekAccessToken()).resolves.toBeNull();
     expect(cookieStore.set).not.toHaveBeenCalled();
     expect(cookieStore.delete).not.toHaveBeenCalled();
+  });
+
+  it("de-dupes a concurrent refresh with getValidAccessToken callers racing the same token", async () => {
+    const newAccess = makeJwt(900);
+    vi.mocked(apiFetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          access_token: newAccess,
+          refresh_token: makeJwt(30 * 24 * 60 * 60, "refresh"),
+          token_type: "bearer",
+          user: { id: "user-1", email: "a@b.com" },
+        }),
+        { status: 200 },
+      ),
+    );
+    cookieStore.get.mockImplementation((name) => {
+      if (name === ACCESS_TOKEN_COOKIE) return { value: makeJwt(-60) };
+      if (name === REFRESH_TOKEN_COOKIE) return { value: makeJwt(1000, "refresh") };
+      return undefined;
+    });
+
+    const [first, second] = await Promise.all([peekAccessToken(), peekAccessToken()]);
+
+    expect(first).toBe(newAccess);
+    expect(second).toBe(newAccess);
+    expect(apiFetch).toHaveBeenCalledTimes(1);
   });
 });
 
