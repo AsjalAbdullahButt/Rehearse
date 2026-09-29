@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AnswerPlayback } from "@/components/interview/answer-playback";
 import { LiveCaption } from "@/components/interview/live-caption";
 import { MicOrb } from "@/components/interview/mic-orb";
 import { SessionSetupForm } from "@/components/interview/session-setup-form";
@@ -370,20 +371,6 @@ export function InterviewFlow({
     void recorder.start();
   });
 
-  const reviewBlob = state.stage === "reviewing" ? state.blob : null;
-  // Created during render (memoized on the blob's identity) rather than via setState-in-effect
-  // — the effect below only unsubscribes from the browser's object-URL registry, it never
-  // writes React state.
-  const reviewAudioUrl = useMemo(
-    () => (reviewBlob ? URL.createObjectURL(reviewBlob) : null),
-    [reviewBlob],
-  );
-  useEffect(() => {
-    return () => {
-      if (reviewAudioUrl) URL.revokeObjectURL(reviewAudioUrl);
-    };
-  }, [reviewAudioUrl]);
-
   if (state.stage === "setup") {
     return (
       <div className="flex flex-1 items-center justify-center px-6 py-16">
@@ -497,7 +484,7 @@ export function InterviewFlow({
             {state.question.text}
           </h1>
           <p className="text-muted text-sm">Listen back before you submit.</p>
-          {reviewAudioUrl ? <audio controls src={reviewAudioUrl} className="w-full" /> : null}
+          <AnswerPlayback blob={state.blob} />
           {!voiceActivity.hasSpokenAtAll ? (
             <p role="alert" className="text-amber max-w-sm text-sm">
               We didn&apos;t detect any voice in that recording — it may be silent. Check the
