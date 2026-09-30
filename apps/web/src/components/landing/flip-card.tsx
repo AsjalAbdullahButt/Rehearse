@@ -36,7 +36,7 @@ export function FlipCard({ progress }: { progress: MotionValue<number> }) {
             style={{ opacity: analyzeOpacity }}
             className="absolute inset-0 flex flex-col justify-center gap-5 p-8"
           >
-            <span className="text-muted text-xs font-medium">Analyzing your STAR structure</span>
+            <span className="text-muted text-xs font-medium">Evaluating your answer</span>
             <StarBarsScrollLinked fill={starFill} />
             <div className="grid grid-cols-3 gap-3 pt-2">
               <MiniStat label="Filler" value="4" tone="text-coral" />
@@ -55,7 +55,7 @@ export function FlipCard({ progress }: { progress: MotionValue<number> }) {
               from data pipeline to deployed UI.&rdquo;
             </p>
             <span className="bg-mint/15 text-mint w-fit rounded-[var(--radius-pill)] px-3 py-1 text-xs">
-              Fillers removed · STAR structure added
+              Clearer structure · Focused feedback
             </span>
           </motion.div>
         </div>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useMemo, useRef, useState } from "react";
 
 import { TrendChart, type TrendSeries } from "@/components/progress/trend-chart";
 import { Badge } from "@/components/ui/badge";
@@ -45,10 +46,14 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const [sessions, setSessions] = useState(initialSessions);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const listRef = useRef<HTMLDivElement>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function handleDeleteSession(sessionId: string) {
     setDeletingId(sessionId);
+    setDeleteError(null);
     try {
       const response = await fetch(`/api/interview/sessions/${sessionId}`, {
         method: "DELETE",
@@ -56,10 +61,19 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
       if (await handleSessionExpiry(response)) return;
       if (response.ok) {
         setSessions((current) => current.filter((row) => row.session_id !== sessionId));
+        setRoleFilter("all");
+        setConfirmingId(null);
+        setNotice("Session deleted.");
+        listRef.current?.focus();
+      } else {
+        setDeleteError("Could not delete this session. Please try again.");
       }
+    } catch {
+      setDeleteError(
+        "Could not reach the server. Your session has not been removed from this list.",
+      );
     } finally {
       setDeletingId(null);
-      setConfirmingId(null);
     }
   }
 
@@ -131,11 +145,24 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
   );
 
   return (
-    <div className="flex flex-col gap-6">
+    <div ref={listRef} tabIndex={-1} className="flex flex-col gap-6">
+      <p role="status" className="text-muted text-sm">
+        {notice}
+      </p>
+      {deleteError ? (
+        <p role="alert" className="text-coral text-sm">
+          {deleteError}
+        </p>
+      ) : null}
       {rolesPresent.length > 1 ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          role="radiogroup"
+          aria-label="Filter by role on this page"
+          className="flex flex-wrap items-center gap-2"
+        >
           <span className="text-muted text-xs font-medium tracking-wide uppercase">Role</span>
           <OptionPill
+            name="role-filter"
             value="all"
             label="All roles"
             selected={roleFilter === "all"}
@@ -143,6 +170,7 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
           />
           {rolesPresent.map((role) => (
             <OptionPill
+              name="role-filter"
               key={role}
               value={role}
               label={roleName(role)}
@@ -234,7 +262,13 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
               </div>
             </div>
 
-            <div className="border-line flex items-center justify-end gap-3 border-t pt-3">
+            <div className="border-line flex flex-wrap items-center justify-end gap-3 border-t pt-3">
+              <Link
+                href={`/session/${encodeURIComponent(row.session_id)}/summary`}
+                className="text-lime mr-auto inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4"
+              >
+                View summary
+              </Link>
               {confirmingId === row.session_id ? (
                 <>
                   <span className="text-muted text-xs">Delete this session&apos;s data?</span>
@@ -246,12 +280,28 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
                   >
                     {deletingId === row.session_id ? "Deleting…" : "Confirm delete"}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setConfirmingId(null)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={deletingId !== null}
+                    onClick={() => {
+                      setDeleteError(null);
+                      setConfirmingId(null);
+                    }}
+                  >
                     Cancel
                   </Button>
                 </>
               ) : (
-                <Button variant="ghost" size="sm" onClick={() => setConfirmingId(row.session_id)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={deletingId !== null}
+                  onClick={() => {
+                    setDeleteError(null);
+                    setConfirmingId(row.session_id);
+                  }}
+                >
                   Delete
                 </Button>
               )}

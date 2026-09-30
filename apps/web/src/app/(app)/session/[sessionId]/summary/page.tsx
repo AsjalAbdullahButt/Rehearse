@@ -1,3 +1,4 @@
+import { RecoveryState } from "@/components/ui/recovery-state";
 import Link from "next/link";
 
 import { ScoreRing } from "@/components/report/score-ring";
@@ -17,31 +18,37 @@ export default async function SessionSummaryPage({
   params: Promise<{ sessionId: string }>;
 }) {
   const { sessionId } = await params;
-  const summary = await fetchSessionSummary(sessionId);
+  const summary = await fetchSessionSummary(sessionId).catch(() => undefined);
 
   if (!summary) {
     return (
-      <div className="flex flex-1 items-center justify-center px-6 py-16">
-        <Card className="flex max-w-sm flex-col items-center gap-3 text-center">
-          <h1 className="font-display text-text text-xl font-bold">Summary not found</h1>
-          <p className="text-muted text-sm">
-            This session doesn&apos;t exist, or it isn&apos;t associated with your account.
-          </p>
-        </Card>
-      </div>
+      <RecoveryState
+        title={summary === undefined ? "Could not load your summary" : "Summary not found"}
+        description={
+          summary === undefined
+            ? "Your data could not be loaded right now. Please try again."
+            : "This summary does not exist or is not associated with your account."
+        }
+        retry={summary === undefined}
+      />
     );
   }
 
-  const sortedCategories = [...summary.category_breakdown].sort(
-    (a, b) => (a.avg_score ?? 10) - (b.avg_score ?? 10),
-  );
+  const sortedCategories = summary.category_breakdown
+    .filter((row) => row.avg_score !== null)
+    .sort((a, b) => (a.avg_score ?? 10) - (b.avg_score ?? 10));
   const weakest = sortedCategories[0];
   const strongest = sortedCategories[sortedCategories.length - 1];
+  const hasScoreDifference = strongest && weakest && strongest.avg_score !== weakest.avg_score;
+  const canResume =
+    summary.session.status === "in_progress" && Boolean(summary.session.current_question);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-16">
       <div className="flex flex-col gap-2">
-        <p className="text-muted text-xs font-medium tracking-wide uppercase">Session complete</p>
+        <p className="text-muted text-xs font-medium tracking-wide uppercase">
+          {summary.session.status === "completed" ? "Session complete" : "Your progress so far"}
+        </p>
         <h1 className="font-display text-text text-2xl font-bold text-balance">
           {summary.questions_completed} question{summary.questions_completed === 1 ? "" : "s"}{" "}
           answered
@@ -91,7 +98,7 @@ export default async function SessionSummaryPage({
           </div>
         ) : null}
 
-        {strongest && weakest && strongest.category !== weakest.category ? (
+        {hasScoreDifference ? (
           <p className="bg-lime/10 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">
             <span className="text-lime font-medium">Strongest area —</span>{" "}
             {CATEGORY_LABELS[strongest.category] ?? strongest.category}. Focus your next practice
@@ -104,8 +111,20 @@ export default async function SessionSummaryPage({
         ) : null}
 
         <div className="border-line flex flex-col items-center gap-3 border-t pt-6 text-center">
-          <p className="text-muted text-sm">Ready for another round?</p>
+          <p className="text-muted text-sm">
+            {canResume
+              ? "Your answers are saved. Continue when you are ready."
+              : "Ready for another round?"}
+          </p>
           <div className="flex flex-wrap justify-center gap-3">
+            {canResume ? (
+              <Link
+                href={`/interview?session=${encodeURIComponent(summary.session.id)}`}
+                className="bg-lime-fill text-lime-ink inline-flex min-h-11 items-center rounded-[var(--radius-pill)] px-6 text-sm font-medium"
+              >
+                Resume interview
+              </Link>
+            ) : null}
             <Link
               href="/progress"
               className="border-line text-text inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] border px-6 text-sm font-medium transition-colors duration-150 hover:bg-[var(--color-surface-2)]"
@@ -128,7 +147,7 @@ export default async function SessionSummaryPage({
             </Link>
             <Link
               href="/interview"
-              className="bg-lime text-lime-ink inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] px-6 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
+              className="bg-lime-fill text-lime-ink inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] px-6 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110"
             >
               Start a new session
             </Link>

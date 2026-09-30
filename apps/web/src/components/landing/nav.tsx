@@ -35,13 +35,13 @@ export function Nav() {
         scrolled ? "border-line bg-ink/80 backdrop-blur-md" : "border-transparent bg-transparent",
       )}
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4 sm:px-10">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-10">
         <a
           href="#top"
           onClick={(e) => handleNavClick(e, "#top")}
           className="font-display text-text flex items-center gap-2 text-lg font-bold tracking-tight"
         >
-          <span className="bg-lime text-lime-ink flex size-7 items-center justify-center rounded-full">
+          <span className="bg-lime-fill text-lime-ink flex size-7 items-center justify-center rounded-full">
             <svg viewBox="0 0 24 24" fill="none" className="size-4" aria-hidden="true">
               <path
                 d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 006 6.93V21h2v-2.07A7 7 0 0019 12h-2z"
@@ -69,16 +69,15 @@ export function Nav() {
           <ThemeToggle />
           <a
             href="/sign-in"
-            className="text-muted hover:text-text hidden text-sm transition-colors sm:inline"
+            className="text-muted hover:text-text inline-flex min-h-11 items-center text-sm transition-colors"
           >
             Sign in
           </a>
           <a
-            href="#roles"
-            onClick={(e) => handleNavClick(e, "#roles")}
-            className="bg-lime text-lime-ink inline-flex h-10 items-center justify-center rounded-[var(--radius-pill)] px-4 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110 sm:px-5"
+            href="/interview"
+            className="bg-lime-fill text-lime-ink inline-flex h-10 items-center justify-center rounded-[var(--radius-pill)] px-3 text-sm font-medium transition-[filter] duration-150 ease-[var(--ease-brand)] hover:brightness-110 sm:px-5"
           >
-            Start practicing
+            Start
           </a>
         </div>
       </div>

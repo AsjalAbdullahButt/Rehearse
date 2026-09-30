@@ -79,7 +79,6 @@ export function ReportNextSteps({
   const isSessionOver = sessionStatus === "completed" || !nextQuestion;
 
   const [autoAdvance, setAutoAdvance] = useAutoAdvancePreference(sessionId);
-  const [isEndingConfirm, setIsEndingConfirm] = useState(false);
   const [isCountdownActive, setIsCountdownActive] = useState(false);
   const sectionRef = useRef<HTMLDivElement>(null);
   const hasStartedCountdownRef = useRef(false);
@@ -129,8 +128,15 @@ export function ReportNextSteps({
 
   if (isSessionOver) {
     return (
-      <div className="border-line flex flex-col items-center gap-3 border-t pt-6 text-center">
-        <p className="text-muted text-sm">That was the last question — your session is complete.</p>
+      <div
+        id="report-next-steps"
+        className="border-line flex flex-col items-center gap-3 border-t pt-6 text-center"
+      >
+        <p className="text-muted text-sm">
+          {sessionStatus === "completed"
+            ? "Your session is complete."
+            : "Your answers are saved. View your progress so far."}
+        </p>
         <Button onClick={() => router.push(`/session/${sessionId}/summary`)}>
           View session summary
         </Button>
@@ -140,6 +146,7 @@ export function ReportNextSteps({
 
   return (
     <div
+      id="report-next-steps"
       ref={sectionRef}
       className="border-line flex flex-col items-center gap-4 border-t pt-6 text-center"
     >
@@ -165,27 +172,15 @@ export function ReportNextSteps({
           Continue interview — Question {questionNumber + 1} of {questionCount}
         </Button>
 
-        {isEndingConfirm ? (
-          <>
-            <span className="text-muted text-xs">
-              End here? You can see how you did so far — nothing you&apos;ve answered is lost.
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => router.push(`/session/${sessionId}/summary`)}
-            >
-              Yes, end it here
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setIsEndingConfirm(false)}>
-              Keep going
-            </Button>
-          </>
-        ) : (
-          <Button variant="ghost" onClick={() => setIsEndingConfirm(true)}>
-            End interview here
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setIsCountdownActive(false);
+            router.push(`/session/${sessionId}/summary`);
+          }}
+        >
+          View progress so far
+        </Button>
       </div>
 
       <label className="text-muted flex items-center gap-2 text-xs">

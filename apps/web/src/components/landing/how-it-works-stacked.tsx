@@ -17,7 +17,8 @@ const STEPS = [
     number: "02",
     label: "Analyze",
     color: "text-violet",
-    description: "Rehearse transcribes your answer and scores its STAR structure.",
+    description:
+      "Rehearse transcribes your answer and scores it with a rubric tailored to the question.",
   },
   {
     number: "03",
@@ -61,7 +62,7 @@ export function HowItWorksStacked() {
           ) : null}
           {i === 2 ? (
             <span className="bg-mint/15 text-mint w-fit rounded-[var(--radius-pill)] px-3 py-1 text-xs">
-              Fillers removed · STAR structure added
+              Clearer structure · Focused feedback
             </span>
           ) : null}
         </motion.div>

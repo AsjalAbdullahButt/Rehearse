@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const VARIANT_CLASSES = {
   primary:
-    "bg-lime text-lime-ink hover:brightness-110 focus-visible:outline-lime shadow-[0_0_0_0_rgba(212,255,90,0)]",
+    "bg-lime-fill text-lime-ink hover:brightness-110 focus-visible:outline-lime shadow-[0_0_0_0_rgba(212,255,90,0)]",
   secondary:
     "bg-surface-2 text-text border border-line hover:bg-surface-2/80 focus-visible:outline-lime",
   ghost: "bg-transparent text-text hover:bg-surface-2 focus-visible:outline-lime",

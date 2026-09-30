@@ -138,7 +138,7 @@ export function AnswerPlayback({ blob }: { blob: Blob }) {
         type="button"
         onClick={togglePlay}
         aria-label={isPlaying ? "Pause recording" : "Play recording"}
-        className="bg-lime text-lime-ink focus-visible:outline-lime flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform duration-150 hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 active:scale-95"
+        className="bg-lime-fill text-lime-ink focus-visible:outline-lime flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform duration-150 hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 active:scale-95"
       >
         {isPlaying ? <PauseIcon /> : <PlayIcon />}
       </button>

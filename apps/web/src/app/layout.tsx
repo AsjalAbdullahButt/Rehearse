@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     template: "%s — Rehearse",
   },
   description:
-    "Practice interviews out loud. Rehearse transcribes your answer, measures filler words, pace and pauses, scores STAR structure and clarity, and shows a stronger sample answer.",
+    "Practice interviews out loud. Rehearse transcribes your answer, measures filler words, pace and pauses, scores behavioral, technical, and situational answers, and shows a stronger sample answer.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -16,6 +16,7 @@ import { useLiveCaptions } from "@/hooks/use-live-captions";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import { useSilenceNudge } from "@/hooks/use-silence-nudge";
 import { useSpeechVoices } from "@/hooks/use-speech-voices";
+import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 import { useVoiceActivity } from "@/hooks/use-voice-activity";
 import {
   createIdempotencyKey,
@@ -110,7 +111,7 @@ export function InterviewFlow({
     return {
       stage: "error",
       message:
-        "Your session expired before your recording finished uploading. Your recording is saved — retry the upload below.",
+        "Your session expired before your recording finished uploading. Your recording is kept in this tab — retry the upload below.",
       retry: stashed,
     };
   });
@@ -151,8 +152,12 @@ export function InterviewFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeSessionId, state.stage]);
 
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [setupSubmitting, setSetupSubmitting] = useState(false);
+
   async function handleSetupSubmit(value: SessionCreateInput) {
-    setState({ stage: "starting" });
+    setSetupError(null);
+    setSetupSubmitting(true);
     try {
       const sessionResponse = await fetch("/api/interview/sessions", {
         method: "POST",
@@ -161,12 +166,12 @@ export function InterviewFlow({
       });
       if (await handleSessionExpiry(sessionResponse)) return;
       if (!sessionResponse.ok) {
-        setState({ stage: "error", message: (await parseApiError(sessionResponse)).message });
+        setSetupError((await parseApiError(sessionResponse)).message);
         return;
       }
       const session = (await sessionResponse.json()) as InterviewSession;
       if (!session.current_question) {
-        setState({ stage: "error", message: "No questions are available for that role yet." });
+        setSetupError("No questions are available for that role yet.");
         return;
       }
 
@@ -176,10 +181,9 @@ export function InterviewFlow({
         question: session.current_question,
       });
     } catch {
-      setState({
-        stage: "error",
-        message: "Couldn't reach the server. Check your connection and try again.",
-      });
+      setSetupError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setSetupSubmitting(false);
     }
   }
 
@@ -201,6 +205,7 @@ export function InterviewFlow({
         headers: { "Idempotency-Key": idempotencyKey },
         body: formData,
       });
+      if (response.status === 401) allowNavigation();
       if (await handleSessionExpiry(response)) {
         // handleSessionExpiry is about to redirect to /sign-in, which unmounts this component
         // — stash the recording so the lazy initializer above can offer it as a retry once the
@@ -209,20 +214,23 @@ export function InterviewFlow({
         return;
       }
       if (!response.ok) {
-        const { message, code } = await parseApiError(response);
-        // A rate limit (daily cap or burst) won't clear by immediately retrying the same
-        // request — offering "Retry upload" here would just trip it again.
-        const retry = code === "rate_limited" ? undefined : submission;
-        setState({ stage: "error", message, retry });
+        const { message } = await parseApiError(response);
+        const retryAfter = response.headers.get("Retry-After");
+        const retryNote =
+          response.status === 429
+            ? ` Keep this tab open.${retryAfter && /^\d+$/.test(retryAfter) ? ` Try again in ${retryAfter} seconds.` : " Try again when your limit resets."}`
+            : "";
+        setState({ stage: "error", message: message + retryNote, retry: submission });
         return;
       }
 
       const report = (await response.json()) as AnswerReport;
+      allowNavigation();
       router.push(`/report/${report.id}`);
     } catch {
       setState({
         stage: "error",
-        message: "Couldn't reach the server. Your recording is saved — try again.",
+        message: "Couldn't reach the server. Your recording is kept in this tab — try again.",
         retry: submission,
       });
     }
@@ -328,6 +336,14 @@ export function InterviewFlow({
     // bug to suppress.
   }, [readyQuestionText, speak]);
 
+  const allowNavigation = useUnsavedChanges(
+    isRecording ||
+      state.stage === "reviewing" ||
+      state.stage === "analyzing" ||
+      (state.stage === "error" && Boolean(state.retry)),
+    "Your recording has not been submitted. Leave and discard this recording?",
+  );
+
   const voiceActivity = useVoiceActivity(recorder.analyser, isRecording);
   const captions = useLiveCaptions(isRecording);
 
@@ -373,7 +389,7 @@ export function InterviewFlow({
 
   if (state.stage === "setup") {
     return (
-      <div className="flex flex-1 items-center justify-center px-6 py-16">
+      <div className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
         <SessionSetupForm
           initialRole={initialRole}
           initialFocus={initialFocus}
@@ -383,7 +399,8 @@ export function InterviewFlow({
           initialCandidateBackground={profile?.candidate_background}
           initialSkills={profile?.skills}
           initialYearsExperience={profile?.years_experience}
-          isSubmitting={false}
+          isSubmitting={setupSubmitting}
+          error={setupError}
           onSubmit={handleSetupSubmit}
         />
       </div>
@@ -392,7 +409,7 @@ export function InterviewFlow({
 
   if (state.stage === "starting") {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 sm:px-6 sm:py-12">
         <MicOrb size={100} animate />
         <p className="text-muted text-sm">Preparing your question…</p>
       </div>
@@ -403,7 +420,7 @@ export function InterviewFlow({
     const micIsLive = recorder.status === "recording";
 
     return (
-      <div className="flex flex-1 items-center justify-center px-6 py-16">
+      <div className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
         <Card className="flex w-full max-w-xl flex-col items-center gap-6 text-center">
           <h1 className="font-display text-text text-xl font-bold">Check your microphone</h1>
           <p className="text-muted text-sm">
@@ -446,7 +463,7 @@ export function InterviewFlow({
   if (state.stage === "error") {
     const { retry } = state;
     return (
-      <div className="flex flex-1 items-center justify-center px-6 py-16">
+      <div className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
         <Card className="flex max-w-sm flex-col items-center gap-4 text-center">
           <p role="alert" className="text-text text-sm">
             {state.message}
@@ -455,7 +472,10 @@ export function InterviewFlow({
             {retry ? <Button onClick={() => void submitAnswer(retry)}>Retry upload</Button> : null}
             <Button
               variant={retry ? "secondary" : "primary"}
-              onClick={() => setState({ stage: "setup" })}
+              onClick={() => {
+                if (!retry || window.confirm("Discard this recording and start over?"))
+                  setState({ stage: "setup" });
+              }}
             >
               {retry ? "Start over" : "Try again"}
             </Button>
@@ -467,7 +487,7 @@ export function InterviewFlow({
 
   if (state.stage === "analyzing") {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 sm:px-6 sm:py-12">
         <MicOrb size={100} animate />
         <p className="text-muted text-sm" aria-live="polite">
           Transcribing your answer, evaluating your response, and preparing coaching feedback…
@@ -478,7 +498,7 @@ export function InterviewFlow({
 
   if (state.stage === "reviewing") {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-16">
+      <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-8 sm:px-6 sm:py-12">
         <Card className="flex w-full max-w-xl flex-col items-center gap-6 text-center">
           <p className="text-muted text-xs font-medium tracking-wide uppercase">
             Question {state.session.current_question_number} of {state.session.question_count}
@@ -517,7 +537,7 @@ export function InterviewFlow({
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-16">
+    <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-8 sm:px-6 sm:py-12">
       <Card className="flex w-full max-w-xl flex-col items-center gap-8 text-center">
         <p className="text-muted text-xs font-medium tracking-wide uppercase">
           {isRecording

@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const TONE_CLASSES = {
   neutral: "bg-surface-2 text-muted",
-  lime: "bg-lime text-lime-ink",
+  lime: "bg-lime-fill text-lime-ink",
   violet: "bg-violet/15 text-violet",
   coral: "bg-coral/15 text-coral",
   amber: "bg-amber/15 text-amber",

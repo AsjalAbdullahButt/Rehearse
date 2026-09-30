@@ -47,22 +47,19 @@ describe("SettingsForm", () => {
   it("has no target role selected by default", () => {
     renderSettings(profile());
 
-    expect(screen.getByRole("button", { name: "No default" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("radio", { name: "No default" })).toHaveAttribute("checked", "");
   });
 
   it("pre-selects the saved target role", () => {
     renderSettings(profile({ target_role: "backend" }));
 
-    expect(screen.getByRole("button", { name: "Backend" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("radio", { name: "Backend" })).toBeChecked();
   });
 
   it("saves the selected target role", async () => {
     renderSettings(profile());
 
-    fireEvent.click(screen.getByRole("button", { name: "Frontend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Frontend" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
@@ -72,7 +69,7 @@ describe("SettingsForm", () => {
   it("saves null when the target role is cleared back to No default", async () => {
     renderSettings(profile({ target_role: "backend" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "No default" }));
+    fireEvent.click(screen.getByRole("radio", { name: "No default" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
@@ -153,5 +150,33 @@ describe("SettingsForm", () => {
 
     // A successful save becomes the new baseline — nothing left to save until edited again.
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  });
+
+  it("normalizes whitespace and stops showing Saved after another edit", async () => {
+    renderSettings(profile());
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "  Ada  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Grace" } });
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  });
+
+  it("keeps edits made while a save is in flight dirty", async () => {
+    let complete!: (response: Response) => void;
+    vi.mocked(fetch).mockReturnValue(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    renderSettings(profile());
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Ada" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Grace" } });
+    complete(new Response(JSON.stringify(profile({ display_name: "Ada" }))));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled());
+    expect(screen.getByLabelText("Display name")).toHaveValue("Grace");
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
   });
 });

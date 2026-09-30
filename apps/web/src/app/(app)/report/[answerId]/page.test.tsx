@@ -253,16 +253,13 @@ describe("ReportPage", () => {
     expect(pushMock).toHaveBeenCalledWith("/session/session-1/summary");
   });
 
-  it("offers to end the interview early, with a confirmation step", async () => {
+  it("offers to view progress without claiming the interview has ended", async () => {
     fetchAnswerReportMock.mockResolvedValue(baseReport());
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
     render(element);
 
-    fireEvent.click(screen.getByRole("button", { name: "End interview here" }));
-    expect(pushMock).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Yes, end it here" }));
+    fireEvent.click(screen.getByRole("button", { name: "View progress so far" }));
     expect(pushMock).toHaveBeenCalledWith("/session/session-1/summary");
   });
 
@@ -277,7 +274,7 @@ describe("ReportPage", () => {
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
     render(element);
 
-    expect(screen.queryByRole("button", { name: "End interview here" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View progress so far" })).not.toBeInTheDocument();
   });
 
   it("persists the auto-advance preference per session in localStorage", async () => {

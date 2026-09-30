@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Input } from "@/components/ui/input";
 import { NEW_PASSWORD_MIN_LENGTH, PASSWORD_REQUIREMENTS_HINT } from "@/lib/auth/password-policy";
 import { sanitizeNextPath } from "@/lib/utils";
@@ -25,7 +26,6 @@ export function SignInForm() {
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -69,7 +69,26 @@ export function SignInForm() {
 
   return (
     <div className="flex w-full flex-col gap-6">
+      {searchParams.get("password") === "changed" ? (
+        <p role="status" className="text-mint text-sm">
+          Password updated. Sign in with your new password.
+        </p>
+      ) : null}
       <div
+        onKeyDown={(event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const nextMode =
+            event.key === "Home"
+              ? "login"
+              : event.key === "End"
+                ? "register"
+                : mode === "login"
+                  ? "register"
+                  : "login";
+          switchMode(nextMode);
+          document.getElementById(`sign-in-form-tab-${nextMode}`)?.focus();
+        }}
         role="tablist"
         aria-label="Sign in or create account"
         className="border-line bg-surface-2 flex justify-center gap-1 rounded-[var(--radius-pill)] border p-1 text-sm"
@@ -79,11 +98,12 @@ export function SignInForm() {
           role="tab"
           id="sign-in-form-tab-login"
           aria-selected={mode === "login"}
+          tabIndex={mode === "login" ? 0 : -1}
           aria-controls="sign-in-form-panel"
           onClick={() => switchMode("login")}
           className={
             mode === "login"
-              ? "bg-lime text-lime-ink flex-1 rounded-[var(--radius-pill)] px-4 py-1.5 font-medium"
+              ? "bg-lime-fill text-lime-ink flex-1 rounded-[var(--radius-pill)] px-4 py-1.5 font-medium"
               : "text-muted flex-1 rounded-[var(--radius-pill)] px-4 py-1.5"
           }
         >
@@ -94,11 +114,12 @@ export function SignInForm() {
           role="tab"
           id="sign-in-form-tab-register"
           aria-selected={mode === "register"}
+          tabIndex={mode === "register" ? 0 : -1}
           aria-controls="sign-in-form-panel"
           onClick={() => switchMode("register")}
           className={
             mode === "register"
-              ? "bg-lime text-lime-ink flex-1 rounded-[var(--radius-pill)] px-4 py-1.5 font-medium"
+              ? "bg-lime-fill text-lime-ink flex-1 rounded-[var(--radius-pill)] px-4 py-1.5 font-medium"
               : "text-muted flex-1 rounded-[var(--radius-pill)] px-4 py-1.5"
           }
         >
@@ -140,45 +161,39 @@ export function SignInForm() {
         </label>
 
         <div className="flex flex-col gap-1.5 text-left text-sm">
-          <label className="flex flex-col gap-1.5">
+          <label htmlFor="auth-password" className="flex flex-col gap-1.5">
             <span className="text-muted">Password</span>
-            <div className="relative">
-              <Input
-                type={showPassword ? "text" : "password"}
-                required
-                // Only enforced client-side for a NEW password (registration) — an existing
-                // account may still have a shorter password from before this policy existed,
-                // and login must keep accepting it (the API's own LoginRequest deliberately has
-                // no minimum for the same reason).
-                minLength={mode === "register" ? NEW_PASSWORD_MIN_LENGTH : undefined}
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                aria-invalid={error ? true : undefined}
-                aria-describedby={
-                  [
-                    mode === "register" ? "sign-in-form-password-hint" : null,
-                    error ? "sign-in-form-error" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" ") || undefined
-                }
-                className="pr-16"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((current) => !current)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                aria-pressed={showPassword}
-                className="text-muted hover:text-text focus-visible:outline-lime absolute inset-y-0 right-3 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
-            </div>
+            <PasswordInput
+              id="auth-password"
+              required
+              // Only enforced client-side for a NEW password (registration) — an existing
+              // account may still have a shorter password from before this policy existed,
+              // and login must keep accepting it (the API's own LoginRequest deliberately has
+              // no minimum for the same reason).
+              minLength={mode === "register" ? NEW_PASSWORD_MIN_LENGTH : undefined}
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={
+                [
+                  mode === "register" ? "sign-in-form-password-hint" : null,
+                  error ? "sign-in-form-error" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
+              className="pr-16"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
           </label>
           {mode === "register" && (
             <span id="sign-in-form-password-hint" className="text-muted text-xs">
               {PASSWORD_REQUIREMENTS_HINT}
+              <span className="mt-1 block" aria-live="polite">
+                {password.length >= NEW_PASSWORD_MIN_LENGTH
+                  ? "Minimum length reached."
+                  : `${NEW_PASSWORD_MIN_LENGTH - password.length} more characters needed.`}
+              </span>
             </span>
           )}
         </div>

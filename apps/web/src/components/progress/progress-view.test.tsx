@@ -59,7 +59,7 @@ describe("ProgressView", () => {
 
     expect(screen.getAllByText(/Answers/).length).toBe(2);
 
-    fireEvent.click(screen.getByRole("button", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
 
     expect(screen.getAllByText(/Answers/).length).toBe(1);
   });
@@ -110,6 +110,21 @@ describe("ProgressView", () => {
     expect(fetch).toHaveBeenCalledWith(
       "/api/interview/sessions/s1",
       expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("keeps the session and confirmation available when deletion fails", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("offline"));
+    render(<ProgressView sessions={[row()]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("Could not reach the server"),
+    );
+    expect(screen.getByRole("button", { name: "Confirm delete" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "View summary" })).toHaveAttribute(
+      "href",
+      "/session/session-1/summary",
     );
   });
 });

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { AppNavigation } from "@/components/ui/app-navigation";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { fetchCurrentUser } from "@/lib/interview/server";
 
@@ -25,33 +26,32 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="bg-ink flex flex-1 flex-col">
-      <header className="border-line flex h-16 shrink-0 items-center justify-between border-b px-6">
-        <div className="flex items-center gap-6">
-          <Link href="/interview" className="font-display text-text text-sm font-bold">
-            Rehearse
-          </Link>
-          <nav className="hidden items-center gap-4 sm:flex">
-            <Link
-              href="/interview"
-              className="text-muted hover:text-text text-sm transition-colors"
-            >
-              Interview
+      <a
+        href="#main-content"
+        className="bg-lime-fill text-lime-ink sr-only z-50 rounded-[var(--radius-tile)] p-3 focus:not-sr-only focus:fixed focus:top-4 focus:left-4"
+      >
+        Skip to content
+      </a>
+      <header className="border-line shrink-0 border-b sm:flex sm:min-h-16 sm:items-center sm:justify-between sm:px-6">
+        <div className="flex h-16 items-center justify-between gap-4 px-4 sm:contents">
+          <div className="flex items-center gap-6">
+            <Link href="/interview" className="font-display text-text text-sm font-bold">
+              Rehearse
             </Link>
-            <Link href="/progress" className="text-muted hover:text-text text-sm transition-colors">
-              Progress
-            </Link>
-            <Link href="/settings" className="text-muted hover:text-text text-sm transition-colors">
-              Settings
-            </Link>
-          </nav>
+          </div>
+          <div className="flex items-center gap-3 sm:order-3">
+            <span className="text-muted hidden max-w-40 truncate text-sm lg:inline">
+              {user.email}
+            </span>
+            <ThemeToggle />
+            <SignOutButton />
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-muted hidden text-sm md:inline">{user.email}</span>
-          <ThemeToggle />
-          <SignOutButton />
-        </div>
+        <AppNavigation />
       </header>
-      <main className="flex flex-1 flex-col">{children}</main>
+      <main id="main-content" tabIndex={-1} className="flex flex-1 flex-col">
+        {children}
+      </main>
     </div>
   );
 }

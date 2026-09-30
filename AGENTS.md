@@ -564,6 +564,32 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
 
 ## Known gaps — current
 
+- **UI review implementation (2026-09-30):** supersedes the older UI gap list below. Product
+  navigation is available on mobile with current-page state and a skip link. OptionPill now
+  renders native grouped radios. Setup uses labeled fields, collapsible session options,
+  optional personalization, duration guidance, and preserves entries on creation failure.
+  Light-theme foreground colors and primary-button fill/text roles now meet small-text
+  contrast on the main surfaces. Settings compares normalized drafts to the saved API
+  response, handles edits during saving, and warns before leaving with unsaved changes.
+  Password inputs share reveal controls; password changes clear cookies and return to sign-in.
+  Reports lead with an existing coaching improvement, collapse secondary metrics, respect
+  reduced motion in transcript comparison, and provide recovery links. History has pagination
+  (20 sessions per page, charts/filters explicitly page-scoped), summary links, and deletion
+  failure feedback. Early exit is honestly labeled "View progress so far"; unfinished summaries
+  offer Resume and do not claim completion. No new end-session mutation was introduced.
+  Recording/review/upload failure states warn before navigation and retain audio on rate limits.
+  `use-unsaved-changes` covers links/reload/close and same-document browser traversal where the
+  Navigation API is available; browsers without it use link-click and beforeunload fallbacks.
+  Audio remains in memory, never persisted by these guards.
+- **Authenticated UI browser coverage now exists:** `pnpm --filter ./apps/web test:e2e:ui`
+  uses a production build, an isolated local fixture API on ports 3198/3199, and Chromium's fake
+  microphone. It covers both themes at 320/768/1440px, setup recovery/validation, Settings save
+  feedback/navigation, history/summary resume links, and recording navigation/rate-limit retry.
+  This supplements the landing suite; it does not verify live Groq or physical microphone input.
+  Chromium is installed in this workspace; older notes saying no browser is available are
+  historical. Cross-browser back-navigation protection, individual answer links from summaries,
+  and a persisted explicit early-end state remain follow-ups requiring further UI/API work.
+
 - **No password-reset flow.** Change-password (requires knowing the current password) and full
   account deletion exist; there's no "forgot password" email flow, since that needs a transactional
   email provider this environment has no credentials for.

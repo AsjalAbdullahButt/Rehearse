@@ -6,14 +6,18 @@ import { apiFetch, type UserPublic } from "@/lib/auth/api";
 import { peekAccessToken } from "@/lib/auth/session";
 import type { AnswerReport, ProgressOut, Profile, SessionSummary } from "@/lib/interview/types";
 
-async function fetchFromApi<T>(path: string): Promise<T | null> {
+async function fetchFromApi<T>(path: string, distinguishFailure = false): Promise<T | null> {
   const accessToken = await peekAccessToken();
   if (!accessToken) return null;
 
   const response = await apiFetch(path, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!response.ok) return null;
+  if (!response.ok) {
+    if (distinguishFailure && response.status !== 404)
+      throw new Error("The requested data could not be loaded.");
+    return null;
+  }
 
   return (await response.json()) as T;
 }
@@ -23,11 +27,11 @@ export function fetchCurrentUser(): Promise<UserPublic | null> {
 }
 
 export function fetchAnswerReport(answerId: string): Promise<AnswerReport | null> {
-  return fetchFromApi<AnswerReport>(`/v1/answers/${encodeURIComponent(answerId)}`);
+  return fetchFromApi<AnswerReport>(`/v1/answers/${encodeURIComponent(answerId)}`, true);
 }
 
-export function fetchProgress(): Promise<ProgressOut | null> {
-  return fetchFromApi<ProgressOut>("/v1/progress");
+export function fetchProgress(page = 1): Promise<ProgressOut | null> {
+  return fetchFromApi<ProgressOut>(`/v1/progress?limit=20&offset=${(page - 1) * 20}`);
 }
 
 export function fetchProfile(): Promise<Profile | null> {
@@ -35,5 +39,5 @@ export function fetchProfile(): Promise<Profile | null> {
 }
 
 export function fetchSessionSummary(sessionId: string): Promise<SessionSummary | null> {
-  return fetchFromApi<SessionSummary>(`/v1/sessions/${encodeURIComponent(sessionId)}`);
+  return fetchFromApi<SessionSummary>(`/v1/sessions/${encodeURIComponent(sessionId)}`, true);
 }

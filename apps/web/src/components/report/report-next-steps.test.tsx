@@ -70,18 +70,9 @@ describe("ReportNextSteps", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("requires a confirmation before ending the interview early", () => {
+  it("opens the in-progress summary without pretending to complete the session", () => {
     renderSteps();
-
-    fireEvent.click(screen.getByRole("button", { name: "End interview here" }));
-    expect(pushMock).not.toHaveBeenCalled();
-    expect(screen.getByText(/nothing you've answered is lost/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Keep going" }));
-    expect(screen.queryByText(/nothing you've answered is lost/)).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "End interview here" }));
-    fireEvent.click(screen.getByRole("button", { name: "Yes, end it here" }));
+    fireEvent.click(screen.getByRole("button", { name: "View progress so far" }));
     expect(pushMock).toHaveBeenCalledWith("/session/session-1/summary");
   });
 

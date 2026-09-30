@@ -5,8 +5,9 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
+import { allowLeavingPage, confirmLeavingPage } from "@/hooks/use-unsaved-changes";
 import { NEW_PASSWORD_MIN_LENGTH, PASSWORD_REQUIREMENTS_HINT } from "@/lib/auth/password-policy";
 
 type PasswordStatus = "idle" | "saving" | "saved" | "error";
@@ -31,6 +32,7 @@ export function AccountPrivacyPanel() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function handleChangePassword() {
+    if (!confirmLeavingPage()) return;
     setPasswordStatus("saving");
     setPasswordError(null);
     try {
@@ -48,6 +50,8 @@ export function AccountPrivacyPanel() {
       setCurrentPassword("");
       setNewPassword("");
       setPasswordStatus("saved");
+      allowLeavingPage();
+      router.push("/sign-in?password=changed");
     } catch {
       setPasswordError("Couldn't reach the server. Try again.");
       setPasswordStatus("error");
@@ -55,6 +59,7 @@ export function AccountPrivacyPanel() {
   }
 
   async function handleDeleteAccount() {
+    if (!confirmLeavingPage()) return;
     setDeleteStatus("deleting");
     setDeleteError(null);
     try {
@@ -69,6 +74,7 @@ export function AccountPrivacyPanel() {
         setDeleteStatus("confirming");
         return;
       }
+      allowLeavingPage();
       router.push("/");
     } catch {
       setDeleteError("Couldn't reach the server. Try again.");
@@ -108,15 +114,21 @@ export function AccountPrivacyPanel() {
         <span className="text-muted text-xs font-medium tracking-wide uppercase">
           Change password
         </span>
-        <Input
-          type="password"
+        <label htmlFor="current-password" className="text-muted text-sm">
+          Current password
+        </label>
+        <PasswordInput
+          id="current-password"
           placeholder="Current password"
           autoComplete="current-password"
           value={currentPassword}
           onChange={(event) => setCurrentPassword(event.target.value)}
         />
-        <Input
-          type="password"
+        <label htmlFor="new-password" className="text-muted text-sm">
+          New password
+        </label>
+        <PasswordInput
+          id="new-password"
           placeholder="New password"
           autoComplete="new-password"
           minLength={NEW_PASSWORD_MIN_LENGTH}
@@ -127,11 +139,11 @@ export function AccountPrivacyPanel() {
         <span id="account-privacy-password-hint" className="text-muted -mt-1 text-xs">
           {PASSWORD_REQUIREMENTS_HINT}
         </span>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="secondary"
             size="sm"
-            className="w-fit"
+            className="h-auto min-h-11 w-fit py-2"
             disabled={
               passwordStatus === "saving" ||
               !currentPassword ||
@@ -143,7 +155,7 @@ export function AccountPrivacyPanel() {
           </Button>
           {passwordStatus === "saved" ? (
             <span className="text-mint text-sm">
-              Updated — you&apos;ll need to sign in again on other devices.
+              Updated — you&apos;ll need to sign in again on this device too.
             </span>
           ) : null}
           {passwordStatus === "error" && passwordError ? (
@@ -160,7 +172,7 @@ export function AccountPrivacyPanel() {
           <Button
             variant="secondary"
             size="sm"
-            className="w-fit"
+            className="h-auto min-h-11 w-fit py-2"
             onClick={() => setDeleteStatus("confirming")}
           >
             Delete account
@@ -171,18 +183,21 @@ export function AccountPrivacyPanel() {
               This permanently deletes your account and all of your interview data. Enter your
               password to confirm.
             </p>
-            <Input
-              type="password"
+            <label htmlFor="delete-password" className="text-muted text-sm">
+              Confirm your password
+            </label>
+            <PasswordInput
+              id="delete-password"
               placeholder="Confirm your password"
               autoComplete="current-password"
               value={deletePassword}
               onChange={(event) => setDeletePassword(event.target.value)}
             />
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Button
                 variant="secondary"
                 size="sm"
-                className="w-fit"
+                className="h-auto min-h-11 w-fit py-2"
                 disabled={deleteStatus === "deleting" || !deletePassword}
                 onClick={() => void handleDeleteAccount()}
               >

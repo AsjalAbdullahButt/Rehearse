@@ -29,7 +29,7 @@ describe("SessionSetupForm", () => {
 
     expect(screen.getByRole("button", { name: "Start" })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
 
     expect(screen.getByRole("button", { name: "Start" })).not.toBeDisabled();
   });
@@ -37,7 +37,7 @@ describe("SessionSetupForm", () => {
   it("defaults the time cap to 120s when no initial value is given", () => {
     const onSubmit = renderForm();
 
-    fireEvent.click(screen.getByRole("button", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ answer_cap_s: 120 }));
@@ -46,7 +46,7 @@ describe("SessionSetupForm", () => {
   it("pre-fills the time cap from initialAnswerCapS (e.g. the candidate's saved default)", () => {
     const onSubmit = renderForm({ initialAnswerCapS: 300 });
 
-    fireEvent.click(screen.getByRole("button", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ answer_cap_s: 300 }));
@@ -55,7 +55,7 @@ describe("SessionSetupForm", () => {
   it("falls back to the default time cap when initialAnswerCapS isn't a valid option", () => {
     const onSubmit = renderForm({ initialAnswerCapS: 999 });
 
-    fireEvent.click(screen.getByRole("button", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ answer_cap_s: 120 }));
@@ -68,7 +68,7 @@ describe("SessionSetupForm", () => {
       initialQuestionCount: 8,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
 
     expect(onSubmit).toHaveBeenCalledWith(

@@ -40,10 +40,13 @@ export function ProgressSection() {
             Watch yourself improve
           </h2>
           <p className="text-muted mx-auto max-w-lg text-sm">
-            Every session is tracked — filler words, pace and STAR score, session over session.
+            Every session is tracked — filler words, pace and category scores, session over session.
           </p>
         </div>
 
+        <p className="text-muted mb-3 text-center text-xs">
+          Illustrative demo data. Your progress uses only your own sessions.
+        </p>
         <Card className="grid gap-8 lg:grid-cols-[1fr_auto]">
           <div className="flex flex-col gap-3">
             <span className="text-muted text-xs font-medium tracking-wide uppercase">

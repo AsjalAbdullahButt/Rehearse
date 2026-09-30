@@ -18,6 +18,7 @@
   --text: #f4f3ee;
   --muted: #a1a3ad;
   --lime: #d4ff5a;
+  --lime-fill: #d4ff5a;
   --lime-ink: #0a0b0f;
   --violet: #8c7bff;
   --coral: #ff5a4e;
@@ -36,6 +37,7 @@
   --muted: #a1a3ad;
 
   --lime: #d4ff5a;
+  --lime-fill: #d4ff5a;
   --lime-ink: #0a0b0f;
   --violet: #8c7bff;
   --coral: #ff5a4e;
@@ -55,11 +57,12 @@
 
   /* Lime text on light fails contrast; use the darkened variant for text. */
   --lime: #4f6b00;
-  --lime-ink: #0a0b0f;
-  --violet: #8c7bff;
-  --coral: #ff5a4e;
-  --amber: #ffb547;
-  --mint: #3ddc97;
+  --lime-fill: #4f6b00;
+  --lime-ink: #ffffff;
+  --violet: #6550c8;
+  --coral: #c12f29;
+  --amber: #855000;
+  --mint: #08794b;
 }
 
 @theme inline {
@@ -71,6 +74,7 @@
   --color-muted: var(--muted);
 
   --color-lime: var(--lime);
+  --color-lime-fill: var(--lime-fill);
   --color-lime-ink: var(--lime-ink);
   --color-violet: var(--violet);
   --color-coral: var(--coral);
