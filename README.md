@@ -279,7 +279,3 @@ flow:
 ["Known gaps" sections in AGENTS.md](./AGENTS.md#known-gaps--current) — they're an honest,
 up-to-date list of what's deliberately unfinished and why, which usually makes for a much easier
 first contribution than guessing at what might be missing.
-
----
-
-<p align="center">Made with 🎯 focus and 🧪 a lot of testing — happy rehearsing!</p>
