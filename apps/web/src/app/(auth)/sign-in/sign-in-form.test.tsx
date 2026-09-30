@@ -1,21 +1,25 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { pushMock, refreshMock } = vi.hoisted(() => ({
-  pushMock: vi.fn(),
-  refreshMock: vi.fn(),
-}));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock, refresh: refreshMock }),
   useSearchParams: () => new URLSearchParams(),
 }));
 
 import { SignInForm } from "./sign-in-form";
 
 describe("SignInForm", () => {
+  const assignMock = vi.fn();
+
   beforeEach(() => {
-    pushMock.mockClear();
-    refreshMock.mockClear();
+    assignMock.mockClear();
+    // A plain `router.push()` mock can't catch the real bug here (see sign-in-form.tsx's
+    // comment) — it never races Next's client router the way a real browser does. Stubbing
+    // `window.location.assign` lets the test assert on the actual hard-navigation call the
+    // component makes instead.
+    Object.defineProperty(window, "location", {
+      value: { assign: assignMock },
+      writable: true,
+    });
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -56,5 +60,16 @@ describe("SignInForm", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Sign in" }));
 
     expect(screen.queryByText("password: too short")).not.toBeInTheDocument();
+  });
+
+  it("hard-navigates to the next path on a successful login", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ user: {} }), { status: 200 }));
+
+    render(<SignInForm />);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "user@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a-real-password" } });
+    fireEvent.submit(screen.getByRole("tabpanel"));
+
+    await vi.waitFor(() => expect(assignMock).toHaveBeenCalledWith("/interview"));
   });
 });

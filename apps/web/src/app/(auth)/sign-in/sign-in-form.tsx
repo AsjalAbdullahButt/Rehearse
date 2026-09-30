@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,6 @@ interface AuthErrorBody {
 }
 
 export function SignInForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const next = sanitizeNextPath(searchParams.get("next"), "/interview");
 
@@ -51,8 +50,16 @@ export function SignInForm() {
         return;
       }
 
-      router.push(next);
-      router.refresh();
+      // A real bug this avoids: `router.push()` immediately followed by `router.refresh()`
+      // races Next's client router — `refresh()` can invalidate/re-render the *current* route
+      // (still `/sign-in` at that point, since `push()`'s transition hasn't committed yet)
+      // instead of the destination, which cancels the pending navigation. The user was left
+      // staring at a freshly-reloaded sign-in page after a successful login, with no visible
+      // error, and had to click "Sign in" again and again. A hard navigation sidesteps the
+      // client router entirely — the browser requests `next` fresh, cookies already set, no
+      // race possible — which is exactly what a security-sensitive transition like this
+      // should do anyway.
+      window.location.assign(next);
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
     } finally {
