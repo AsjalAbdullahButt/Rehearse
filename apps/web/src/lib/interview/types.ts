@@ -253,6 +253,11 @@ export interface Profile {
   answer_cap_s: number;
   voice_name: string | null;
   voice_rate: number;
+  /** A saved "resume memory" (Settings) — pre-fills SessionSetupForm's matching personalization
+   * fields on every new session, editable there like any other pre-fill, never auto-submitted. */
+  candidate_background: string | null;
+  skills: string[] | null;
+  years_experience: number | null;
 }
 
 export type ProfileUpdate = Partial<Profile>;

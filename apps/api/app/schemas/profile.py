@@ -1,6 +1,11 @@
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import Role
+from app.models.interview_session import (
+    MAX_CANDIDATE_BACKGROUND_LENGTH,
+    MAX_SKILL_LENGTH,
+    MAX_SKILLS,
+)
 from app.models.profile import ANSWER_CAP_CHOICES
 
 MAX_DISPLAY_NAME_LENGTH = 255
@@ -18,6 +23,9 @@ class ProfileOut(BaseModel):
     answer_cap_s: int
     voice_name: str | None
     voice_rate: float
+    candidate_background: str | None
+    skills: list[str] | None
+    years_experience: int | None
 
     model_config = {"from_attributes": True}
 
@@ -34,8 +42,15 @@ class ProfileUpdate(BaseModel):
     answer_cap_s: int | None = None
     voice_name: str | None = Field(default=None, max_length=MAX_VOICE_NAME_LENGTH)
     voice_rate: float | None = Field(default=None, ge=0.5, le=2.0)
+    # The saved "resume memory" — same caps as SessionCreate's matching fields (see
+    # app/models/interview_session.py), reused rather than duplicated.
+    candidate_background: str | None = Field(
+        default=None, max_length=MAX_CANDIDATE_BACKGROUND_LENGTH
+    )
+    skills: list[str] | None = None
+    years_experience: int | None = Field(default=None, ge=0, le=80)
 
-    @field_validator("display_name", "voice_name")
+    @field_validator("display_name", "voice_name", "candidate_background")
     @classmethod
     def _trim_whitespace(cls, value: str | None) -> str | None:
         if value is None:
@@ -52,3 +67,16 @@ class ProfileUpdate(BaseModel):
         if value is not None and value not in ANSWER_CAP_CHOICES:
             raise ValueError(f"answer_cap_s must be one of {ANSWER_CAP_CHOICES}")
         return value
+
+    @field_validator("skills")
+    @classmethod
+    def _clean_skills(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return value
+        cleaned = [skill.strip() for skill in value if skill.strip()]
+        if len(cleaned) > MAX_SKILLS:
+            raise ValueError(f"skills can have at most {MAX_SKILLS} entries")
+        for skill in cleaned:
+            if len(skill) > MAX_SKILL_LENGTH:
+                raise ValueError(f"each skill must be at most {MAX_SKILL_LENGTH} characters")
+        return cleaned or None

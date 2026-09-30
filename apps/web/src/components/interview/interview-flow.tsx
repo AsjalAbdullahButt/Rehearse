@@ -380,6 +380,9 @@ export function InterviewFlow({
           initialDifficulty={initialDifficulty}
           initialQuestionCount={initialQuestionCount}
           initialAnswerCapS={initialAnswerCapS ?? profile?.answer_cap_s}
+          initialCandidateBackground={profile?.candidate_background}
+          initialSkills={profile?.skills}
+          initialYearsExperience={profile?.years_experience}
           isSubmitting={false}
           onSubmit={handleSetupSubmit}
         />

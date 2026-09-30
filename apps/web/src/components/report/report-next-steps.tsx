@@ -84,11 +84,21 @@ export function ReportNextSteps({
   const sectionRef = useRef<HTMLDivElement>(null);
   const hasStartedCountdownRef = useRef(false);
 
+  // A real bug this fixes: `router.push` alone can serve `/interview` from Next's client-side
+  // Router Cache — a stale copy from *before* this session existed, or from a different
+  // question — instead of asking the server to actually resolve `?session=<id>` fresh. That
+  // showed up as landing back on the role-picker setup form instead of the next question.
+  // `router.refresh()` right after forces the destination to re-render from the server with the
+  // current searchParams, the same fix Next.js's own docs give for "I know server state changed,
+  // don't trust the client cache here."
+  function goToInterview() {
+    router.push(`/interview?session=${sessionId}`);
+    router.refresh();
+  }
+
   // Reuses the same countdown hook the live recording cap already uses — one setInterval, not a
   // hand-rolled chain of setTimeouts, ticking down and firing once at 0.
-  const secondsLeft = useCountdown(AUTO_ADVANCE_DELAY_S, isCountdownActive, () => {
-    router.push(`/interview?session=${sessionId}`);
-  });
+  const secondsLeft = useCountdown(AUTO_ADVANCE_DELAY_S, isCountdownActive, goToInterview);
 
   // The countdown only starts once this section actually scrolls into view, not the instant the
   // page loads — a report has a lot to read above it (score, transcript, strengths, ...), and
@@ -151,7 +161,7 @@ export function ReportNextSteps({
       ) : null}
 
       <div className="flex flex-wrap items-center justify-center gap-3">
-        <Button onClick={() => router.push(`/interview?session=${sessionId}`)}>
+        <Button onClick={goToInterview}>
           Continue interview — Question {questionNumber + 1} of {questionCount}
         </Button>
 

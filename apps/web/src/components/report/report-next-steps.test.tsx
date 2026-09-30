@@ -1,9 +1,12 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
+const { pushMock, refreshMock } = vi.hoisted(() => ({
+  pushMock: vi.fn(),
+  refreshMock: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, refresh: refreshMock }),
 }));
 
 import { ReportNextSteps } from "./report-next-steps";
@@ -48,6 +51,7 @@ function renderSteps(overrides: Partial<Parameters<typeof ReportNextSteps>[0]> =
 describe("ReportNextSteps", () => {
   beforeEach(() => {
     pushMock.mockClear();
+    refreshMock.mockClear();
     localStorage.clear();
     vi.stubGlobal("IntersectionObserver", ImmediatelyIntersectingObserver);
   });

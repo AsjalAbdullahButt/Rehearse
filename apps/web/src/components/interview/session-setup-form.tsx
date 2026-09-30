@@ -60,6 +60,9 @@ export function SessionSetupForm({
   initialDifficulty,
   initialQuestionCount,
   initialAnswerCapS,
+  initialCandidateBackground,
+  initialSkills,
+  initialYearsExperience,
   isSubmitting,
   onSubmit,
 }: {
@@ -76,6 +79,14 @@ export function SessionSetupForm({
    * starting at 120s regardless of what they configured there. A "repeat this setup" link can
    * override it with the exact cap that session used. */
   initialAnswerCapS?: number;
+  /** The candidate's saved "resume memory" from Settings (uploaded once, reused every session
+   * from then on) — pre-fills the same personalization fields a fresh per-session resume
+   * upload would, editable here like any other pre-fill. A fresh upload in *this* session
+   * (see handleResumeExtracted) still overwrites these, the same as it would overwrite anything
+   * typed by hand. */
+  initialCandidateBackground?: string | null;
+  initialSkills?: string[] | null;
+  initialYearsExperience?: number | null;
   isSubmitting: boolean;
   onSubmit: (value: SessionCreateInput) => void;
 }) {
@@ -90,12 +101,17 @@ export function SessionSetupForm({
     isTimeCapOption(initialAnswerCapS) ? initialAnswerCapS : DEFAULT_ANSWER_CAP_S,
   );
   const [company, setCompany] = useState("");
-  const [showPersonalize, setShowPersonalize] = useState(false);
+  const hasSavedResumeMemory = Boolean(
+    initialCandidateBackground || initialSkills?.length || initialYearsExperience,
+  );
+  const [showPersonalize, setShowPersonalize] = useState(hasSavedResumeMemory);
   const [industry, setIndustry] = useState("");
   const [jobDescription, setJobDescription] = useState("");
-  const [candidateBackground, setCandidateBackground] = useState("");
-  const [skills, setSkills] = useState("");
-  const [yearsExperience, setYearsExperience] = useState("");
+  const [candidateBackground, setCandidateBackground] = useState(initialCandidateBackground ?? "");
+  const [skills, setSkills] = useState(initialSkills?.join(", ") ?? "");
+  const [yearsExperience, setYearsExperience] = useState(
+    initialYearsExperience != null ? String(initialYearsExperience) : "",
+  );
   const [focusTopics, setFocusTopics] = useState("");
   const [interviewerStyle, setInterviewerStyle] = useState<InterviewerStyle | null>(null);
 
@@ -140,6 +156,16 @@ export function SessionSetupForm({
       </div>
 
       <ResumeUpload onExtracted={handleResumeExtracted} />
+      {hasSavedResumeMemory ? (
+        <p className="text-muted -mt-4 text-xs">
+          Using the background, skills, and experience saved in your{" "}
+          <a href="/settings" className="text-lime hover:underline">
+            Settings
+          </a>
+          . Upload a different resume above, or edit the fields below, to change it for this session
+          only.
+        </p>
+      ) : null}
 
       <div className="flex flex-col gap-3">
         <span className="text-muted text-xs font-medium tracking-wide uppercase">Role</span>

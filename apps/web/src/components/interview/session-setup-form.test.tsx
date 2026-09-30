@@ -83,4 +83,35 @@ describe("SessionSetupForm", () => {
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ role: "frontend" }));
   });
+
+  it("pre-fills and submits the saved resume background/skills/years from Settings", () => {
+    const onSubmit = renderForm({
+      initialRole: "backend",
+      initialCandidateBackground: "I have five years of backend experience.",
+      initialSkills: ["Python", "SQL"],
+      initialYearsExperience: 5,
+    });
+
+    // Personalization auto-expands when there's something saved to show, instead of hiding a
+    // pre-filled value behind a collapsed "+ Personalize further" toggle.
+    expect(screen.getByText("I have five years of backend experience.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidate_background: "I have five years of backend experience.",
+        skills: ["Python", "SQL"],
+        years_experience: 5,
+      }),
+    );
+  });
+
+  it("does not auto-expand personalization when nothing is saved yet", () => {
+    renderForm({ initialRole: "backend" });
+
+    expect(
+      screen.getByRole("button", { name: "+ Personalize further (optional)" }),
+    ).toHaveAttribute("aria-expanded", "false");
+  });
 });

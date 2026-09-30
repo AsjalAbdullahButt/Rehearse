@@ -17,9 +17,12 @@ vi.mock("@/lib/interview/server", () => ({
   fetchAnswerReport: fetchAnswerReportMock,
 }));
 
-const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
+const { pushMock, refreshMock } = vi.hoisted(() => ({
+  pushMock: vi.fn(),
+  refreshMock: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, refresh: refreshMock }),
 }));
 
 import ReportPage from "./page";
@@ -80,6 +83,7 @@ describe("ReportPage", () => {
   beforeEach(() => {
     vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
     pushMock.mockClear();
+    refreshMock.mockClear();
   });
 
   it("renders a 'feedback unavailable' state instead of throwing when feedback is null", async () => {

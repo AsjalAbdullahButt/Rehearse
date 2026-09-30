@@ -176,6 +176,88 @@ def test_update_profile_clears_display_name_with_a_whitespace_only_value(
     assert response.json()["display_name"] is None
 
 
+def test_update_profile_saves_resume_derived_background_for_reuse_across_sessions(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.patch(
+        "/v1/profile",
+        json={
+            "candidate_background": "I have five years of backend experience.",
+            "skills": ["Python", "SQL", "Docker"],
+            "years_experience": 5,
+        },
+        headers=_auth_headers(user),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["candidate_background"] == "I have five years of backend experience."
+    assert body["skills"] == ["Python", "SQL", "Docker"]
+    assert body["years_experience"] == 5
+
+    refetch = client.get("/v1/profile", headers=_auth_headers(user))
+    assert refetch.json()["candidate_background"] == "I have five years of backend experience."
+
+
+def test_get_profile_defaults_resume_fields_to_null(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.get("/v1/profile", headers=_auth_headers(user))
+
+    body = response.json()
+    assert body["candidate_background"] is None
+    assert body["skills"] is None
+    assert body["years_experience"] is None
+
+
+def test_update_profile_rejects_too_many_skills(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.patch(
+        "/v1/profile",
+        json={"skills": [f"skill-{i}" for i in range(21)]},
+        headers=_auth_headers(user),
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_profile_rejects_a_years_experience_out_of_range(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.patch(
+        "/v1/profile", json={"years_experience": 81}, headers=_auth_headers(user)
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_profile_clears_candidate_background_with_null(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+    client.patch(
+        "/v1/profile",
+        json={"candidate_background": "Some background."},
+        headers=_auth_headers(user),
+    )
+
+    response = client.patch(
+        "/v1/profile", json={"candidate_background": None}, headers=_auth_headers(user)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["candidate_background"] is None
+
+
 def test_profiles_are_independent_per_user(
     client: TestClient, register_user: Callable[..., dict[str, Any]]
 ) -> None:

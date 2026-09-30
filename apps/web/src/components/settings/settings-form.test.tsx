@@ -5,6 +5,7 @@ vi.mock("@/hooks/use-session-expiry", () => ({
   useSessionExpiry: () => vi.fn().mockResolvedValue(false),
 }));
 
+import { ToastProvider } from "@/components/ui/toast";
 import type { Profile } from "@/lib/interview/types";
 
 import { SettingsForm } from "./settings-form";
@@ -16,8 +17,21 @@ function profile(overrides: Partial<Profile> = {}): Profile {
     answer_cap_s: 120,
     voice_name: null,
     voice_rate: 1,
+    candidate_background: null,
+    skills: null,
+    years_experience: null,
     ...overrides,
   };
+}
+
+// ResumeUpload (rendered inside SettingsForm's new "Resume & background" section) needs a
+// ToastProvider ancestor — mirrors resume-upload.test.tsx's own render helper.
+function renderSettings(initialProfile: Profile) {
+  return render(
+    <ToastProvider>
+      <SettingsForm initialProfile={initialProfile} />
+    </ToastProvider>,
+  );
 }
 
 function lastRequestBody(): Record<string, unknown> {
@@ -31,7 +45,7 @@ describe("SettingsForm", () => {
   });
 
   it("has no target role selected by default", () => {
-    render(<SettingsForm initialProfile={profile()} />);
+    renderSettings(profile());
 
     expect(screen.getByRole("button", { name: "No default" })).toHaveAttribute(
       "aria-pressed",
@@ -40,13 +54,13 @@ describe("SettingsForm", () => {
   });
 
   it("pre-selects the saved target role", () => {
-    render(<SettingsForm initialProfile={profile({ target_role: "backend" })} />);
+    renderSettings(profile({ target_role: "backend" }));
 
     expect(screen.getByRole("button", { name: "Backend" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("saves the selected target role", async () => {
-    render(<SettingsForm initialProfile={profile()} />);
+    renderSettings(profile());
 
     fireEvent.click(screen.getByRole("button", { name: "Frontend" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -56,12 +70,88 @@ describe("SettingsForm", () => {
   });
 
   it("saves null when the target role is cleared back to No default", async () => {
-    render(<SettingsForm initialProfile={profile({ target_role: "backend" })} />);
+    renderSettings(profile({ target_role: "backend" }));
 
     fireEvent.click(screen.getByRole("button", { name: "No default" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
     expect(lastRequestBody()).toMatchObject({ target_role: null });
+  });
+
+  it("pre-fills and saves the display name", async () => {
+    renderSettings(profile({ display_name: "Ada" }));
+
+    const nameInput = screen.getByLabelText("Display name");
+    expect(nameInput).toHaveValue("Ada");
+
+    fireEvent.change(nameInput, { target: { value: "Ada Lovelace" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
+    expect(lastRequestBody()).toMatchObject({ display_name: "Ada Lovelace" });
+  });
+
+  it("clears the display name to null when emptied", async () => {
+    renderSettings(profile({ display_name: "Ada" }));
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
+    expect(lastRequestBody()).toMatchObject({ display_name: null });
+  });
+
+  it("pre-fills the saved resume background, skills, and years of experience", () => {
+    renderSettings(
+      profile({
+        candidate_background: "I have five years of backend experience.",
+        skills: ["Python", "SQL"],
+        years_experience: 5,
+      }),
+    );
+
+    expect(screen.getByLabelText("Your background")).toHaveValue(
+      "I have five years of backend experience.",
+    );
+    expect(screen.getByLabelText("Primary skills (comma-separated)")).toHaveValue("Python, SQL");
+    expect(screen.getByLabelText("Years of experience")).toHaveValue(5);
+  });
+
+  it("saves edited resume background, skills, and years of experience", async () => {
+    renderSettings(profile());
+
+    fireEvent.change(screen.getByLabelText("Your background"), {
+      target: { value: "I build backend systems." },
+    });
+    fireEvent.change(screen.getByLabelText("Primary skills (comma-separated)"), {
+      target: { value: "Python, Docker" },
+    });
+    fireEvent.change(screen.getByLabelText("Years of experience"), {
+      target: { value: "3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
+    expect(lastRequestBody()).toMatchObject({
+      candidate_background: "I build backend systems.",
+      skills: ["Python", "Docker"],
+      years_experience: 3,
+    });
+  });
+
+  it("disables Save changes until something is actually edited", async () => {
+    renderSettings(profile({ display_name: "Ada" }));
+
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Ada L." } });
+    expect(screen.getByRole("button", { name: "Save changes" })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
+
+    // A successful save becomes the new baseline — nothing left to save until edited again.
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
   });
 });
