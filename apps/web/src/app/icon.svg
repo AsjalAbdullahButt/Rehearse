@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#0A0B0F" />
+  <defs>
+    <clipPath id="mic-stand-bottom-half">
+      <rect x="0" y="16.64" width="32" height="15.36" />
+    </clipPath>
+  </defs>
+  <circle
+    cx="16"
+    cy="16.64"
+    r="6.24"
+    fill="none"
+    stroke="#D4FF5A"
+    stroke-width="2.24"
+    clip-path="url(#mic-stand-bottom-half)"
+  />
+  <rect x="15.04" y="20.16" width="1.92" height="4.8" fill="#D4FF5A" />
+  <rect x="10.56" y="24.96" width="10.88" height="1.6" rx="0.8" fill="#D4FF5A" />
+  <rect x="11.84" y="5.12" width="8.32" height="11.52" rx="4.16" fill="#D4FF5A" />
+</svg>
