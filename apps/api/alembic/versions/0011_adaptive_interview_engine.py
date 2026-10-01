@@ -26,6 +26,12 @@ down_revision = "0010"
 branch_labels = None
 depends_on = None
 
+# Must match every other migration's table-level charset/collation (see 0001_initial.py) — a new
+# table left to the server/database default collation (MySQL 8's utf8mb4_0900_ai_ci) is
+# incompatible with an existing utf8mb4_unicode_ci VARCHAR primary key for a foreign key
+# constraint (MySQL error 3780), even though the column types otherwise match exactly.
+_MYSQL_KW = {"mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"}
+
 
 def upgrade() -> None:
     op.create_table(
@@ -41,6 +47,7 @@ def upgrade() -> None:
         sa.Column("analysis_hash", sa.String(64), nullable=False),
         sa.Column("analysis_source", sa.String(16), nullable=False, server_default="default"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        **_MYSQL_KW,
     )
     op.create_index(
         "ux_job_targets_user_hash", "job_targets", ["user_id", "analysis_hash"], unique=True
@@ -60,6 +67,7 @@ def upgrade() -> None:
         sa.Column("importance", sa.String(12), nullable=False, server_default="required"),
         sa.Column("resume_evidence", sa.String(12), nullable=False, server_default="unknown"),
         sa.Column("source", sa.String(16), nullable=False, server_default="role_default"),
+        **_MYSQL_KW,
     )
     op.create_index(
         "ux_job_competency", "job_competencies", ["job_target_id", "competency"], unique=True
@@ -81,6 +89,7 @@ def upgrade() -> None:
         sa.Column("last_practiced_at", sa.DateTime(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
+        **_MYSQL_KW,
     )
     op.create_index(
         "ux_candidate_competency",
