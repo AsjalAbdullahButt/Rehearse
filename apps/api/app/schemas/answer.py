@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from app.models.enums import Category, SessionStatus
 from app.schemas.claims import ClaimOut
+from app.schemas.delivery import DeliveryReport, VisualDelivery
 from app.schemas.feedback import FeedbackReport
 from app.schemas.session import SessionQuestionOut
 from app.schemas.transcription import TranscriptPart
@@ -46,6 +47,10 @@ class AnswerReport(BaseModel):
     original_answer_id: str | None = None
     # Probe-worthy claims extracted from this answer (empty for older answers and retries).
     claims: list[ClaimOut] = []
+    # How the answer sounded (and, if the optional camera coach was on, looked) — kept apart from
+    # the content feedback above. None for answers recorded before delivery coaching existed.
+    delivery: DeliveryReport | None = None
+    visual_delivery: VisualDelivery | None = None
 
     model_config = {"from_attributes": True}
 

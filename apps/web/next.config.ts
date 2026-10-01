@@ -12,7 +12,9 @@ const isDev = process.env.NODE_ENV === "development";
 // library's heavy use of inline `style={{...}}` for animation needs it for style-src.
 const cspDirectives = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  // 'wasm-unsafe-eval' only lets WebAssembly modules compile (the optional camera coach's
+  // on-device face model); it does not enable eval() of JavaScript.
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data:",
   "font-src 'self'",
@@ -36,9 +38,13 @@ const nextConfig: NextConfig = {
           // Superseded by frame-ancestors in modern browsers, kept for older ones.
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // The app itself needs the mic (interview recording) from its own origin; nothing
-          // needs the camera or the user's location.
-          { key: "Permissions-Policy", value: "camera=(), geolocation=(), microphone=(self)" },
+          // The app itself needs the mic (interview recording) and, for the optional camera
+          // coach only, the camera — both from its own origin and never from an embedded frame.
+          // Nothing needs the user's location.
+          {
+            key: "Permissions-Policy",
+            value: "camera=(self), geolocation=(), microphone=(self)",
+          },
           ...(isDev
             ? []
             : [

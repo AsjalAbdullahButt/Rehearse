@@ -11,8 +11,11 @@ import { Waveform } from "@/components/interview/waveform";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
+import { CameraCoachPanel } from "@/components/interview/camera-coach-panel";
+import { useCameraCoach } from "@/hooks/use-camera-coach";
 import { useCountdown } from "@/hooks/use-countdown";
 import { useLiveCaptions } from "@/hooks/use-live-captions";
+import { useProsodyCapture } from "@/hooks/use-prosody-capture";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import { useSilenceNudge } from "@/hooks/use-silence-nudge";
 import { useSpeechVoices } from "@/hooks/use-speech-voices";
@@ -56,6 +59,8 @@ type FlowState =
       question: SessionQuestion;
       blob: Blob;
       idempotencyKey: string;
+      prosody?: string;
+      camera?: string;
     }
   | { stage: "analyzing"; session: InterviewSession; question: SessionQuestion }
   // `retry` is only set for a failed upload (the recording still exists and can be resent);
@@ -86,6 +91,7 @@ async function parseApiError(response: Response): Promise<ParsedApiError> {
 export function InterviewFlow({
   initialRole,
   panelAvailable = false,
+  cameraAvailable = false,
   initialCustomRole,
   initialFocusTopics,
   initialFocus,
@@ -98,6 +104,8 @@ export function InterviewFlow({
   initialRole?: Role;
   /** Whether the API accepts panel interviews (feature flag) — hides the toggle otherwise. */
   panelAvailable?: boolean;
+  /** Whether the API has the optional camera coach switched on. */
+  cameraAvailable?: boolean;
   initialCustomRole?: string;
   initialFocusTopics?: string[];
   initialFocus?: Focus;
@@ -207,6 +215,8 @@ export function InterviewFlow({
       formData.set("session_id", session.id);
       formData.set("session_question_id", question.id);
       formData.set("audio", blob, "answer.webm");
+      if (submission.prosody) formData.set("prosody", submission.prosody);
+      if (submission.camera) formData.set("camera", submission.camera);
 
       const response = await fetch("/api/interview/answers", {
         method: "POST",
@@ -255,6 +265,9 @@ export function InterviewFlow({
   // a no-deps effect (the same pattern useAudioRecorder's own onStoppedRef uses internally)
   // breaks that cycle without referencing `recorder` before it's declared.
   const recorderResetRef = useRef<() => void>(() => undefined);
+  // Read when a recording stops (handleStopped runs from the recorder's own async event, before
+  // the hooks that produce these are in scope) — same ref-updated-by-effect pattern as above.
+  const summariesRef = useRef<() => { prosody?: string; camera?: string }>(() => ({}));
 
   // Stopping a recording moves to "reviewing", not straight to upload — the user gets to
   // listen back and re-record before anything is sent. Called by useAudioRecorder's internal
@@ -279,6 +292,7 @@ export function InterviewFlow({
       question,
       blob,
       idempotencyKey: createIdempotencyKey(),
+      ...summariesRef.current(),
     });
   }
 
@@ -290,6 +304,23 @@ export function InterviewFlow({
   // FlowState stage — one less place for the two to fall out of sync, and it sidesteps ever
   // needing a setState-in-effect to keep them aligned.
   const isRecording = state.stage === "ready" && recorder.status === "recording";
+
+  const prosodyCapture = useProsodyCapture(recorder.pitchAnalyser);
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const camera = useCameraCoach({
+    enabled: cameraAvailable && cameraEnabled,
+    recording: isRecording,
+  });
+  useEffect(() => {
+    summariesRef.current = () => {
+      const voice = prosodyCapture.getSummary();
+      const visual = cameraAvailable && cameraEnabled ? camera.getSummary() : null;
+      return {
+        prosody: voice ? JSON.stringify(voice) : undefined,
+        camera: visual ? JSON.stringify(visual) : undefined,
+      };
+    };
+  });
   // recorder.status flips to "stopped" synchronously the instant .stop() is called, but the
   // MediaRecorder's own "stop" event (which triggers handleStopped → stage "reviewing") fires
   // asynchronously a moment later. Without this, the idle "Start recording" button would flash
@@ -637,6 +668,16 @@ export function InterviewFlow({
             </Button>
           </>
         )}
+
+        {cameraAvailable ? (
+          <CameraCoachPanel
+            enabled={cameraEnabled}
+            status={camera.status}
+            onToggle={setCameraEnabled}
+            attachVideo={camera.attachVideo}
+            disabled={isRecording || isPreparing || isFinalizing}
+          />
+        ) : null}
       </Card>
     </div>
   );

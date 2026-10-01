@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { RecoveryState } from "@/components/ui/recovery-state";
+import { DeliveryCard } from "@/components/report/delivery-card";
 import { ClaimsList } from "@/components/report/claims-list";
 import { AttemptComparison } from "@/components/report/attempt-comparison";
 import { RetryAnswer } from "@/components/report/retry-answer";
@@ -149,6 +150,28 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
           <p className="bg-amber/15 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">
             {report.confidence_note}
           </p>
+        ) : null}
+
+        {report.delivery ? (
+          <DeliveryCard
+            heading="Delivery"
+            items={report.delivery.items}
+            advice={report.delivery.advice}
+            footnote={
+              report.delivery.voice_measured
+                ? "Pitch, energy and volume are measured on your device while you speak; your audio is never saved. Delivery is separate from the content score above."
+                : "Pitch, energy and volume were not measured for this answer. Delivery is separate from the content score."
+            }
+          />
+        ) : null}
+
+        {report.visual_delivery ? (
+          <DeliveryCard
+            heading="Visual delivery (camera coach)"
+            items={report.visual_delivery.items}
+            advice={report.visual_delivery.advice}
+            footnote={report.visual_delivery.disclaimer}
+          />
         ) : null}
 
         <div>

@@ -673,4 +673,4 @@ async def test_panel_interviews_can_be_switched_off(
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "feature_disabled"
     features = client.get("/v1/features", headers=_auth_headers(user)).json()
-    assert features == {"panel_interview": False}
+    assert features == {"panel_interview": False, "camera_coach": False}

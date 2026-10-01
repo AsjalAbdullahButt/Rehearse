@@ -82,6 +82,10 @@ class Answer(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(255))
     # A retry is a new row pointing at the answer it re-attempts (never replacing it). Originals
     # have attempt_number 1 and original_answer_id NULL; session aggregates only count originals.
+    # Browser-measured voice summary (pitch/energy/volume) and optional camera-coach summary:
+    # a handful of numbers each. The audio and video themselves are never sent or stored.
+    prosody: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    camera: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     original_answer_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("answers.id", ondelete="CASCADE"), index=True

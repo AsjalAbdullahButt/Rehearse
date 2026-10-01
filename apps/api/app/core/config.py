@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")
     daily_answer_limit: int = Field(default=30, alias="DAILY_ANSWER_LIMIT")
 
+    enable_camera_coach: bool = Field(default=False, alias="ENABLE_CAMERA_COACH")
+    """Feature flag for the optional camera coach. Off by default: camera-derived summaries sent
+    with an answer are ignored (not stored) and GET /v1/features reports it disabled."""
+
     enable_panel_interview: bool = Field(default=True, alias="ENABLE_PANEL_INTERVIEW")
     """Feature flag for panel interviews. Off: `panel: true` is rejected at session creation and
     GET /v1/features reports it disabled so the UI hides the option."""

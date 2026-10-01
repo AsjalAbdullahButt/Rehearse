@@ -1,6 +1,7 @@
-from typing import Annotated, Protocol
+from typing import Annotated, Any, Protocol
 
 from fastapi import APIRouter, Depends, File, Form, Header, Request, Response, UploadFile, status
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from app.models.answer import Answer
 from app.models.user import User
 from app.schemas.answer import AnswerReport
 from app.schemas.attempts import AttemptComparison
+from app.schemas.delivery import CameraSummary, ProsodySummary
 from app.schemas.feedback import compute_overall_score
 from app.services import claims as claims_service
 from app.services import comparison, llm, mastery, repo, stt
@@ -24,12 +26,26 @@ from app.services.question_orchestrator import NoQuestionAvailableError, select_
 
 router = APIRouter()
 
+
 UPLOAD_CHUNK_BYTES = 256 * 1024
 ALLOWED_AUDIO_CONTENT_TYPES = {"audio/webm", "audio/ogg"}
 DURATION_CAP_GRACE_S = 10
 IDEMPOTENCY_KEY_TTL_S = 24 * 60 * 60
 MAX_IDEMPOTENCY_KEY_LENGTH = 128
 MAX_ATTEMPTS_PER_QUESTION = 5
+# A summary is a dozen numbers; anything bigger is not one.
+MAX_SUMMARY_FIELD_LENGTH = 2000
+
+
+def _parse_summary[T: BaseModel](model: type[T], raw: str | None) -> dict[str, Any] | None:
+    """Validated dict of a browser-measured summary, or None. Delivery coaching is optional, so
+    malformed or out-of-range client data is dropped rather than failing the whole answer."""
+    if not raw:
+        return None
+    try:
+        return model.model_validate_json(raw).model_dump()
+    except ValidationError:
+        return None
 
 
 def _base_content_type(content_type: str | None) -> str:
@@ -97,6 +113,8 @@ async def create_answer(
     session_question_id: Annotated[str, Form()],
     audio: Annotated[UploadFile, File()],
     retry_of_answer_id: Annotated[str | None, Form(max_length=36)] = None,
+    prosody: Annotated[str | None, Form(max_length=MAX_SUMMARY_FIELD_LENGTH)] = None,
+    camera: Annotated[str | None, Form(max_length=MAX_SUMMARY_FIELD_LENGTH)] = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
@@ -257,6 +275,9 @@ async def create_answer(
         resume_text=session.candidate_background,
     )
     answer.idempotency_key = idempotency_key
+    answer.prosody = _parse_summary(ProsodySummary, prosody)
+    # Camera data is only kept while the feature flag is on, and only as the validated summary.
+    answer.camera = _parse_summary(CameraSummary, camera) if settings.enable_camera_coach else None
     answer.attempt_number = attempt_number
     answer.original_answer_id = original.id if original else None
     try:

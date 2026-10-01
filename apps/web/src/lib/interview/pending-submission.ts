@@ -8,6 +8,10 @@ export interface PendingAnswerSubmission {
    * that same recording, so a lost-response retry replays the original request instead of the
    * API processing (and billing Groq for) the same answer twice. A re-record gets a new one. */
   idempotencyKey: string;
+  /** Pre-serialised on-device summaries (voice pitch/energy; optional camera head pose) measured
+   * while this recording was made — a few numbers, never audio or video. */
+  prosody?: string;
+  camera?: string;
 }
 
 /** One per recording, not per request — call this exactly once when a recording is finalized

@@ -22,6 +22,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "playwright-report/**",
     "test-results/**",
+    // Vendored third-party WebAssembly glue copied by scripts/sync-mediapipe.mjs.
+    "public/mediapipe/**",
   ]),
 ]);
 

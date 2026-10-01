@@ -14,6 +14,7 @@ from app.models.interview_claim import InterviewClaim
 from app.models.interview_session import InterviewSession
 from app.schemas.answer import AnswerReport
 from app.schemas.claims import ClaimOut
+from app.schemas.delivery import CameraSummary, ProsodySummary
 from app.schemas.feedback import (
     BehavioralRubric,
     ConsistencyNoteOut,
@@ -26,7 +27,7 @@ from app.schemas.feedback import (
 from app.schemas.session import SessionQuestionOut
 from app.schemas.transcription import TranscriptionResult, WordTiming
 from app.services import claims as claims_service
-from app.services import metrics, repo
+from app.services import delivery, metrics, repo
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -233,4 +234,13 @@ async def to_answer_report(
         attempt_number=answer.attempt_number,
         original_answer_id=answer.original_answer_id,
         claims=[claim_out(row) for row in claim_rows],
+        delivery=delivery.build_delivery(
+            words,
+            duration_s=float(answer.duration_s),
+            wpm=float(answer.wpm),
+            prosody=ProsodySummary.model_validate(answer.prosody) if answer.prosody else None,
+        ),
+        visual_delivery=delivery.build_visual_delivery(
+            CameraSummary.model_validate(answer.camera) if answer.camera else None
+        ),
     )

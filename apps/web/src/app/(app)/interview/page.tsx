@@ -76,6 +76,7 @@ export default async function InterviewPage({
     <InterviewFlow
       initialRole={initialRole}
       panelAvailable={features?.panel_interview ?? false}
+      cameraAvailable={features?.camera_coach ?? false}
       initialCustomRole={initialCustomRole}
       initialFocusTopics={initialFocusTopics}
       initialFocus={toValidFocus(focus)}

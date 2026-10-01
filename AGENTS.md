@@ -675,6 +675,46 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
     `InterviewFlow`'s panelist header is not covered by an automated test (same jsdom limitation
     as the rest of that component).
 
+- **Delivery coaching, round 4 (2026-10-04) — Phase 4 of the adaptive-platform prompt (Features
+  7, 8).** Delivery is reported *separately* from content; nothing here feeds the rubric,
+  mastery or readiness scores.
+  - **Voice/prosody (7), split by where each signal can be measured honestly.** *Server, from
+    Whisper word timings already stored:* pace (with sped-up stretches over 10s windows), pause
+    control (long/medium pauses), time to first word, speaking rhythm (variation in phrase
+    length). *Browser, on-device:* `lib/audio/prosody.ts` (`ProsodyAccumulator`: normalised-
+    autocorrelation pitch 70-400 Hz, RMS energy variation, volume steadiness) fed by
+    `use-prosody-capture` from a second 2048-sample `AnalyserNode` on the same mic stream
+    (`useAudioRecorder.pitchAnalyser`; the 128-sample `analyser` stays for the waveform). The
+    browser sends only a ~7-number `prosody` JSON form field; the server validates every bound
+    (`ProsodySummary`), drops malformed data instead of failing the answer, stores it in
+    `answers.prosody`, and `services/delivery.py` turns thresholds into ratings
+    (good/ok/needs_work/**not_measured**) and composed advice — never a numeric "prosody score".
+    These numbers are client-supplied and unauthenticated; the report says they are measured on
+    the device. Fewer than ~40 voiced frames, or untrackable pitch, reads "not measured".
+  - **Camera coach (8), behind `ENABLE_CAMERA_COACH` (default off).** Real on-device analysis:
+    MediaPipe `FaceLandmarker` (`@mediapipe/tasks-vision`, Apache-2.0) with the model checked in
+    at `public/mediapipe/face_landmarker.task` and the WASM runtime copied from node_modules into
+    the gitignored `public/mediapipe/wasm/` by `scripts/sync-mediapipe.mjs` (`predev`/`prebuild`)
+    so everything loads from our own origin. `lib/camera/pose.ts` estimates head turn/tilt from
+    landmark geometry (an approximation, documented as one) and summarises face-in-frame ratio,
+    share of time with the head turned away, sustained look-away events (≥0.7s) and head
+    movement. **No eye-contact/gaze, posture or facial-expression claims are made** — not
+    reliably measurable this way, and expression would drift toward emotion inference. Opt-in per
+    interview via `CameraCoachPanel` (off by default, states the privacy terms); video/frames
+    never leave the device, only the 6-number `camera` summary is sent (and the API ignores it
+    unless the flag is on). Shown as its own "Visual delivery" section with a disclaimer.
+  - **Security headers changed deliberately:** `Permissions-Policy` is now `camera=(self)` (was
+    `camera=()`), and CSP `script-src` gained `'wasm-unsafe-eval'` (WebAssembly compilation only,
+    not JS eval). Nothing else loosened.
+  - **Verified in a real browser** (headless Chromium, production build, fake devices): the
+    camera pipeline loads the model + WASM under the app's CSP and runs at ~10 fps (the fake
+    camera has no face, so presence read 0 as it should), and the mic pipeline captured frames
+    and statistics from the fake audio device. **Not verified:** accuracy on a real face or real
+    speech — pitch/energy thresholds are reasonable defaults checked on synthetic tones only.
+  - **Tests.** API 381 → 406 (`test_delivery.py`), web 229 → ~250 (`prosody`, `pose`,
+    `DeliveryCard`, `CameraCoachPanel`, report page). Migration 0014 (SQLite only).
+    `InterviewFlow`'s capture wiring has no jsdom test (same limitation as the rest of it).
+
 ## Known gaps / deliberate scope cuts from Phase 2
 
 - **No design mockup files, still.** `/design` was empty; Phase 2 was built from a dark-mode PDF
@@ -720,8 +760,8 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   historical. Cross-browser back-navigation protection, individual answer links from summaries,
   and a persisted explicit early-end state remain follow-ups requiring further UI/API work.
 
-- **Adaptive-platform master prompt — not yet built (as of 2026-10-03):** prosody/pitch/energy
-  analysis (7), camera coaching (8), coding/system-design/case modes (13), shareable reports (15),
+- **Adaptive-platform master prompt — not yet built (as of 2026-10-04):** coding/system-design/
+  case modes (13), shareable reports (15),
   email verification/password reset, CSP nonce migration, and the dashboard/report redesign.
   Also missing for what *is* built: an "ended early" button in the web UI, a mastery-over-time history chart, a dashboard/"continue training" home,
   per-session `SessionCompetencyState` table (session coverage is derived from `session_questions`

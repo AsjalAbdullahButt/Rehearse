@@ -109,6 +109,12 @@ export function AccountPrivacyPanel() {
             and shown in your report. Deleting a session removes them.
           </li>
           <li>
+            • Voice delivery (pitch, energy, volume) is measured on your device from the microphone
+            and saved only as a handful of summary numbers — never audio. The optional camera coach,
+            when you turn it on, works the same way with your camera: nothing is saved or uploaded
+            except a similar summary, and it never affects your scores.
+          </li>
+          <li>
             • Deleting your account permanently removes your transcripts, feedback, and session
             history — this cannot be undone.
           </li>

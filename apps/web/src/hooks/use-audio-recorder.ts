@@ -14,6 +14,10 @@ export interface AudioRecorder {
   status: RecorderStatus;
   error: RecorderError | null;
   analyser: AnalyserNode | null;
+  /** A second tap on the same microphone with a larger window (2048 samples), which is what
+   * on-device pitch tracking needs; the 128-sample `analyser` above is sized for the waveform
+   * display. Same stream, nothing recorded. */
+  pitchAnalyser: AnalyserNode | null;
   /** True from the moment `start()` is called until getUserMedia settles — covers the gap
    * before `status` has any way to reflect "requesting permission" (it only distinguishes
    * idle/recording/stopped). Callers should disable their "Start recording" control on this,
@@ -60,6 +64,7 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [error, setError] = useState<RecorderError | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const [pitchAnalyser, setPitchAnalyser] = useState<AnalyserNode | null>(null);
   const [isStarting, setIsStarting] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -88,6 +93,7 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
     }
     audioContextRef.current = null;
     setAnalyser(null);
+    setPitchAnalyser(null);
   }, []);
 
   useEffect(() => {
@@ -127,6 +133,10 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
       analyserNode.fftSize = 128;
       source.connect(analyserNode);
       setAnalyser(analyserNode);
+      const pitchNode = audioContext.createAnalyser();
+      pitchNode.fftSize = 2048;
+      source.connect(pitchNode);
+      setPitchAnalyser(pitchNode);
 
       const mimeType = MediaRecorder.isTypeSupported(PREFERRED_MIME_TYPE)
         ? PREFERRED_MIME_TYPE
@@ -175,5 +185,5 @@ export function useAudioRecorder(onStopped: (blob: Blob) => void): AudioRecorder
     setStatus((current) => (current === "stopped" ? "idle" : current));
   }, []);
 
-  return { status, error, analyser, isStarting, start, stop, reset };
+  return { status, error, analyser, pitchAnalyser, isStarting, start, stop, reset };
 }

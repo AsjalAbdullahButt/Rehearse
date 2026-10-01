@@ -427,4 +427,36 @@ describe("ReportPage", () => {
     expect(screen.queryByText("Possible recruiter follow-up")).not.toBeInTheDocument();
     expect(screen.queryByText("Claims a recruiter may ask about")).not.toBeInTheDocument();
   });
+
+  it("shows delivery and visual delivery as their own sections, apart from content", async () => {
+    fetchAnswerReportMock.mockResolvedValue({
+      ...baseReport(),
+      delivery: {
+        voice_measured: true,
+        advice: ["Your pace was controlled, but your energy barely changed."],
+        items: [{ key: "pace", label: "Pace", rating: "good", detail: "150 wpm is comfortable." }],
+      },
+      visual_delivery: {
+        advice: ["Your on-camera presentation looked steady and well framed."],
+        disclaimer: "Presentation coaching only, measured on your device.",
+        items: [{ key: "framing", label: "In frame", rating: "good", detail: "In frame 97%." }],
+      },
+    });
+
+    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+
+    expect(screen.getByRole("region", { name: "Delivery" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /Visual delivery/ })).toBeInTheDocument();
+    expect(screen.getByText(/never saved/)).toBeInTheDocument();
+    expect(screen.getByText(/Presentation coaching only/)).toBeInTheDocument();
+  });
+
+  it("omits delivery sections for answers recorded before delivery coaching", async () => {
+    fetchAnswerReportMock.mockResolvedValue(baseReport());
+
+    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+
+    expect(screen.queryByRole("region", { name: "Delivery" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /Visual delivery/ })).not.toBeInTheDocument();
+  });
 });

@@ -212,6 +212,29 @@ export interface ConsistencyNote {
 
 export interface Features {
   panel_interview: boolean;
+  camera_coach: boolean;
+}
+
+export type DeliveryRating = "good" | "ok" | "needs_work" | "not_measured";
+
+/** Mirrors apps/api/app/schemas/delivery.py. */
+export interface DeliveryItem {
+  key: string;
+  label: string;
+  rating: DeliveryRating;
+  detail: string;
+}
+
+export interface DeliveryReport {
+  items: DeliveryItem[];
+  advice: string[];
+  voice_measured: boolean;
+}
+
+export interface VisualDelivery {
+  items: DeliveryItem[];
+  advice: string[];
+  disclaimer: string;
 }
 
 export interface ApiTranscriptPart {
@@ -297,6 +320,8 @@ export interface AnswerReport {
   attempt_number: number;
   original_answer_id: string | null;
   claims?: Claim[];
+  delivery?: DeliveryReport | null;
+  visual_delivery?: VisualDelivery | null;
 }
 
 export interface ProgressRow {
