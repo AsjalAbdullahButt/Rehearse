@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, SmallInteger, String, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,6 +37,12 @@ class SessionQuestion(Base):
     source: Mapped[QuestionSource] = mapped_column(
         SAEnum(QuestionSource, native_enum=False, length=16, validate_strings=True), nullable=False
     )
+    # What the adaptive engine was testing with this question, and why it chose it — nullable
+    # for rows from before the engine existed. `selection_reason` is the audit trail for "why did
+    # I get this question?" (coverage / deepen / diagnostic / fallback).
+    competency: Mapped[str | None] = mapped_column(String(64))
+    level: Mapped[int | None] = mapped_column(SmallInteger)
+    selection_reason: Mapped[str | None] = mapped_column(String(24))
     question_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("questions.id", ondelete="SET NULL")
     )

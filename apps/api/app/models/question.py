@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, String, Text
+from sqlalchemy import JSON, Boolean, SmallInteger, String, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,4 +27,12 @@ class Question(Base):
         SAEnum(Category, native_enum=False, length=16, validate_strings=True), nullable=False
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    # Taxonomy metadata for the adaptive engine. All nullable: the original bank rows predate it,
+    # and the engine falls back to competency.infer_competency and the coarse easy/medium/hard
+    # difficulty for them rather than needing a risky text-based backfill.
+    competency: Mapped[str | None] = mapped_column(String(64), index=True)
+    subtopic: Mapped[str | None] = mapped_column(String(80))
+    level: Mapped[int | None] = mapped_column(SmallInteger)
+    expected_concepts: Mapped[list[str] | None] = mapped_column(JSON)
+    tags: Mapped[list[str] | None] = mapped_column(JSON)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

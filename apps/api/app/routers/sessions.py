@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.errors import ApiError
 from app.db import get_db
-from app.models.enums import Category
+from app.models.enums import Category, SessionStatus
 from app.models.interview_session import InterviewSession
 from app.models.session_question import SessionQuestion
 from app.models.user import User
@@ -18,12 +18,9 @@ from app.schemas.session import (
     SessionQuestionOut,
     SessionSummary,
 )
-from app.services import repo
-from app.services.question_orchestrator import (
-    NoQuestionAvailableError,
-    category_for_position,
-    select_next_question,
-)
+from app.services import job_service, repo
+from app.services.job_service import role_key_for_title
+from app.services.question_orchestrator import NoQuestionAvailableError, select_next_question
 
 router = APIRouter()
 
@@ -43,10 +40,25 @@ async def create_session(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SessionOut:
+    role_key = role_key_for_title(body.role)
+    preset = job_service.preset_role(role_key)
+    role_title = None if preset else body.role
+    target = await job_service.resolve_job_target(
+        db,
+        user_id=user.id,
+        role_key=role_key,
+        role_title=body.role,
+        company=body.company,
+        job_description=body.job_description,
+        candidate_background=body.candidate_background,
+    )
+
     session = await repo.create_session(
         db,
         user_id=user.id,
-        role=body.role,
+        role=role_key,
+        role_title=role_title,
+        job_target_id=target.id if target else None,
         difficulty=body.difficulty,
         experience_level=body.experience_level,
         focus=body.focus,
@@ -63,11 +75,8 @@ async def create_session(
         language=body.language,
     )
 
-    category = category_for_position(session.focus, 1)
     try:
-        text, source, question_id = await select_next_question(
-            db, session=session, category=category, prior_follow_up=None
-        )
+        selected = await select_next_question(db, session=session, prior_follow_up=None)
     except NoQuestionAvailableError as exc:
         raise ApiError(
             "no_questions_available",
@@ -79,10 +88,13 @@ async def create_session(
         db,
         session_id=session.id,
         sequence_number=1,
-        text=text,
-        category=category,
-        source=source,
-        question_id=question_id,
+        text=selected.text,
+        category=selected.category,
+        source=selected.source,
+        question_id=selected.question_id,
+        competency=selected.competency,
+        level=selected.level,
+        selection_reason=selected.reason,
     )
 
     return _session_out(session, first_question)
@@ -112,6 +124,33 @@ async def delete_session(
         raise ApiError(
             "session_not_found", "Session not found.", status_code=status.HTTP_404_NOT_FOUND
         )
+
+
+@router.post("/sessions/{session_id}/end", response_model=SessionOut)
+async def end_session_early(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SessionOut:
+    """Persists a deliberate early exit as ENDED_EARLY so reports never present an unfinished
+    interview as complete. Only an in-progress session can be ended (see
+    SESSION_STATUS_TRANSITIONS); ending a finished one is a 409, not a silent no-op."""
+    session = await repo.get_session_for_user(db, session_id=session_id, user_id=user.id)
+    if session is None:
+        raise ApiError(
+            "session_not_found", "Session not found.", status_code=status.HTTP_404_NOT_FOUND
+        )
+    changed = await repo.transition_session_status(
+        db, session_id=session.id, new_status=SessionStatus.ENDED_EARLY
+    )
+    if not changed:
+        raise ApiError(
+            "session_not_active",
+            "This interview has already finished.",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    await db.refresh(session)
+    return _session_out(session)
 
 
 @router.get("/sessions/{session_id}", response_model=SessionSummary)

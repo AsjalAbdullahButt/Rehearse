@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.languages import SUPPORTED_LANGUAGES
 from app.models.enums import (
     Category,
     Difficulty,
@@ -9,7 +10,6 @@ from app.models.enums import (
     Focus,
     InterviewerStyle,
     QuestionSource,
-    Role,
     SessionStatus,
 )
 from app.models.interview_session import (
@@ -19,15 +19,20 @@ from app.models.interview_session import (
     MAX_FOCUS_TOPICS,
     MAX_INDUSTRY_LENGTH,
     MAX_JOB_DESCRIPTION_LENGTH,
+    MAX_ROLE_TITLE_LENGTH,
     MAX_SKILL_LENGTH,
     MAX_SKILLS,
     QUESTION_COUNT_CHOICES,
 )
 from app.models.profile import ANSWER_CAP_CHOICES
+from app.services.job_service import clean_role_title
 
 
 class SessionCreate(BaseModel):
-    role: Role
+    # A preset role slug ("backend") or any free-text professional role ("AI Automation
+    # Engineer"). Custom roles are interviewed via generated questions and an analysed
+    # competency plan — see app/services/job_service.py.
+    role: str = Field(min_length=2, max_length=MAX_ROLE_TITLE_LENGTH)
     difficulty: Difficulty
     experience_level: ExperienceLevel
     focus: Focus
@@ -44,6 +49,21 @@ class SessionCreate(BaseModel):
     years_experience: int | None = Field(default=None, ge=0, le=80)
     interviewer_style: InterviewerStyle | None = None
     language: str | None = Field(default=None, max_length=32)
+
+    @field_validator("role")
+    @classmethod
+    def _clean_role(cls, value: str) -> str:
+        return clean_role_title(value)
+
+    @field_validator("language")
+    @classmethod
+    def _supported_language(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        code = value.strip().lower()
+        if code not in SUPPORTED_LANGUAGES:
+            raise ValueError(f"language must be one of {sorted(SUPPORTED_LANGUAGES)}")
+        return code
 
     @field_validator("question_count")
     @classmethod
@@ -94,6 +114,9 @@ class SessionQuestionOut(BaseModel):
     text: str
     category: Category
     source: QuestionSource
+    competency: str | None = None
+    level: int | None = None
+    selection_reason: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -101,7 +124,8 @@ class SessionQuestionOut(BaseModel):
 class SessionOut(BaseModel):
     id: str
     user_id: str
-    role: Role
+    role: str
+    role_title: str | None
     difficulty: Difficulty
     experience_level: ExperienceLevel | None
     focus: Focus
@@ -111,6 +135,7 @@ class SessionOut(BaseModel):
     industry: str | None
     interviewer_style: InterviewerStyle | None
     language: str | None
+    job_target_id: str | None
     status: SessionStatus
     current_question_number: int
     started_at: datetime

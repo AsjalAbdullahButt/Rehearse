@@ -24,6 +24,7 @@ import {
   stashPendingSubmission,
   takePendingSubmission,
 } from "@/lib/interview/pending-submission";
+import { speechTagForLanguage } from "@/lib/interview/types";
 import type {
   AnswerReport,
   Difficulty,
@@ -311,6 +312,7 @@ export function InterviewFlow({
   // this flow speaks aloud (the question itself, the silence nudge, "repeat the question"), so
   // Settings' voice/rate controls actually take effect here instead of only being saved and
   // never read.
+  const speechTag = speechTagForLanguage("session" in state ? state.session.language : null);
   const voices = useSpeechVoices();
   const speak = useCallback(
     (text: string) => {
@@ -319,10 +321,11 @@ export function InterviewFlow({
       const voice = voices.find((candidate) => candidate.name === profile?.voice_name);
       if (voice) utterance.voice = voice;
       utterance.rate = profile?.voice_rate ?? 1;
+      utterance.lang = speechTag;
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     },
-    [voices, profile?.voice_name, profile?.voice_rate],
+    [voices, profile?.voice_name, profile?.voice_rate, speechTag],
   );
 
   const readyQuestionText = state.stage === "ready" ? state.question.text : null;
@@ -345,7 +348,7 @@ export function InterviewFlow({
   );
 
   const voiceActivity = useVoiceActivity(recorder.analyser, isRecording);
-  const captions = useLiveCaptions(isRecording);
+  const captions = useLiveCaptions(isRecording, speechTag);
 
   const [showSilenceNudge, setShowSilenceNudge] = useState(false);
   const silenceNudge = useSilenceNudge(voiceActivity.isSpeaking, isRecording, () =>
@@ -532,8 +535,7 @@ export function InterviewFlow({
     setShowSilenceNudge(false);
     silenceNudge.reset();
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(question.text));
+    speak(question.text);
   }
 
   return (

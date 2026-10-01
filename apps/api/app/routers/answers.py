@@ -7,18 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.errors import ApiError
+from app.core.languages import resolve_language
 from app.core.limits import MAX_AUDIO_FILE_BYTES
 from app.core.rate_limit import client_ip_key, enforce_rate_limit, user_or_ip_key
 from app.db import get_db
 from app.models.user import User
 from app.schemas.answer import AnswerReport
+from app.schemas.feedback import compute_overall_score
 from app.services import feedback as feedback_service
-from app.services import llm, repo, stt
-from app.services.question_orchestrator import (
-    NoQuestionAvailableError,
-    category_for_position,
-    select_next_question,
-)
+from app.services import llm, mastery, repo, stt
+from app.services.interviewer_policy import policy_for
+from app.services.question_orchestrator import NoQuestionAvailableError, select_next_question
 
 router = APIRouter()
 
@@ -189,7 +188,11 @@ async def create_answer(
 
     # Transcribed in memory and never written to disk or persisted — only the resulting text
     # (and what's derived from it) gets stored.
-    transcription = await stt.transcribe(audio_bytes, audio.filename or "answer.webm")
+    transcription = await stt.transcribe(
+        audio_bytes,
+        audio.filename or "answer.webm",
+        language=resolve_language(session.language).whisper_code,
+    )
 
     if transcription.duration_s > session.answer_cap_s + DURATION_CAP_GRACE_S:
         raise ApiError(
@@ -211,6 +214,8 @@ async def create_answer(
         question_text=session_question.text,
         transcript=transcription.transcript,
         candidate_context=session.personalization_context(),
+        policy=policy_for(session.interviewer_style),
+        language=session.language,
     )
 
     answer = feedback_service.build_answer(
@@ -243,18 +248,29 @@ async def create_answer(
                 return await feedback_service.to_answer_report(db, answer=existing, session=session)
         raise
 
+    # Feed the answer into the candidate's persistent competency model before choosing what to
+    # ask next, so the very next question already reflects it.
+    if session_question.competency:
+        await mastery.record_answer_evidence(
+            db,
+            user_id=user.id,
+            role=session.role,
+            competency=session_question.competency,
+            score_0_to_10=compute_overall_score(llm_feedback.rubric),
+            level=session_question.level,
+        )
+
     # Advance the session: either the next question in sequence, or completion.
     if session_question.sequence_number >= session.question_count:
         await repo.mark_session_completed(db, session_id=session.id)
     else:
         next_position = session_question.sequence_number + 1
-        next_category = category_for_position(session.focus, next_position)
         try:
-            text, source, question_id = await select_next_question(
+            selected = await select_next_question(
                 db,
                 session=session,
-                category=next_category,
                 prior_follow_up=llm_feedback.follow_up_question,
+                previous_answer_summary="; ".join(llm_feedback.improvements)[:400] or None,
             )
         except NoQuestionAvailableError:
             # No bank question left and no usable follow-up — end the session early rather than
@@ -265,10 +281,13 @@ async def create_answer(
                 db,
                 session_id=session.id,
                 sequence_number=next_position,
-                text=text,
-                category=next_category,
-                source=source,
-                question_id=question_id,
+                text=selected.text,
+                category=selected.category,
+                source=selected.source,
+                question_id=selected.question_id,
+                competency=selected.competency,
+                level=selected.level,
+                selection_reason=selected.reason,
             )
 
     return await feedback_service.to_answer_report(db, answer=saved, session=session)

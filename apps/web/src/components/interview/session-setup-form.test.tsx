@@ -34,6 +34,43 @@ describe("SessionSetupForm", () => {
     expect(screen.getByRole("button", { name: "Start" })).not.toBeDisabled();
   });
 
+  it("lets the candidate interview for a custom role not in the preset list", () => {
+    const onSubmit = renderForm();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom role" }), {
+      target: { value: "  DevOps Engineer " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ role: "DevOps Engineer" }));
+  });
+
+  it("a typed custom role overrides a chosen preset, and picking a preset clears it", () => {
+    const onSubmit = renderForm();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom role" }), {
+      target: { value: "Cloud Engineer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ role: "Cloud Engineer" }));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Frontend" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ role: "frontend" }));
+  });
+
+  it("sends the chosen interview language, defaulting to English", () => {
+    const onSubmit = renderForm();
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ language: "en" }));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Urdu" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ language: "ur" }));
+  });
+
   it("defaults the time cap to 120s when no initial value is given", () => {
     const onSubmit = renderForm();
 

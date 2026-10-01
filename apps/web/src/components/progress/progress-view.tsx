@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { OptionPill } from "@/components/ui/option-pill";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import { ROLE_OPTIONS } from "@/lib/interview/types";
-import type { Category, ProgressRow, Role } from "@/lib/interview/types";
+import type { Category, ProgressRow } from "@/lib/interview/types";
 
 const DIFFICULTY_TONE = { easy: "mint", medium: "amber", hard: "coral" } as const;
 
@@ -30,7 +30,10 @@ const CATEGORY_LABEL: Record<Category, string> = {
 const CATEGORY_ORDER: Category[] = ["behavioral", "technical", "situational"];
 
 function roleName(slug: string): string {
-  return ROLE_OPTIONS.find((option) => option.slug === slug)?.name ?? slug;
+  const preset = ROLE_OPTIONS.find((option) => option.slug === slug)?.name;
+  if (preset) return preset;
+  // A custom role is stored as its slugified title ('devops-engineer').
+  return slug.replace(/-/g, " ").replace(/\w/g, (char) => char.toUpperCase());
 }
 
 function formatAvg(value: number | null, digits = 0): string {
@@ -43,7 +46,7 @@ function formatDate(iso: string): string {
 
 export function ProgressView({ sessions: initialSessions }: { sessions: ProgressRow[] }) {
   const handleSessionExpiry = useSessionExpiry();
-  const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
   const [sessions, setSessions] = useState(initialSessions);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -78,7 +81,7 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
   }
 
   const rolesPresent = useMemo(
-    () => Array.from(new Set(sessions.map((row) => row.role))) as Role[],
+    () => Array.from(new Set(sessions.map((row) => row.role))) as string[],
     [sessions],
   );
 

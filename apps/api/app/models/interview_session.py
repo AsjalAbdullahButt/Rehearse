@@ -12,7 +12,6 @@ from app.models.enums import (
     ExperienceLevel,
     Focus,
     InterviewerStyle,
-    Role,
     SessionStatus,
 )
 from app.models.profile import ANSWER_CAP_CHOICES
@@ -31,6 +30,7 @@ MAX_FOCUS_TOPICS = 10
 MAX_FOCUS_TOPIC_LENGTH = 80
 MAX_SKILLS = 20
 MAX_SKILL_LENGTH = 60
+MAX_ROLE_TITLE_LENGTH = 80
 
 
 class InterviewSession(Base):
@@ -57,8 +57,13 @@ class InterviewSession(Base):
     # Same length as the existing column (was a plain String(64)) so this is a Python-side
     # typing change only — no DDL diff, no migration needed. native_enum=False matches
     # Question.role: a portable VARCHAR + Python-side validation, not a MySQL-native ENUM.
-    role: Mapped[Role] = mapped_column(
-        SAEnum(Role, native_enum=False, length=64, validate_strings=True), nullable=False
+    # A preset Role slug, or — for a custom role — the slugified title (see
+    # app/services/job_service.py). A plain string: the DDL was always VARCHAR(64), and a custom
+    # role can't be a closed enum. `role_title` carries the display name for custom roles.
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    role_title: Mapped[str | None] = mapped_column(String(MAX_ROLE_TITLE_LENGTH))
+    job_target_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("job_targets.id", ondelete="SET NULL")
     )
     difficulty: Mapped[Difficulty] = mapped_column(
         SAEnum(Difficulty, native_enum=False, length=16, validate_strings=True), nullable=False
@@ -110,4 +115,5 @@ class InterviewSession(Base):
             "focus_topics": self.focus_topics,
             "years_experience": self.years_experience,
             "interviewer_style": self.interviewer_style,
+            "language": self.language,
         }

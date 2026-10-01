@@ -1,7 +1,7 @@
 from typing import Any, cast
 
 from fastapi import status
-from groq import APIStatusError, AsyncGroq
+from groq import NOT_GIVEN, APIStatusError, AsyncGroq
 
 from app.core.config import get_settings
 from app.core.errors import ApiError
@@ -21,17 +21,25 @@ def _client() -> AsyncGroq:
     return AsyncGroq(api_key=settings.groq_api_key, timeout=REQUEST_TIMEOUT_S)
 
 
-async def _call(client: AsyncGroq, audio_bytes: bytes, filename: str, model: str) -> Any:
+async def _call(
+    client: AsyncGroq, audio_bytes: bytes, filename: str, model: str, language: str | None
+) -> Any:
+    lang_arg: Any = language if language else NOT_GIVEN
     return await client.audio.transcriptions.create(
         file=(filename, audio_bytes),
         model=model,  # type: ignore[arg-type]
         response_format="verbose_json",
         timestamp_granularities=["word", "segment"],
         prompt=FILLER_PRESERVING_PROMPT,
+        # Whisper auto-detects when omitted, which misfires on short or accented clips; the
+        # session's language is authoritative.
+        language=lang_arg,
     )
 
 
-async def transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
+async def transcribe(
+    audio_bytes: bytes, filename: str, language: str | None = None
+) -> TranscriptionResult:
     """Transcribes audio via Groq Whisper, with one retry on a 429/5xx. Any other failure
     (bad request, auth, non-retryable) surfaces immediately as a 502 — retrying those would
     just waste a second call on an error that won't change."""
@@ -39,14 +47,14 @@ async def transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
     client = _client()
 
     try:
-        response = await _call(client, audio_bytes, filename, settings.groq_stt_model)
+        response = await _call(client, audio_bytes, filename, settings.groq_stt_model, language)
     except APIStatusError as exc:
         if not is_retryable(exc):
             raise ApiError(
                 "stt_failed", "Transcription failed.", status_code=status.HTTP_502_BAD_GATEWAY
             ) from exc
         try:
-            response = await _call(client, audio_bytes, filename, settings.groq_stt_model)
+            response = await _call(client, audio_bytes, filename, settings.groq_stt_model, language)
         except APIStatusError as retry_exc:
             raise ApiError(
                 "stt_failed",

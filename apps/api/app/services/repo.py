@@ -17,8 +17,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.answer import Answer
 from app.models.base import utcnow
-from app.models.enums import Category, Difficulty, Focus, InterviewerStyle, Role, SessionStatus
+from app.models.candidate_competency import CandidateCompetency
+from app.models.enums import (
+    SESSION_STATUS_TRANSITIONS,
+    Category,
+    Difficulty,
+    Focus,
+    InterviewerStyle,
+    Role,
+    SessionStatus,
+)
 from app.models.interview_session import InterviewSession
+from app.models.job_target import JobCompetency, JobTarget
 from app.models.profile import Profile
 from app.models.question import Question
 from app.models.rate_limit_counter import RateLimitCounter
@@ -82,6 +92,10 @@ async def delete_user_and_all_data(db: AsyncSession, *, user_id: str) -> None:
     their session (rather than trusting the session's own cascade) for the same reason."""
     await db.execute(delete(Answer).where(Answer.user_id == user_id))
     await db.execute(delete(InterviewSession).where(InterviewSession.user_id == user_id))
+    await db.execute(delete(CandidateCompetency).where(CandidateCompetency.user_id == user_id))
+    target_ids = select(JobTarget.id).where(JobTarget.user_id == user_id)
+    await db.execute(delete(JobCompetency).where(JobCompetency.job_target_id.in_(target_ids)))
+    await db.execute(delete(JobTarget).where(JobTarget.user_id == user_id))
     await db.execute(delete(RefreshToken).where(RefreshToken.user_id == user_id))
     await db.execute(delete(Profile).where(Profile.id == user_id))
     await db.execute(delete(User).where(User.id == user_id))
@@ -265,8 +279,10 @@ async def create_session(
     db: AsyncSession,
     *,
     user_id: str,
-    role: Role,
+    role: str,
     difficulty: Difficulty,
+    role_title: str | None = None,
+    job_target_id: str | None = None,
     experience_level: str | None = None,
     focus: Focus = Focus.MIXED,
     question_count: int = 5,
@@ -284,6 +300,8 @@ async def create_session(
     session = InterviewSession(
         user_id=user_id,
         role=role,
+        role_title=role_title,
+        job_target_id=job_target_id,
         difficulty=difficulty,
         experience_level=experience_level,
         focus=focus,
@@ -347,13 +365,26 @@ async def delete_session_and_all_data(db: AsyncSession, *, session_id: str, user
     return True
 
 
-async def mark_session_completed(db: AsyncSession, *, session_id: str) -> None:
-    await db.execute(
+async def transition_session_status(
+    db: AsyncSession, *, session_id: str, new_status: SessionStatus
+) -> bool:
+    """Moves a session to a terminal state, but only along an edge in SESSION_STATUS_TRANSITIONS.
+    The allowed-from check is part of the UPDATE's WHERE clause (not a read-then-write), so two
+    racing requests can't both finish the same session. Returns whether a row actually changed."""
+    allowed_from = [
+        current for current, targets in SESSION_STATUS_TRANSITIONS.items() if new_status in targets
+    ]
+    result = await db.execute(
         update(InterviewSession)
-        .where(InterviewSession.id == session_id)
-        .values(status=SessionStatus.COMPLETED, ended_at=utcnow())
+        .where(InterviewSession.id == session_id, InterviewSession.status.in_(allowed_from))
+        .values(status=new_status, ended_at=utcnow())
     )
     await db.commit()
+    return bool(getattr(result, "rowcount", 0))
+
+
+async def mark_session_completed(db: AsyncSession, *, session_id: str) -> None:
+    await transition_session_status(db, session_id=session_id, new_status=SessionStatus.COMPLETED)
 
 
 # ─── session questions ───────────────────────────────────────────────────
@@ -368,6 +399,9 @@ async def create_session_question(
     category: Category,
     source: str,
     question_id: str | None = None,
+    competency: str | None = None,
+    level: int | None = None,
+    selection_reason: str | None = None,
 ) -> SessionQuestion:
     session_question = SessionQuestion(
         session_id=session_id,
@@ -376,6 +410,9 @@ async def create_session_question(
         category=category,
         source=source,
         question_id=question_id,
+        competency=competency,
+        level=level,
+        selection_reason=selection_reason,
     )
     db.add(session_question)
     await db.execute(
@@ -660,3 +697,75 @@ async def record_rate_limit_hit(
 
     await db.commit()
     return hits, seconds_until_reset
+
+
+# ─── job targets & competency mastery ────────────────────────────────────
+
+
+async def get_job_target_by_hash(
+    db: AsyncSession, *, user_id: str, analysis_hash: str
+) -> JobTarget | None:
+    result = await db.execute(
+        select(JobTarget).where(
+            JobTarget.user_id == user_id, JobTarget.analysis_hash == analysis_hash
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_job_target(
+    db: AsyncSession, *, target: JobTarget, competencies: list[JobCompetency]
+) -> JobTarget:
+    db.add(target)
+    await db.flush()
+    for competency in competencies:
+        competency.job_target_id = target.id
+        db.add(competency)
+    await db.commit()
+    await db.refresh(target)
+    return target
+
+
+async def list_job_competencies(
+    db: AsyncSession, *, job_target_id: str, user_id: str
+) -> list[JobCompetency]:
+    """Joined through JobTarget so a competency map is only ever readable by its owner."""
+    result = await db.execute(
+        select(JobCompetency)
+        .join(JobTarget, JobTarget.id == JobCompetency.job_target_id)
+        .where(JobCompetency.job_target_id == job_target_id, JobTarget.user_id == user_id)
+        .order_by(JobCompetency.weight.desc(), JobCompetency.competency)
+    )
+    return list(result.scalars().all())
+
+
+async def list_candidate_competencies(
+    db: AsyncSession, *, user_id: str, role: str | None = None
+) -> list[CandidateCompetency]:
+    query = select(CandidateCompetency).where(CandidateCompetency.user_id == user_id)
+    if role is not None:
+        query = query.where(CandidateCompetency.role == role)
+    result = await db.execute(query.order_by(CandidateCompetency.competency))
+    return list(result.scalars().all())
+
+
+async def get_candidate_competency(
+    db: AsyncSession, *, user_id: str, role: str, competency: str
+) -> CandidateCompetency | None:
+    result = await db.execute(
+        select(CandidateCompetency).where(
+            CandidateCompetency.user_id == user_id,
+            CandidateCompetency.role == role,
+            CandidateCompetency.competency == competency,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def save_candidate_competency(
+    db: AsyncSession, *, row: CandidateCompetency
+) -> CandidateCompetency:
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row

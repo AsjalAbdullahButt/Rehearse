@@ -46,7 +46,7 @@ export interface LiveCaptions {
  * answer: the transcript that gets scored still comes from Groq after upload (see
  * use-audio-recorder.ts) — this is the browser's own SpeechRecognition engine, a second,
  * independent consumer of the same already-granted microphone permission. */
-export function useLiveCaptions(active: boolean): LiveCaptions {
+export function useLiveCaptions(active: boolean, lang = "en-US"): LiveCaptions {
   const [transcript, setTranscript] = useState("");
   const isSupported = Boolean(getSpeechRecognitionConstructor());
 
@@ -66,7 +66,7 @@ export function useLiveCaptions(active: boolean): LiveCaptions {
     const recognition = new Ctor();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = "en-US";
+    recognition.lang = lang;
 
     recognition.onresult = (event) => {
       let combined = "";
@@ -98,7 +98,7 @@ export function useLiveCaptions(active: boolean): LiveCaptions {
       recognition.onend = null;
       recognition.stop();
     };
-  }, [active]);
+  }, [active, lang]);
 
   return { isSupported, transcript };
 }

@@ -59,6 +59,22 @@ export const FOCUS_OPTIONS: { slug: Focus; name: string }[] = [
 // Mirrors apps/api/app/models/interview_session.py's QUESTION_COUNT_CHOICES.
 export const QUESTION_COUNT_OPTIONS = [3, 5, 8] as const;
 
+/** Mirrors apps/api/app/core/languages.py — only languages the speech-to-text provider can
+ * actually transcribe are offered. `speechTag` is the BCP-47 tag for the browser's
+ * SpeechRecognition (captions) and SpeechSynthesis (read-aloud), both best-effort per browser. */
+export const LANGUAGE_OPTIONS = [
+  { code: "en", name: "English", speechTag: "en-US" },
+  { code: "ur", name: "Urdu", speechTag: "ur-PK" },
+  { code: "hi", name: "Hindi", speechTag: "hi-IN" },
+  { code: "pa", name: "Punjabi", speechTag: "pa-IN" },
+] as const;
+
+export type LanguageCode = (typeof LANGUAGE_OPTIONS)[number]["code"];
+
+export function speechTagForLanguage(code: string | null | undefined): string {
+  return LANGUAGE_OPTIONS.find((option) => option.code === code)?.speechTag ?? "en-US";
+}
+
 export type InterviewerStyle = "supportive" | "realistic" | "challenging";
 
 export const INTERVIEWER_STYLE_OPTIONS: { slug: InterviewerStyle; name: string }[] = [
@@ -69,7 +85,7 @@ export const INTERVIEWER_STYLE_OPTIONS: { slug: InterviewerStyle; name: string }
 
 export type Category = "behavioral" | "technical" | "situational";
 export type QuestionSource = "bank" | "generated" | "follow_up";
-export type SessionStatus = "in_progress" | "completed";
+export type SessionStatus = "in_progress" | "completed" | "ended_early";
 
 export interface Question {
   id: string;
@@ -85,6 +101,11 @@ export interface SessionQuestion {
   text: string;
   category: Category;
   source: QuestionSource;
+  /** What the adaptive interviewer was testing, and why it picked this question. Absent/null on
+   * questions from before the adaptive engine existed. */
+  competency?: string | null;
+  level?: number | null;
+  selection_reason?: string | null;
 }
 
 /** What POST /v1/resume/parse returns — pre-fills SessionSetupForm's personalization fields, all
@@ -97,7 +118,8 @@ export interface ResumeExtraction {
 }
 
 export interface SessionCreateInput {
-  role: Role;
+  /** A preset role slug, or any free-text role ("AI Automation Engineer"). */
+  role: string;
   difficulty: Difficulty;
   experience_level: ExperienceLevel;
   focus: Focus;
@@ -117,7 +139,10 @@ export interface SessionCreateInput {
 export interface InterviewSession {
   id: string;
   user_id: string;
-  role: Role;
+  /** Preset slug, or the slugified title of a custom role (see role_title). */
+  role: string;
+  role_title: string | null;
+  job_target_id: string | null;
   difficulty: Difficulty;
   experience_level: ExperienceLevel | null;
   focus: Focus;

@@ -13,6 +13,7 @@ import {
   EXPERIENCE_LEVEL_OPTIONS,
   FOCUS_OPTIONS,
   INTERVIEWER_STYLE_OPTIONS,
+  LANGUAGE_OPTIONS,
   QUESTION_COUNT_OPTIONS,
   ROLE_OPTIONS,
   TIME_CAP_OPTIONS,
@@ -22,11 +23,13 @@ import type {
   ExperienceLevel,
   Focus,
   InterviewerStyle,
+  LanguageCode,
   ResumeExtraction,
   Role,
   SessionCreateInput,
 } from "@/lib/interview/types";
 
+const MAX_ROLE_LENGTH = 80;
 const MAX_COMPANY_LENGTH = 120;
 const MAX_INDUSTRY_LENGTH = 120;
 const MAX_JOB_DESCRIPTION_LENGTH = 12_000;
@@ -93,6 +96,8 @@ export function SessionSetupForm({
   onSubmit: (value: SessionCreateInput) => void;
 }) {
   const [role, setRole] = useState<Role | null>(initialRole ?? null);
+  const [customRole, setCustomRole] = useState("");
+  const [language, setLanguage] = useState<LanguageCode>("en");
   const [difficulty, setDifficulty] = useState<Difficulty>(initialDifficulty ?? "medium");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("mid");
   const [focus, setFocus] = useState<Focus>(initialFocus ?? "mixed");
@@ -129,7 +134,8 @@ export function SessionSetupForm({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!role) return;
+    const roleValue = customRole.trim() || role;
+    if (!roleValue) return;
     const parsedYearsExperience = yearsExperience === "" ? Number.NaN : Number(yearsExperience);
     if (
       yearsExperience !== "" &&
@@ -143,7 +149,8 @@ export function SessionSetupForm({
     }
     setValidationError(null);
     onSubmit({
-      role,
+      role: roleValue,
+      language,
       difficulty,
       experience_level: experienceLevel,
       focus,
@@ -182,11 +189,26 @@ export function SessionSetupForm({
                   key={option.slug}
                   value={option.slug}
                   label={option.name}
-                  selected={role === option.slug}
-                  onSelect={setRole}
+                  selected={!customRole.trim() && role === option.slug}
+                  onSelect={(slug) => {
+                    setCustomRole("");
+                    setRole(slug);
+                  }}
                 />
               ))}
             </div>
+            <label className="flex flex-col gap-2">
+              <span className="text-muted text-xs">
+                Or interview for any other role — we&apos;ll build the question plan for it
+              </span>
+              <Input
+                value={customRole}
+                onChange={(event) => setCustomRole(event.target.value)}
+                maxLength={MAX_ROLE_LENGTH}
+                placeholder="e.g. DevOps Engineer"
+                aria-label="Custom role"
+              />
+            </label>
           </fieldset>
 
           <details className="border-line rounded-[var(--radius-tile)] border p-4">
@@ -279,6 +301,24 @@ export function SessionSetupForm({
                       label={seconds >= 60 ? `${seconds / 60} min` : `${seconds}s`}
                       selected={answerCapS === seconds}
                       onSelect={() => setAnswerCapS(seconds)}
+                    />
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="flex flex-col gap-3">
+                <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
+                  Interview language
+                </legend>
+                <div className="flex flex-wrap gap-2">
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <OptionPill
+                      name="language"
+                      key={option.code}
+                      value={option.code}
+                      label={option.name}
+                      selected={language === option.code}
+                      onSelect={setLanguage}
                     />
                   ))}
                 </div>
@@ -430,8 +470,14 @@ export function SessionSetupForm({
               {questionCount} questions · up to {(questionCount * answerCapS) / 60} minutes of
               answers, plus feedback time.
             </p>
-            {!role ? <p className="text-muted text-xs">Choose a role to begin.</p> : null}
-            <Button type="submit" size="lg" disabled={!role || isSubmitting}>
+            {!role && !customRole.trim() ? (
+              <p className="text-muted text-xs">Choose a role to begin.</p>
+            ) : null}
+            <Button
+              type="submit"
+              size="lg"
+              disabled={(!role && !customRole.trim()) || isSubmitting}
+            >
               {isSubmitting ? "Preparing your question…" : "Start"}
             </Button>
           </div>

@@ -15,6 +15,7 @@ from sqlalchemy import select  # noqa: E402
 from app.db import async_session_factory  # noqa: E402
 from app.models.enums import Category, Difficulty, Role  # noqa: E402
 from app.models.question import Question  # noqa: E402
+from app.services.competency import infer_competency  # noqa: E402
 
 # (role, difficulty, category, text)
 QUESTIONS: list[tuple[Role, Difficulty, Category, str]] = [
@@ -622,7 +623,13 @@ async def seed() -> None:
         seeded_roles = {row[0] for row in result.all()}
 
         to_insert = [
-            Question(role=role, difficulty=difficulty, category=category, text=text)
+            Question(
+                role=role,
+                difficulty=difficulty,
+                category=category,
+                text=text,
+                competency=infer_competency(text, category),
+            )
             for role, difficulty, category, text in QUESTIONS
             if role not in seeded_roles
         ]

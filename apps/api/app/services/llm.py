@@ -1,19 +1,23 @@
 import logging
+from collections.abc import Callable
 from typing import Any, cast
 
 from fastapi import status
 from groq import APIStatusError, AsyncGroq
 from groq.types.chat import ChatCompletionMessageParam
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.models.enums import Category
 from app.prompts.feedback import build_messages
+from app.prompts.planning import build_job_analysis_messages, build_question_messages
 from app.prompts.resume import build_messages as build_resume_messages
 from app.schemas.feedback import LLMFeedback
+from app.schemas.planning import GeneratedQuestion, JobAnalysis
 from app.schemas.resume import ResumeExtraction
 from app.services.groq_retry import REQUEST_TIMEOUT_S, is_retryable
+from app.services.interviewer_policy import InterviewerPolicy
 
 logger = logging.getLogger("rehearse.api")
 
@@ -41,6 +45,8 @@ _MAX_COMPLETION_TOKENS = 1500
 # A resume extraction is just a short summary + a skills list — far cheaper than a feedback
 # object, so it gets its own, much tighter cap.
 _MAX_RESUME_COMPLETION_TOKENS = 600
+_MAX_PLANNING_COMPLETION_TOKENS = 700
+_MAX_QUESTION_COMPLETION_TOKENS = 250
 
 
 def _client() -> AsyncGroq:
@@ -142,6 +148,8 @@ async def generate_feedback(
     question_text: str,
     transcript: str,
     candidate_context: dict[str, Any],
+    policy: InterviewerPolicy | None = None,
+    language: str | None = None,
 ) -> LLMFeedback:
     """Calls the LLM once; on a validation failure (malformed JSON, a shape that doesn't match
     LLMFeedback, or a rubric category that doesn't match the question's actual category)
@@ -159,6 +167,8 @@ async def generate_feedback(
         question_text=question_text,
         transcript=transcript,
         candidate_context=candidate_context,
+        policy=policy,
+        language=language,
     )
 
     raw = await _complete(messages)
@@ -234,3 +244,89 @@ async def extract_resume_data(resume_text: str) -> ResumeExtraction:
                 "The model could not extract data from that resume.",
                 status_code=status.HTTP_502_BAD_GATEWAY,
             ) from second_error
+
+
+async def _structured_call[T: BaseModel](
+    messages: list[ChatCompletionMessageParam],
+    parse: Callable[[str], T],
+    *,
+    max_tokens: int,
+    failure_message: str,
+) -> T:
+    """Shared one-retry-on-validation-failure shape for the planning-time LLM services (job
+    analysis, question generation). Raises ApiError(502 llm_failed) after a second failure —
+    callers that have a deterministic fallback catch it and degrade instead of failing the
+    interview."""
+    raw = await _complete(messages, max_tokens=max_tokens)
+    try:
+        return parse(raw)
+    except ValidationError as first_error:
+        retry_messages: list[ChatCompletionMessageParam] = [
+            *messages,
+            {"role": "assistant", "content": raw},
+            {
+                "role": "user",
+                "content": (
+                    f"That response was invalid: {first_error}. Return ONLY the corrected "
+                    "JSON object, matching the required shape exactly."
+                ),
+            },
+        ]
+        raw_retry = await _complete(retry_messages, max_tokens=max_tokens)
+        try:
+            return parse(raw_retry)
+        except ValidationError as second_error:
+            raise ApiError(
+                "llm_failed", failure_message, status_code=status.HTTP_502_BAD_GATEWAY
+            ) from second_error
+
+
+async def analyze_job_target(
+    *, role_title: str, job_description: str | None, candidate_background: str | None
+) -> JobAnalysis:
+    """One LLM call turning a role (+ optional JD and resume background) into a weighted
+    competency plan. Callers cache the result on a JobTarget — see services/job_service.py."""
+    messages = build_job_analysis_messages(
+        role_title=role_title,
+        job_description=job_description,
+        candidate_background=candidate_background,
+    )
+    return await _structured_call(
+        messages,
+        JobAnalysis.model_validate_json,
+        max_tokens=_MAX_PLANNING_COMPLETION_TOKENS,
+        failure_message="The model could not analyse that role.",
+    )
+
+
+async def generate_question(
+    *,
+    policy: InterviewerPolicy,
+    role_title: str,
+    competency: str,
+    category: Category,
+    level: int,
+    mode: str,
+    already_asked: list[str],
+    previous_answer_summary: str | None,
+    candidate_context: dict[str, Any],
+    language: str | None,
+) -> GeneratedQuestion:
+    messages = build_question_messages(
+        policy=policy,
+        role_title=role_title,
+        competency=competency,
+        category=category,
+        level=level,
+        mode=mode,
+        already_asked=already_asked,
+        previous_answer_summary=previous_answer_summary,
+        candidate_context=candidate_context,
+        language=language,
+    )
+    return await _structured_call(
+        messages,
+        GeneratedQuestion.model_validate_json,
+        max_tokens=_MAX_QUESTION_COMPLETION_TOKENS,
+        failure_message="The model could not generate a question.",
+    )

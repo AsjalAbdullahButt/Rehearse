@@ -50,6 +50,25 @@ def _reset_process_local_state() -> None:
     clear_questions_cache()
 
 
+@pytest.fixture(autouse=True)
+def _llm_planning_outage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """By default the planning-time LLM calls (job analysis, question generation) behave like a
+    provider outage, so no test ever reaches the network and every session test also exercises
+    the deterministic fallback path. Tests of the happy path monkeypatch these themselves."""
+    from fastapi import status
+
+    from app.core.errors import ApiError
+    from app.services import llm
+
+    async def _unavailable(*args: object, **kwargs: object) -> None:
+        raise ApiError(
+            "llm_failed", "LLM unavailable in tests.", status_code=status.HTTP_502_BAD_GATEWAY
+        )
+
+    monkeypatch.setattr(llm, "generate_question", _unavailable)
+    monkeypatch.setattr(llm, "analyze_job_target", _unavailable)
+
+
 @pytest.fixture
 def client(db_session: AsyncSession) -> Iterator[TestClient]:
     from app.db import get_db

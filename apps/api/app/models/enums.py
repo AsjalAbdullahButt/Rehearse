@@ -51,6 +51,18 @@ class InterviewerStyle(enum.StrEnum):
 class SessionStatus(enum.StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+    # The candidate deliberately stopped before answering every question. Distinct from
+    # COMPLETED so a report never claims a full interview that wasn't finished.
+    ENDED_EARLY = "ended_early"
+
+
+# Terminal states have no outgoing edge, so a finished session can never be silently reopened
+# or re-ended.
+SESSION_STATUS_TRANSITIONS: dict[SessionStatus, frozenset[SessionStatus]] = {
+    SessionStatus.IN_PROGRESS: frozenset({SessionStatus.COMPLETED, SessionStatus.ENDED_EARLY}),
+    SessionStatus.COMPLETED: frozenset(),
+    SessionStatus.ENDED_EARLY: frozenset(),
+}
 
 
 class QuestionSource(enum.StrEnum):

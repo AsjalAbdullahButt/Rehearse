@@ -150,7 +150,9 @@ def _post_answer(
 
 @pytest.fixture(autouse=True)
 def _mock_groq(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
+    async def fake_transcribe(
+        audio_bytes: bytes, filename: str, language: str | None = None
+    ) -> TranscriptionResult:
         return _fake_transcription()
 
     async def fake_generate_feedback(
@@ -160,6 +162,8 @@ def _mock_groq(monkeypatch: pytest.MonkeyPatch) -> None:
         question_text: str,
         transcript: str,
         candidate_context: dict[str, Any],
+        policy: object = None,
+        language: str | None = None,
     ) -> LLMFeedback:
         return _fake_feedback()
 
@@ -245,7 +249,9 @@ async def test_create_answer_includes_a_confidence_note_for_a_high_filler_rate(
 ) -> None:
     # 5 fillers in 10 words (50% rate) — well past both the count and rate thresholds in
     # metrics.assess_confidence.
-    async def filler_heavy_transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
+    async def filler_heavy_transcribe(
+        audio_bytes: bytes, filename: str, language: str | None = None
+    ) -> TranscriptionResult:
         return _fake_transcription("um so uh basically I um think uh it um works")
 
     monkeypatch.setattr(stt, "transcribe", filler_heavy_transcribe)
@@ -273,7 +279,9 @@ async def test_create_answer_is_idempotent_on_a_repeated_key(
 ) -> None:
     call_count = 0
 
-    async def counting_transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
+    async def counting_transcribe(
+        audio_bytes: bytes, filename: str, language: str | None = None
+    ) -> TranscriptionResult:
         nonlocal call_count
         call_count += 1
         return _fake_transcription()
@@ -384,7 +392,9 @@ async def test_create_answer_computes_fillers_from_the_transcript(
     register_user: Callable[..., dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
+    async def fake_transcribe(
+        audio_bytes: bytes, filename: str, language: str | None = None
+    ) -> TranscriptionResult:
         return _fake_transcription(transcript="Um, so, uh, I basically built a rate limiter.")
 
     monkeypatch.setattr(stt, "transcribe", fake_transcribe)
@@ -627,7 +637,9 @@ async def test_create_answer_rejects_duration_beyond_the_time_cap(
     register_user: Callable[..., dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
+    async def fake_transcribe(
+        audio_bytes: bytes, filename: str, language: str | None = None
+    ) -> TranscriptionResult:
         return _fake_transcription(duration_s=200.0)
 
     monkeypatch.setattr(stt, "transcribe", fake_transcribe)
@@ -651,7 +663,9 @@ async def test_create_answer_rejects_silent_recordings(
     register_user: Callable[..., dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_transcribe(audio_bytes: bytes, filename: str) -> TranscriptionResult:
+    async def fake_transcribe(
+        audio_bytes: bytes, filename: str, language: str | None = None
+    ) -> TranscriptionResult:
         return _fake_transcription(transcript="   ")
 
     monkeypatch.setattr(stt, "transcribe", fake_transcribe)
