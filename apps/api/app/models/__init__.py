@@ -4,6 +4,7 @@ Alembic's autogenerate and `Base.metadata.create_all()` in tests both depend on 
 from app.models.answer import Answer
 from app.models.base import Base
 from app.models.candidate_competency import CandidateCompetency
+from app.models.interview_claim import InterviewClaim
 from app.models.interview_session import InterviewSession
 from app.models.job_target import JobCompetency, JobTarget
 from app.models.profile import Profile
@@ -17,6 +18,7 @@ __all__ = [
     "Answer",
     "Base",
     "CandidateCompetency",
+    "InterviewClaim",
     "InterviewSession",
     "JobCompetency",
     "JobTarget",

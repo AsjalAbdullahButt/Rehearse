@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from app.models.enums import Category, Difficulty, Focus
+from app.services.claims import ClaimView
 from app.services.competency import (
     MAX_LEVEL,
     MIN_LEVEL,
@@ -26,6 +27,7 @@ class SelectionMode(StrEnum):
     COVERAGE = "coverage"  # a competency not yet tested this session
     DEEPEN = "deepen"  # same competency, harder — the last answer was strong
     DIAGNOSTIC = "diagnostic"  # same competency, simpler — the last answer was weak
+    CLAIM_PROBE = "claim_probe"  # press on a substantive claim the candidate (or resume) made
     FALLBACK = "fallback"  # nothing better available (set by the orchestrator, not decide_next)
 
 
@@ -53,6 +55,7 @@ class SessionTurn:
     category: Category
     mode: str | None
     score: float | None
+    panelist: str | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +64,7 @@ class Decision:
     level: int
     mode: SelectionMode
     category: Category
+    claim_id: str | None = None
 
 
 _DIFFICULTY_BASE_LEVEL = {Difficulty.EASY: 2, Difficulty.MEDIUM: 3, Difficulty.HARD: 4}
@@ -181,8 +185,31 @@ def decide_next(
     policy: InterviewerPolicy,
     focus: Focus,
     difficulty: Difficulty,
+    claim: ClaimView | None = None,
+    allowed: frozenset[str] | None = None,
 ) -> Decision:
-    """Pick the next target. `history` is the session's questions so far, oldest first."""
+    """Pick the next target. `history` is the session's questions so far, oldest first.
+
+    `claim` (already vetted by claims.choose_claim) takes precedence over everything else: a
+    probe of something the candidate said is the most natural next question. `allowed` limits a
+    fresh coverage choice to one panelist's remit; follow-ups ignore it because they stay on the
+    competency just asked about."""
+    if claim is not None:
+        last = history[-1] if history else None
+        competency = claim.competency or (last.competency if last else None) or plan[0].competency
+        level = (
+            last.level
+            if last is not None and last.level is not None
+            else base_level(difficulty, policy)
+        )
+        return Decision(
+            competency=competency,
+            level=clamp_level(level),
+            mode=SelectionMode.CLAIM_PROBE,
+            category=competency_category(competency),
+            claim_id=claim.id,
+        )
+
     follow_up = _follow_up_decision(history, policy)
     if follow_up is not None and (focus == Focus.MIXED or follow_up.category.value == focus.value):
         return follow_up
@@ -190,7 +217,8 @@ def decide_next(
     candidates = [
         item
         for item in plan
-        if focus == Focus.MIXED or competency_category(item.competency).value == focus.value
+        if (focus == Focus.MIXED or competency_category(item.competency).value == focus.value)
+        and (allowed is None or item.competency in allowed)
     ]
     if not candidates:
         # The plan has nothing for this focus (e.g. a purely technical plan, behavioral focus).

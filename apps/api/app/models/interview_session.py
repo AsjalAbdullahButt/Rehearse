@@ -2,7 +2,17 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -91,6 +101,8 @@ class InterviewSession(Base):
         SAEnum(InterviewerStyle, native_enum=False, length=16, validate_strings=True)
     )
     language: Mapped[str | None] = mapped_column(String(32))
+    # A panel interview (recruiter / technical lead / manager) — see app/services/panel.py.
+    panel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[SessionStatus] = mapped_column(
         SAEnum(SessionStatus, native_enum=False, length=16, validate_strings=True),
         nullable=False,

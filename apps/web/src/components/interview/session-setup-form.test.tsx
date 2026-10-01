@@ -71,6 +71,38 @@ describe("SessionSetupForm", () => {
     expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ language: "ur" }));
   });
 
+  it("only offers a panel interview when the API has it switched on", () => {
+    const { unmount } = render(
+      <ToastProvider>
+        <SessionSetupForm isSubmitting={false} onSubmit={vi.fn()} />
+      </ToastProvider>,
+    );
+    expect(screen.queryByRole("checkbox", { name: /Panel interview/ })).not.toBeInTheDocument();
+    unmount();
+
+    const onSubmit = renderForm({ panelAvailable: true });
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Panel interview/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ panel: true }));
+  });
+
+  it("is a normal single-interviewer session unless panel is ticked", () => {
+    const onSubmit = renderForm({ panelAvailable: true });
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(onSubmit.mock.calls[0]![0].panel).toBeUndefined();
+  });
+
+  it("pre-fills focus topics from a practice-plan link", () => {
+    const onSubmit = renderForm({ initialFocusTopics: ["caching", "sql"] });
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ focus_topics: ["caching", "sql"] }),
+    );
+  });
+
   it("defaults the time cap to 120s when no initial value is given", () => {
     const onSubmit = renderForm();
 

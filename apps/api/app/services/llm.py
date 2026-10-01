@@ -311,6 +311,8 @@ async def generate_question(
     previous_answer_summary: str | None,
     candidate_context: dict[str, Any],
     language: str | None,
+    claim: dict[str, str | None] | None = None,
+    persona: str | None = None,
 ) -> GeneratedQuestion:
     messages = build_question_messages(
         policy=policy,
@@ -323,6 +325,8 @@ async def generate_question(
         previous_answer_summary=previous_answer_summary,
         candidate_context=candidate_context,
         language=language,
+        claim=claim,
+        persona=persona,
     )
     return await _structured_call(
         messages,

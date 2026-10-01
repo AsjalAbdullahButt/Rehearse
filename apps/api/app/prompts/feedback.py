@@ -85,8 +85,27 @@ improvements above — never paraphrase or invent a quote; omit if nothing is wo
   "missing_information": ["<important context the answer is missing (e.g. a missing STAR
 element), stated as what's absent — never fabricate it to fill the gap; empty if nothing missing>"],
   "follow_up_question": "<a natural follow-up an interviewer might ask next, informed by
-candidate_context if it's genuinely relevant>"
+candidate_context if it's genuinely relevant>",
+{claims_spec}
 }}"""
+
+CLAIMS_SPEC = (
+    '  "claims": [<0-5 objects, each {"claim": "<short statement>", '
+    '"type": "numeric|ownership|leadership|technical|performance|scale|team_size|'
+    'business_impact", "importance": "high|medium|low", '
+    '"metric": "<the figure, e.g. 40%, or null>", '
+    '"quote": "<copied VERBATIM from the transcript>"}> - only substantive, checkable '
+    "statements the candidate made about their own work: a metric, who owned or led "
+    "something, scale, team size, a technical implementation. Never infer something they "
+    "did not say; [] if there is nothing worth probing],\n"
+    '  "consistency": [<0-3 objects, each '
+    '{"kind": "role_emphasis|duration|skill_level|other", '
+    '"answer_statement": "<VERBATIM from the transcript>", '
+    '"resume_statement": "<VERBATIM from candidate_context.candidate_background>"}> - only '
+    "where the answer and the candidate's own background may describe their role, years of "
+    "experience or skill level differently. [] when there is no candidate_background or "
+    "nothing differs. Describe a possible mismatch only; never suggest dishonesty]"
+)
 
 
 def build_messages(
@@ -114,6 +133,7 @@ def build_messages(
         category=category.value,
         rubric_spec=_RUBRIC_SPEC[category],
         answer_field_spec=_ANSWER_FIELD_SPEC[category],
+        claims_spec=CLAIMS_SPEC,
     )
 
     # Structured, clearly-delimited JSON rather than string-concatenating untrusted values into

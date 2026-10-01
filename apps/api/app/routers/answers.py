@@ -16,6 +16,7 @@ from app.models.user import User
 from app.schemas.answer import AnswerReport
 from app.schemas.attempts import AttemptComparison
 from app.schemas.feedback import compute_overall_score
+from app.services import claims as claims_service
 from app.services import comparison, llm, mastery, repo, stt
 from app.services import feedback as feedback_service
 from app.services.interviewer_policy import policy_for
@@ -253,6 +254,7 @@ async def create_answer(
         answer_cap_s=session.answer_cap_s,
         transcription=transcription,
         feedback=llm_feedback,
+        resume_text=session.candidate_background,
     )
     answer.idempotency_key = idempotency_key
     answer.attempt_number = attempt_number
@@ -280,6 +282,35 @@ async def create_answer(
         # session or double-count toward the candidate's mastery.
         return await feedback_service.to_answer_report(db, answer=saved, session=session)
 
+    overall_score = compute_overall_score(llm_feedback.rubric)
+
+    # Record what the candidate claimed (only claims whose quote is really in the transcript), and
+    # if this answered a claim probe, how well that claim held up. Done before choosing the next
+    # question so a fresh claim can be probed immediately.
+    probed = (
+        await repo.get_claim_for_user(db, claim_id=session_question.claim_id, user_id=user.id)
+        if session_question.claim_id
+        else None
+    )
+    await repo.create_claims(
+        db,
+        claims=claims_service.build_claim_rows(
+            claims_service.verified_claims(
+                llm_feedback.claims, transcript=transcription.transcript
+            ),
+            session_id=session.id,
+            user_id=user.id,
+            answer_id=saved.id,
+            competency=session_question.competency,
+            parent=probed,
+        ),
+    )
+    if probed is not None:
+        probed.status, probed.verified_depth = claims_service.status_after_probe(
+            probed.verified_depth, overall_score
+        )
+        await repo.save_claim(db, claim=probed)
+
     # Feed the answer into the candidate's persistent competency model before choosing what to
     # ask next, so the very next question already reflects it.
     if session_question.competency:
@@ -288,7 +319,7 @@ async def create_answer(
             user_id=user.id,
             role=session.role,
             competency=session_question.competency,
-            score_0_to_10=compute_overall_score(llm_feedback.rubric),
+            score_0_to_10=overall_score,
             level=session_question.level,
         )
 
@@ -320,6 +351,8 @@ async def create_answer(
                 competency=selected.competency,
                 level=selected.level,
                 selection_reason=selected.reason,
+                claim_id=selected.claim_id,
+                panelist=selected.panelist,
             )
 
     return await feedback_service.to_answer_report(db, answer=saved, session=session)

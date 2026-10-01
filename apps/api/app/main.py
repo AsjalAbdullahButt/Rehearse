@@ -9,6 +9,7 @@ from app.core.middleware import MaxBodySizeMiddleware, RequestIdMiddleware
 from app.routers import (
     answers,
     auth,
+    features,
     health,
     mastery,
     profile,
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(answers.router, prefix="/v1", tags=["answers"])
     app.include_router(progress.router, prefix="/v1", tags=["progress"])
     app.include_router(mastery.router, prefix="/v1", tags=["mastery"])
+    app.include_router(features.router, prefix="/v1", tags=["features"])
     app.include_router(profile.router, prefix="/v1", tags=["profile"])
     app.include_router(resume.router, prefix="/v1", tags=["resume"])
 

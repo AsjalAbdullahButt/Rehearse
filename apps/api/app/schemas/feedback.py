@@ -74,6 +74,40 @@ def compute_overall_score(rubric: BehavioralRubric | TechnicalRubric | Situation
     return round(sum(scores) / len(scores), 2)
 
 
+ClaimType = Literal[
+    "numeric",
+    "ownership",
+    "leadership",
+    "technical",
+    "performance",
+    "scale",
+    "team_size",
+    "business_impact",
+    "resume",
+]
+
+
+class ExtractedClaim(BaseModel):
+    """A probe-worthy statement the candidate made. `quote` must appear verbatim in the
+    transcript — a claim the model cannot point to is dropped (see services/claims.py), so the
+    interviewer never challenges someone on something they did not say."""
+
+    claim: str = Field(min_length=3, max_length=200)
+    type: ClaimType
+    importance: Literal["high", "medium", "low"]
+    metric: str | None = Field(default=None, max_length=64)
+    quote: str = Field(min_length=3, max_length=300)
+
+
+class ConsistencyNote(BaseModel):
+    """Where this answer may not line up with the resume. Both statements are quoted and checked
+    against their sources before anything is shown."""
+
+    kind: Literal["role_emphasis", "duration", "skill_level", "other"]
+    answer_statement: str = Field(min_length=3, max_length=300)
+    resume_statement: str = Field(min_length=3, max_length=300)
+
+
 class LLMFeedback(BaseModel):
     """Everything the LLM is responsible for judging. Never filler counts, WPM, or pauses —
     those are computed in app/services/metrics.py and are never sent to the model to guess.
@@ -103,6 +137,8 @@ class LLMFeedback(BaseModel):
     # missing rather than silently invented when building rewritten_answer/reference_answer.
     missing_information: list[str] = Field(default_factory=list)
     follow_up_question: str
+    claims: list[ExtractedClaim] = Field(default=[], max_length=5)
+    consistency: list[ConsistencyNote] = Field(default=[], max_length=3)
 
     @model_validator(mode="after")
     def _answer_field_matches_category(self) -> "LLMFeedback":
@@ -119,6 +155,16 @@ class LLMFeedback(BaseModel):
             if self.rewritten_answer:
                 raise ValueError("technical/situational feedback must not include rewritten_answer")
         return self
+
+
+class ConsistencyNoteOut(BaseModel):
+    """What the candidate sees. Worded as a possible mismatch a recruiter may ask about — never
+    as an accusation."""
+
+    kind: Literal["role_emphasis", "duration", "skill_level", "other"]
+    answer_statement: str
+    resume_statement: str
+    message: str
 
 
 class FeedbackReport(BaseModel):
@@ -140,3 +186,4 @@ class FeedbackReport(BaseModel):
     reference_answer: str | None = None
     missing_information: list[str] = Field(default_factory=list)
     follow_up_question: str = ""
+    consistency_notes: list[ConsistencyNoteOut] = []

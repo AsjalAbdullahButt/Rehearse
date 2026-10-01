@@ -1,3 +1,4 @@
+import { ClaimsList } from "@/components/report/claims-list";
 import { RecoveryState } from "@/components/ui/recovery-state";
 import Link from "next/link";
 
@@ -97,6 +98,41 @@ export default async function SessionSummaryPage({
             </ul>
           </div>
         ) : null}
+
+        {summary.panel_assessments.length > 0 ? (
+          <div>
+            <h2 className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
+              Panel assessment
+            </h2>
+            <ul className="flex flex-col gap-2">
+              {summary.panel_assessments.map((row) => (
+                <li
+                  key={row.panelist}
+                  className="border-line flex items-center justify-between rounded-[var(--radius-tile)] border px-4 py-3 text-sm"
+                >
+                  <span className="text-text">
+                    {row.label}{" "}
+                    <span className="text-muted">
+                      ({row.name}, {row.questions} {row.questions === 1 ? "question" : "questions"})
+                    </span>
+                  </span>
+                  <span className="text-muted font-mono-metric tabular-nums">
+                    {row.avg_score !== null ? `${row.avg_score.toFixed(1)}/10` : "—"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-muted mt-2 text-xs">
+              Simulated interviewers. Each score is the average for the questions that panelist
+              asked.
+            </p>
+          </div>
+        ) : null}
+
+        <ClaimsList
+          claims={summary.claims.filter((claim) => claim.status !== "well_supported")}
+          heading="Claims that need preparation"
+        />
 
         {hasScoreDifference ? (
           <p className="bg-lime/10 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">

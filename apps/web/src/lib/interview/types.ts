@@ -106,6 +106,10 @@ export interface SessionQuestion {
   competency?: string | null;
   level?: number | null;
   selection_reason?: string | null;
+  /** Panel interviews only — who is asking (simulated interviewers). */
+  panelist?: string | null;
+  panelist_name?: string | null;
+  panelist_title?: string | null;
 }
 
 /** What POST /v1/resume/parse returns — pre-fills SessionSetupForm's personalization fields, all
@@ -134,6 +138,7 @@ export interface SessionCreateInput {
   years_experience?: number;
   interviewer_style?: InterviewerStyle;
   language?: string;
+  panel?: boolean;
 }
 
 export interface InterviewSession {
@@ -143,6 +148,7 @@ export interface InterviewSession {
   role: string;
   role_title: string | null;
   job_target_id: string | null;
+  panel: boolean;
   difficulty: Difficulty;
   experience_level: ExperienceLevel | null;
   focus: Focus;
@@ -172,6 +178,40 @@ export interface SessionSummary {
   avg_wpm: number | null;
   avg_filler_count: number | null;
   avg_clarity: number | null;
+  claims: Claim[];
+  panel_assessments: PanelAssessment[];
+}
+
+/** Mirrors apps/api/app/schemas/claims.py. */
+export interface Claim {
+  id: string;
+  claim_text: string;
+  claim_type: string;
+  importance: string;
+  metric: string | null;
+  source: string;
+  status: string;
+  note: string | null;
+}
+
+export interface PanelAssessment {
+  panelist: string;
+  name: string;
+  title: string;
+  label: string;
+  questions: number;
+  avg_score: number | null;
+}
+
+export interface ConsistencyNote {
+  kind: string;
+  answer_statement: string;
+  resume_statement: string;
+  message: string;
+}
+
+export interface Features {
+  panel_interview: boolean;
 }
 
 export interface ApiTranscriptPart {
@@ -220,6 +260,7 @@ export interface FeedbackReport {
   reference_answer: string | null;
   missing_information: string[];
   follow_up_question: string;
+  consistency_notes?: ConsistencyNote[];
 }
 
 export interface AnswerReport {
@@ -255,6 +296,7 @@ export interface AnswerReport {
   /** 1 for an original answer; >1 for a retry of `original_answer_id`. */
   attempt_number: number;
   original_answer_id: string | null;
+  claims?: Claim[];
 }
 
 export interface ProgressRow {

@@ -1,5 +1,5 @@
 import { InterviewFlow } from "@/components/interview/interview-flow";
-import { fetchProfile } from "@/lib/interview/server";
+import { fetchFeatures, fetchProfile } from "@/lib/interview/server";
 import {
   DIFFICULTY_OPTIONS,
   FOCUS_OPTIONS,
@@ -63,7 +63,7 @@ export default async function InterviewPage({
   }>;
 }) {
   const { role, session, focus, difficulty, count, cap, topics } = await searchParams;
-  const profile = await fetchProfile();
+  const [profile, features] = await Promise.all([fetchProfile(), fetchFeatures()]);
 
   // The role query param (from the landing page's Roles grid, a "practice weak area" or "repeat
   // this setup" link, or a resume-derived link) wins over the saved target_role default — an
@@ -75,6 +75,7 @@ export default async function InterviewPage({
   return (
     <InterviewFlow
       initialRole={initialRole}
+      panelAvailable={features?.panel_interview ?? false}
       initialCustomRole={initialCustomRole}
       initialFocusTopics={initialFocusTopics}
       initialFocus={toValidFocus(focus)}

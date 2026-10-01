@@ -38,9 +38,16 @@ Rules:
   Judge only from the provided text; never assume skills the resume does not state.
 - "seniority": one of intern, junior, mid, senior, lead, unknown.
 - Include at least one communication/behavioral competency.
+- "resume_claims": when candidate_background is present, up to 5 substantive, checkable
+  statements it makes (metrics, ownership, leadership, scale, team size, technical
+  implementation). Each needs a "quote" copied VERBATIM from the background, a "type" (numeric,
+  ownership, leadership, technical, performance, scale, team_size, business_impact, resume) and
+  an "importance" (high/medium/low). Empty list when there is no background. Never invent.
 
 Return ONLY JSON: {{"seniority": "...", "competencies": [{{"name": "...", "weight": <number>,
-"importance": "required|preferred", "resume_evidence": "strong|medium|basic|missing|unknown"}}]}}"""
+"importance": "required|preferred", "resume_evidence": "strong|medium|basic|missing|unknown"}}],
+"resume_claims": [{{"claim": "...", "type": "...", "importance": "high|medium|low",
+"quote": "..."}}]}}"""
 
 
 def build_job_analysis_messages(
@@ -58,11 +65,17 @@ def build_job_analysis_messages(
 
 
 def _question_system_prompt(
-    *, policy: InterviewerPolicy, category: Category, level: int, language: str | None
+    *,
+    policy: InterviewerPolicy,
+    category: Category,
+    level: int,
+    language: str | None,
+    persona: str | None,
 ) -> str:
     lang = resolve_language(language)
+    persona_line = f"\n{persona}\n" if persona else ""
     return f"""{policy.tone_instruction}
-
+{persona_line}
 You are writing the NEXT question for a mock interview. {_DATA_ONLY_WARNING}
 
 Write exactly one question that:
@@ -73,6 +86,10 @@ Write exactly one question that:
 - does not repeat or paraphrase anything in "already_asked";
 - if "previous_answer_summary" is present and mode is "deepen", builds on it (a harder angle on the
   same topic); if mode is "diagnostic", asks a simpler foundational question on the same topic.
+- if mode is "claim_probe", probes the statement in "claim" the way a thorough interviewer would
+  (how it was measured, how it was implemented, what the candidate personally did, what the
+  tradeoffs or failure modes were). Be neutral and curious, never imply the candidate is
+  exaggerating or lying;
 - is written in {lang.name}. Technical terms may stay in English.
 
 Return ONLY JSON: {{"text": "<the question>", "subtopic": "<2-4 word subtopic or null>"}}"""
@@ -90,15 +107,18 @@ def build_question_messages(
     previous_answer_summary: str | None,
     candidate_context: dict[str, Any],
     language: str | None,
+    claim: dict[str, str | None] | None = None,
+    persona: str | None = None,
 ) -> list[ChatCompletionMessageParam]:
     system = _question_system_prompt(
-        policy=policy, category=category, level=level, language=language
+        policy=policy, category=category, level=level, language=language, persona=persona
     ).replace("{competency}", competency_name(competency))
     payload = {
         "role_title": role_title,
         "mode": mode,
         "already_asked": already_asked[-8:],
         "previous_answer_summary": previous_answer_summary,
+        "claim": claim,
         "candidate_context": {
             key: value
             for key, value in candidate_context.items()

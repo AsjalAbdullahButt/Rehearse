@@ -7,6 +7,7 @@ import { peekAccessToken } from "@/lib/auth/session";
 import type {
   AnswerReport,
   AttemptComparison,
+  Features,
   MasteryOut,
   PracticePlan,
   ProgressOut,
@@ -37,6 +38,10 @@ export function fetchCurrentUser(): Promise<UserPublic | null> {
 
 export function fetchAnswerReport(answerId: string): Promise<AnswerReport | null> {
   return fetchFromApi<AnswerReport>(`/v1/answers/${encodeURIComponent(answerId)}`, true);
+}
+
+export function fetchFeatures(): Promise<Features | null> {
+  return fetchFromApi<Features>("/v1/features");
 }
 
 export function fetchAttempts(answerId: string): Promise<AttemptComparison | null> {

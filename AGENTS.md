@@ -634,6 +634,47 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
     `RetryAnswer` (MediaRecorder) is not covered by an automated test, same limitation as
     `InterviewFlow`.
 
+- **Interview realism, round 3 (2026-10-03) — Phase 3 of the adaptive-platform prompt (Features
+  2, 6, 12).**
+  - **Claims ride the existing feedback call (no extra LLM call).** `LLMFeedback` gained
+    optional `claims` and `consistency` lists. Every claim must carry a `quote` that really
+    appears in the transcript (`services/claims.verified_claims`) — a claim the model can't quote
+    is dropped, so the interviewer never probes something that wasn't said. Persisted as
+    `InterviewClaim` rows (migration 0013; `answer_id` is deliberately not an FK to avoid an
+    answers → session_questions → claims cycle).
+  - **Claim probing (2).** `claims.choose_claim` is deterministic: style sets the minimum
+    importance (supportive: high only; realistic: medium+; challenging: any), a claim is probed
+    once, chains are cut at the style's depth budget, claims from the answer just given go first,
+    and probes may be at most ~half the interview. `decide_next(claim=…)` takes precedence over
+    everything; the orchestrator writes the question with the LLM (neutral, non-accusatory
+    prompt) or falls back to a typed template quoting the candidate's own words
+    (`probe_fallback_text`). Answering a probe updates the claim: strong answers raise it to
+    `partially_supported` → `well_supported`; a weak answer leaves it `unverified`.
+    **`contradictory` is never set automatically.** Report wording is "may receive recruiter
+    follow-up". Retries never create claims.
+  - **Resume consistency (12).** Same call: `consistency` notes need *both* quotes verified — the
+    answer statement against the transcript, the resume statement against the candidate's
+    background — or they are dropped; none are produced without a background. Shown as "Possible
+    recruiter follow-up" on the report (stored in `answers.feedback["consistency_notes"]`, no new
+    column). High-impact resume claims: the cached job analysis (`JobTarget.resume_claims`, quote-
+    verified) is copied into each session as `source="resume"` claims (top 3 high/medium) and
+    probed once the interview is under way. Side effect: any session with a background now runs
+    the cached analysis, even for a preset role without a JD.
+  - **Panel interviews (6)** behind `ENABLE_PANEL_INTERVIEW` (default on; `GET /v1/features`
+    tells the UI, session creation returns 422 `feature_disabled` otherwise). `services/panel.py`:
+    recruiter (Sam), technical lead (Alex), manager (Jordan) — simulated, fictional first names,
+    labelled as such. Each *owns* competencies; on a coverage turn the engine may only pick from
+    the current panelist's remit (`allowed=`), turns rotate and skip a panelist with nothing in the
+    plan, follow-ups stay with whoever asked, and claim probes route by claim type. Per-panelist
+    assessments (average score of the answers to their questions) appear in the session summary
+    next to the overall score. `session_questions.panelist`, `sessions.panel`.
+  - **Tests.** API 348 → 381 (`test_claims_and_panel.py`), web 221 → 229. Migration 0013
+    upgrade/downgrade/upgrade verified on SQLite only. **No live Groq call** was made: claim/
+    consistency extraction quality and the claim-probe wording are unverified against the real
+    model (all behaviour tested with scripted LLM output, plus the outage fallback path).
+    `InterviewFlow`'s panelist header is not covered by an automated test (same jsdom limitation
+    as the rest of that component).
+
 ## Known gaps / deliberate scope cuts from Phase 2
 
 - **No design mockup files, still.** `/design` was empty; Phase 2 was built from a dark-mode PDF
@@ -679,8 +720,7 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   historical. Cross-browser back-navigation protection, individual answer links from summaries,
   and a persisted explicit early-end state remain follow-ups requiring further UI/API work.
 
-- **Adaptive-platform master prompt — not yet built (as of 2026-10-02):** claim extraction/
-  probing (Feature 2), panel interviews (6), resume-consistency checks (12), prosody/pitch/energy
+- **Adaptive-platform master prompt — not yet built (as of 2026-10-03):** prosody/pitch/energy
   analysis (7), camera coaching (8), coding/system-design/case modes (13), shareable reports (15),
   email verification/password reset, CSP nonce migration, and the dashboard/report redesign.
   Also missing for what *is* built: an "ended early" button in the web UI, a mastery-over-time history chart, a dashboard/"continue training" home,

@@ -85,6 +85,7 @@ async function parseApiError(response: Response): Promise<ParsedApiError> {
 
 export function InterviewFlow({
   initialRole,
+  panelAvailable = false,
   initialCustomRole,
   initialFocusTopics,
   initialFocus,
@@ -95,6 +96,8 @@ export function InterviewFlow({
   profile,
 }: {
   initialRole?: Role;
+  /** Whether the API accepts panel interviews (feature flag) — hides the toggle otherwise. */
+  panelAvailable?: boolean;
   initialCustomRole?: string;
   initialFocusTopics?: string[];
   initialFocus?: Focus;
@@ -399,6 +402,7 @@ export function InterviewFlow({
       <div className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
         <SessionSetupForm
           initialRole={initialRole}
+          panelAvailable={panelAvailable}
           initialCustomRole={initialCustomRole}
           initialFocusTopics={initialFocusTopics}
           initialFocus={initialFocus}
@@ -552,6 +556,14 @@ export function InterviewFlow({
             ? "Recording"
             : `Question ${session.current_question_number} of ${session.question_count}`}
         </p>
+        {question.panelist_name ? (
+          <p className="text-muted -mt-4 text-sm">
+            <span className="text-text font-medium">{question.panelist_name}</span>
+            {" · "}
+            {question.panelist_title}
+            <span className="sr-only"> (simulated panel interviewer)</span>
+          </p>
+        ) : null}
         <h1 className="font-display text-text text-xl font-bold text-balance sm:text-2xl">
           {question.text}
         </h1>

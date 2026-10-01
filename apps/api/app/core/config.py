@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")
     daily_answer_limit: int = Field(default=30, alias="DAILY_ANSWER_LIMIT")
 
+    enable_panel_interview: bool = Field(default=True, alias="ENABLE_PANEL_INTERVIEW")
+    """Feature flag for panel interviews. Off: `panel: true` is rejected at session creation and
+    GET /v1/features reports it disabled so the UI hides the option."""
+
     # Shared with the Next.js BFF (apps/web/src/lib/env.ts's INTERNAL_PROXY_SECRET). When set,
     # app/core/rate_limit.py trusts a caller-reported client IP only if the request also carries
     # this secret — proving it came through our own BFF rather than an arbitrary caller spoofing

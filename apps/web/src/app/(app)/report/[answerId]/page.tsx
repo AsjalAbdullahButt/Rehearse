@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { RecoveryState } from "@/components/ui/recovery-state";
+import { ClaimsList } from "@/components/report/claims-list";
 import { AttemptComparison } from "@/components/report/attempt-comparison";
 import { RetryAnswer } from "@/components/report/retry-answer";
 import { BeforeAfterToggle } from "@/components/report/before-after-toggle";
@@ -230,6 +231,30 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
             </ul>
           </div>
         ) : null}
+
+        {feedback.consistency_notes && feedback.consistency_notes.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            <h2 className="text-muted text-xs font-medium tracking-wide uppercase">
+              Possible recruiter follow-up
+            </h2>
+            <ul className="flex flex-col gap-3">
+              {feedback.consistency_notes.map((note, index) => (
+                <li
+                  key={index}
+                  className="bg-amber/15 text-text flex flex-col gap-2 rounded-[var(--radius-tile)] px-4 py-3 text-sm"
+                >
+                  <p>{note.message}</p>
+                  <p className="text-muted text-xs">
+                    In this answer: &ldquo;{note.answer_statement}&rdquo; &middot; On your resume:
+                    &ldquo;{note.resume_statement}&rdquo;
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <ClaimsList claims={report.claims ?? []} heading="Claims a recruiter may ask about" />
 
         {feedback.rambling_notes ? (
           <p className="text-muted text-sm">{feedback.rambling_notes}</p>

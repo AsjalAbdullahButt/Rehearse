@@ -10,10 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
 from app.models.enums import Category
+from app.models.interview_claim import InterviewClaim
 from app.models.interview_session import InterviewSession
 from app.schemas.answer import AnswerReport
+from app.schemas.claims import ClaimOut
 from app.schemas.feedback import (
     BehavioralRubric,
+    ConsistencyNoteOut,
     FeedbackReport,
     LLMFeedback,
     Rubric,
@@ -22,6 +25,7 @@ from app.schemas.feedback import (
 )
 from app.schemas.session import SessionQuestionOut
 from app.schemas.transcription import TranscriptionResult, WordTiming
+from app.services import claims as claims_service
 from app.services import metrics, repo
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -56,6 +60,7 @@ def build_answer(
     answer_cap_s: int,
     transcription: TranscriptionResult,
     feedback: LLMFeedback,
+    resume_text: str | None = None,
 ) -> Answer:
     filler_counts = metrics.count_fillers(transcription.transcript)
     evidence = _verified_evidence(feedback.evidence, transcript=transcription.transcript)
@@ -95,8 +100,33 @@ def build_answer(
             "rambling_notes": feedback.rambling_notes,
             "missing_information": feedback.missing_information,
             "follow_up_question": feedback.follow_up_question,
+            "consistency_notes": [
+                note.model_dump()
+                for note in claims_service.verified_consistency(
+                    feedback.consistency,
+                    transcript=transcription.transcript,
+                    resume_text=resume_text,
+                )
+            ],
         },
         answer_example=feedback.rewritten_answer or feedback.reference_answer,
+    )
+
+
+def claim_out(row: InterviewClaim) -> ClaimOut:
+    return ClaimOut(
+        id=row.id,
+        claim_text=row.claim_text,
+        claim_type=row.claim_type,
+        importance=row.importance,
+        metric=row.metric,
+        source=row.source,
+        status=row.status,
+        note=(
+            "This claim may receive recruiter follow-up."
+            if row.status in ("unverified", "partially_supported")
+            else None
+        ),
     )
 
 
@@ -135,6 +165,16 @@ async def to_answer_report(
         reference_answer=answer_example if not is_behavioral else None,
         missing_information=feedback_blob.get("missing_information", []),
         follow_up_question=feedback_blob.get("follow_up_question", ""),
+        consistency_notes=[
+            ConsistencyNoteOut.model_validate(note)
+            for note in feedback_blob.get("consistency_notes", [])
+        ],
+    )
+
+    claim_rows = (
+        await repo.list_claims_for_answer(db, answer_id=answer.id, user_id=answer.user_id)
+        if answer.original_answer_id is None
+        else []
     )
 
     # Defaults for the (legacy, pre-migration) case of an answer with no session_question_id —
@@ -192,4 +232,5 @@ async def to_answer_report(
         next_question=next_question_out,
         attempt_number=answer.attempt_number,
         original_answer_id=answer.original_answer_id,
+        claims=[claim_out(row) for row in claim_rows],
     )

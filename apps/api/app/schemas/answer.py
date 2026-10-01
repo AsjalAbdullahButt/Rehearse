@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.models.enums import Category, SessionStatus
+from app.schemas.claims import ClaimOut
 from app.schemas.feedback import FeedbackReport
 from app.schemas.session import SessionQuestionOut
 from app.schemas.transcription import TranscriptPart
@@ -43,6 +44,8 @@ class AnswerReport(BaseModel):
     # 1 for an original answer; >1 for a retry of `original_answer_id`.
     attempt_number: int = 1
     original_answer_id: str | None = None
+    # Probe-worthy claims extracted from this answer (empty for older answers and retries).
+    claims: list[ClaimOut] = []
 
     model_config = {"from_attributes": True}
 

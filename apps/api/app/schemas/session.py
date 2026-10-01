@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 from app.core.languages import SUPPORTED_LANGUAGES
 from app.models.enums import (
@@ -25,6 +25,8 @@ from app.models.interview_session import (
     QUESTION_COUNT_CHOICES,
 )
 from app.models.profile import ANSWER_CAP_CHOICES
+from app.schemas.answer import ClaimOut
+from app.services import panel
 from app.services.job_service import clean_role_title
 
 
@@ -49,6 +51,8 @@ class SessionCreate(BaseModel):
     years_experience: int | None = Field(default=None, ge=0, le=80)
     interviewer_style: InterviewerStyle | None = None
     language: str | None = Field(default=None, max_length=32)
+    # A panel interview (recruiter / technical lead / manager); behind ENABLE_PANEL_INTERVIEW.
+    panel: bool = False
 
     @field_validator("role")
     @classmethod
@@ -117,6 +121,20 @@ class SessionQuestionOut(BaseModel):
     competency: str | None = None
     level: int | None = None
     selection_reason: str | None = None
+    # Panel interviews only: who is asking. These are simulated interviewers.
+    panelist: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def panelist_name(self) -> str | None:
+        member = panel.panelist_by_key(self.panelist)
+        return member.name if member else None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def panelist_title(self) -> str | None:
+        member = panel.panelist_by_key(self.panelist)
+        return member.title if member else None
 
     model_config = {"from_attributes": True}
 
@@ -136,6 +154,7 @@ class SessionOut(BaseModel):
     interviewer_style: InterviewerStyle | None
     language: str | None
     job_target_id: str | None
+    panel: bool
     status: SessionStatus
     current_question_number: int
     started_at: datetime
@@ -152,6 +171,18 @@ class AnswerCategoryBreakdown(BaseModel):
     avg_score: float | None
 
 
+class PanelAssessment(BaseModel):
+    """One panelist's share of the interview: the questions they asked and the average score of
+    the answers to them (0-10). A panelist who asked nothing is omitted."""
+
+    panelist: str
+    name: str
+    title: str
+    label: str
+    questions: int
+    avg_score: float | None
+
+
 class SessionSummary(BaseModel):
     """The end-of-session report (Phase 8's "final session report") — aggregates the answers
     that already exist rather than re-scoring anything, per app/services/llm.py's one-call-per-
@@ -164,3 +195,6 @@ class SessionSummary(BaseModel):
     avg_wpm: float | None
     avg_filler_count: float | None
     avg_clarity: float | None
+    # Claims that came up (from answers or the resume) and how well each has been supported.
+    claims: list[ClaimOut] = []
+    panel_assessments: list[PanelAssessment] = []

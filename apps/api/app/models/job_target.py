@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, utcnow
@@ -26,6 +26,9 @@ class JobTarget(Base):
     job_description: Mapped[str | None] = mapped_column(Text)
     seniority: Mapped[str | None] = mapped_column(String(24))
     analysis_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Claims extracted from the candidate's resume by the same cached analysis call (a list of
+    # {claim, type, importance}); copied into each session as probe-able InterviewClaims.
+    resume_claims: Mapped[list[dict[str, str]] | None] = mapped_column(JSON)
     # "llm" when the model produced the map, "default" when it failed (or nothing needed
     # analysing) and the role's static default plan was used instead.
     analysis_source: Mapped[str] = mapped_column(String(16), nullable=False, default="default")

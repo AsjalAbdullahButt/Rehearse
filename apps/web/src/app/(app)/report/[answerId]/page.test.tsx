@@ -382,4 +382,49 @@ describe("ReportPage", () => {
     expect(screen.queryByRole("button", { name: "Record a new answer" })).not.toBeInTheDocument();
     expect(screen.getByText(/used all 5 attempts/)).toBeInTheDocument();
   });
+
+  it("shows consistency notes and claims worded as possible recruiter follow-up", async () => {
+    const base = baseReport();
+    fetchAnswerReportMock.mockResolvedValue({
+      ...base,
+      feedback: {
+        ...base.feedback,
+        consistency_notes: [
+          {
+            kind: "duration",
+            answer_statement: "only used Python for six months",
+            resume_statement: "Python - 3 years",
+            message: "A recruiter may ask you to clarify.",
+          },
+        ],
+      },
+      claims: [
+        {
+          id: "c1",
+          claim_text: "Reduced API latency by 40%",
+          claim_type: "performance",
+          importance: "high",
+          metric: "40%",
+          source: "answer",
+          status: "unverified",
+          note: "This claim may receive recruiter follow-up.",
+        },
+      ],
+    });
+
+    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+
+    expect(screen.getByText("Possible recruiter follow-up")).toBeInTheDocument();
+    expect(screen.getByText("A recruiter may ask you to clarify.")).toBeInTheDocument();
+    expect(screen.getByText("Reduced API latency by 40%")).toBeInTheDocument();
+  });
+
+  it("renders older reports that have no claims or consistency data", async () => {
+    fetchAnswerReportMock.mockResolvedValue(baseReport());
+
+    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+
+    expect(screen.queryByText("Possible recruiter follow-up")).not.toBeInTheDocument();
+    expect(screen.queryByText("Claims a recruiter may ask about")).not.toBeInTheDocument();
+  });
 });

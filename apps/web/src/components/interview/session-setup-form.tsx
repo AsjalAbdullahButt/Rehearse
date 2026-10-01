@@ -59,6 +59,7 @@ function isQuestionCountOption(
 
 export function SessionSetupForm({
   initialRole,
+  panelAvailable = false,
   initialCustomRole,
   initialFocusTopics,
   initialFocus,
@@ -73,6 +74,8 @@ export function SessionSetupForm({
   onSubmit,
 }: {
   initialRole?: Role;
+  /** Shows the panel-interview option (only when the API's feature flag is on). */
+  panelAvailable?: boolean;
   /** A role that isn't a preset (e.g. from a practice-plan link for a custom role). */
   initialCustomRole?: string;
   /** Pre-fills the focus-topics field (e.g. today's spaced-repetition skills). */
@@ -104,6 +107,7 @@ export function SessionSetupForm({
   const [role, setRole] = useState<Role | null>(initialRole ?? null);
   const [customRole, setCustomRole] = useState(initialCustomRole ?? "");
   const [language, setLanguage] = useState<LanguageCode>("en");
+  const [panel, setPanel] = useState(false);
   const [difficulty, setDifficulty] = useState<Difficulty>(initialDifficulty ?? "medium");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("mid");
   const [focus, setFocus] = useState<Focus>(initialFocus ?? "mixed");
@@ -159,6 +163,7 @@ export function SessionSetupForm({
     onSubmit({
       role: roleValue,
       language,
+      panel: panel || undefined,
       difficulty,
       experience_level: experienceLevel,
       focus,
@@ -313,6 +318,24 @@ export function SessionSetupForm({
                   ))}
                 </div>
               </fieldset>
+
+              {panelAvailable ? (
+                <label className="border-line flex items-start gap-3 rounded-[var(--radius-tile)] border p-3 sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={panel}
+                    onChange={(event) => setPanel(event.target.checked)}
+                    className="mt-1 size-4"
+                  />
+                  <span className="flex flex-col gap-1">
+                    <span className="text-text text-sm font-medium">Panel interview</span>
+                    <span className="text-muted text-xs">
+                      A simulated recruiter, technical lead and engineering manager take turns, each
+                      asking about their own area. Your report scores each of them separately.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
 
               <fieldset className="flex flex-col gap-3">
                 <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">

@@ -43,6 +43,12 @@ class SessionQuestion(Base):
     competency: Mapped[str | None] = mapped_column(String(64))
     level: Mapped[int | None] = mapped_column(SmallInteger)
     selection_reason: Mapped[str | None] = mapped_column(String(24))
+    # The claim a probe question targets (selection_reason == "claim_probe"), and which panel
+    # member asked it in a panel interview.
+    claim_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("interview_claims.id", ondelete="SET NULL")
+    )
+    panelist: Mapped[str | None] = mapped_column(String(24))
     question_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("questions.id", ondelete="SET NULL")
     )

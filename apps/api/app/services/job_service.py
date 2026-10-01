@@ -18,8 +18,11 @@ from dataclasses import replace
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import Role
+from app.models.interview_claim import InterviewClaim
+from app.models.interview_session import InterviewSession
 from app.models.job_target import JobCompetency, JobTarget
 from app.schemas.planning import JobAnalysis
+from app.services import claims as claims_service
 from app.services import llm, repo
 from app.services.adaptive_engine import PlanItem
 from app.services.competency import normalize_competency
@@ -213,7 +216,9 @@ async def resolve_job_target(
     """Returns the cached or freshly built JobTarget for a session that needs one (a JD was
     given, or the role is custom), else None — a preset role with no JD just uses its static
     default plan and has nothing worth persisting."""
-    needs_analysis = bool(job_description) or preset_role(role_key) is None
+    needs_analysis = (
+        bool(job_description) or bool(candidate_background) or preset_role(role_key) is None
+    )
     if not needs_analysis:
         return None
 
@@ -223,6 +228,7 @@ async def resolve_job_target(
         return existing
 
     source = "llm"
+    resume_claims: list[dict[str, str]] = []
     try:
         analysis = await llm.analyze_job_target(
             role_title=role_title,
@@ -231,6 +237,12 @@ async def resolve_job_target(
         )
         plan = plan_from_analysis(analysis)
         seniority: str | None = None if analysis.seniority == "unknown" else analysis.seniority
+        # Only claims whose quote is really in the resume survive.
+        resume_claims = [
+            {"claim": c.claim, "type": c.type, "importance": c.importance}
+            for c in analysis.resume_claims
+            if candidate_background and claims_service.appears_in(c.quote, candidate_background)
+        ]
     except Exception:
         # Deliberately broad: a timeout, rate limit, network error, invalid JSON or an unexpected
         # schema must all degrade to the default plan, never abort session creation. The failure
@@ -248,6 +260,7 @@ async def resolve_job_target(
         seniority=seniority,
         analysis_hash=digest,
         analysis_source=source,
+        resume_claims=resume_claims or None,
     )
     competencies = [
         JobCompetency(
@@ -294,3 +307,31 @@ async def plan_for_session(
         if rows:
             plan = _plan_from_rows(rows)
     return _boost_focus_topics(plan or default_plan(role), focus_topics)
+
+
+async def seed_resume_claims(
+    db: AsyncSession, *, session: InterviewSession, target: JobTarget | None
+) -> None:
+    """Copies the resume's most important claims into the new session as probe-able claims, so
+    high-impact resume statements get verified during the interview without any extra LLM call
+    (they were extracted by the cached analysis)."""
+    if target is None or not target.resume_claims:
+        return
+    ranked = sorted(
+        (c for c in target.resume_claims if c.get("importance") in ("high", "medium")),
+        key=lambda c: -claims_service.IMPORTANCE_RANK[c["importance"]],
+    )[: claims_service.MAX_RESUME_CLAIMS_PER_SESSION]
+    await repo.create_claims(
+        db,
+        claims=[
+            InterviewClaim(
+                session_id=session.id,
+                user_id=session.user_id,
+                source="resume",
+                claim_text=c["claim"],
+                claim_type=c.get("type", "resume"),
+                importance=c["importance"],
+            )
+            for c in ranked
+        ],
+    )

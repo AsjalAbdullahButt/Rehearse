@@ -104,6 +104,11 @@ export function AccountPrivacyPanel() {
             text, sent to Groq to summarize, and then discarded — the file itself is never stored.
           </li>
           <li>
+            • Short statements from your answers and resume that an interviewer might follow up on
+            (for example a metric you mentioned) are saved with the session so they can be probed
+            and shown in your report. Deleting a session removes them.
+          </li>
+          <li>
             • Deleting your account permanently removes your transcripts, feedback, and session
             history — this cannot be undone.
           </li>

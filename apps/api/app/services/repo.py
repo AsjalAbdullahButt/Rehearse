@@ -27,6 +27,7 @@ from app.models.enums import (
     Role,
     SessionStatus,
 )
+from app.models.interview_claim import InterviewClaim
 from app.models.interview_session import InterviewSession
 from app.models.job_target import JobCompetency, JobTarget
 from app.models.profile import Profile
@@ -92,6 +93,7 @@ async def delete_user_and_all_data(db: AsyncSession, *, user_id: str) -> None:
     their session (rather than trusting the session's own cascade) for the same reason."""
     await db.execute(delete(Answer).where(Answer.user_id == user_id))
     await db.execute(delete(InterviewSession).where(InterviewSession.user_id == user_id))
+    await db.execute(delete(InterviewClaim).where(InterviewClaim.user_id == user_id))
     await db.execute(delete(CandidateCompetency).where(CandidateCompetency.user_id == user_id))
     target_ids = select(JobTarget.id).where(JobTarget.user_id == user_id)
     await db.execute(delete(JobCompetency).where(JobCompetency.job_target_id.in_(target_ids)))
@@ -296,6 +298,7 @@ async def create_session(
     years_experience: int | None = None,
     interviewer_style: InterviewerStyle | None = None,
     language: str | None = None,
+    panel: bool = False,
 ) -> InterviewSession:
     session = InterviewSession(
         user_id=user_id,
@@ -316,6 +319,7 @@ async def create_session(
         years_experience=years_experience,
         interviewer_style=interviewer_style,
         language=language,
+        panel=panel,
     )
     db.add(session)
     await db.commit()
@@ -360,6 +364,7 @@ async def delete_session_and_all_data(db: AsyncSession, *, session_id: str, user
 
     await db.execute(delete(Answer).where(Answer.session_id == session_id))
     await db.execute(delete(SessionQuestion).where(SessionQuestion.session_id == session_id))
+    await db.execute(delete(InterviewClaim).where(InterviewClaim.session_id == session_id))
     await db.execute(delete(InterviewSession).where(InterviewSession.id == session_id))
     await db.commit()
     return True
@@ -402,6 +407,8 @@ async def create_session_question(
     competency: str | None = None,
     level: int | None = None,
     selection_reason: str | None = None,
+    claim_id: str | None = None,
+    panelist: str | None = None,
 ) -> SessionQuestion:
     session_question = SessionQuestion(
         session_id=session_id,
@@ -413,8 +420,17 @@ async def create_session_question(
         competency=competency,
         level=level,
         selection_reason=selection_reason,
+        claim_id=claim_id,
+        panelist=panelist,
     )
     db.add(session_question)
+    if claim_id is not None:
+        # Counted when the probe is *asked*, so an unanswered probe is never asked twice.
+        await db.execute(
+            update(InterviewClaim)
+            .where(InterviewClaim.id == claim_id, InterviewClaim.session_id == session_id)
+            .values(probe_count=InterviewClaim.probe_count + 1)
+        )
     await db.execute(
         update(InterviewSession)
         .where(InterviewSession.id == session_id)
@@ -810,3 +826,56 @@ async def get_latest_job_target_id_for_role(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+# ─── claims ──────────────────────────────────────────────────────────────
+
+
+async def create_claims(db: AsyncSession, *, claims: list[InterviewClaim]) -> list[InterviewClaim]:
+    if not claims:
+        return []
+    db.add_all(claims)
+    await db.commit()
+    for claim in claims:
+        await db.refresh(claim)
+    return claims
+
+
+async def list_claims_for_session(
+    db: AsyncSession, *, session_id: str, user_id: str
+) -> list[InterviewClaim]:
+    result = await db.execute(
+        select(InterviewClaim)
+        .where(InterviewClaim.session_id == session_id, InterviewClaim.user_id == user_id)
+        .order_by(InterviewClaim.created_at, InterviewClaim.id)
+    )
+    return list(result.scalars().all())
+
+
+async def list_claims_for_answer(
+    db: AsyncSession, *, answer_id: str, user_id: str
+) -> list[InterviewClaim]:
+    result = await db.execute(
+        select(InterviewClaim)
+        .where(InterviewClaim.answer_id == answer_id, InterviewClaim.user_id == user_id)
+        .order_by(InterviewClaim.created_at, InterviewClaim.id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_claim_for_user(
+    db: AsyncSession, *, claim_id: str, user_id: str
+) -> InterviewClaim | None:
+    result = await db.execute(
+        select(InterviewClaim).where(
+            InterviewClaim.id == claim_id, InterviewClaim.user_id == user_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def save_claim(db: AsyncSession, *, claim: InterviewClaim) -> InterviewClaim:
+    db.add(claim)
+    await db.commit()
+    await db.refresh(claim)
+    return claim

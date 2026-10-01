@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
+from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.db import get_db
 from app.models.enums import Category, SessionStatus
@@ -13,12 +14,14 @@ from app.models.user import User
 from app.schemas.feedback import rubric_overall_score
 from app.schemas.session import (
     AnswerCategoryBreakdown,
+    PanelAssessment,
     SessionCreate,
     SessionOut,
     SessionQuestionOut,
     SessionSummary,
 )
-from app.services import job_service, repo
+from app.services import job_service, panel, repo
+from app.services.feedback import claim_out
 from app.services.job_service import role_key_for_title
 from app.services.question_orchestrator import NoQuestionAvailableError, select_next_question
 
@@ -40,6 +43,12 @@ async def create_session(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SessionOut:
+    if body.panel and not get_settings().enable_panel_interview:
+        raise ApiError(
+            "feature_disabled",
+            "Panel interviews are not available right now.",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
     role_key = role_key_for_title(body.role)
     preset = job_service.preset_role(role_key)
     role_title = None if preset else body.role
@@ -73,7 +82,9 @@ async def create_session(
         years_experience=body.years_experience,
         interviewer_style=body.interviewer_style,
         language=body.language,
+        panel=body.panel,
     )
+    await job_service.seed_resume_claims(db, session=session, target=target)
 
     try:
         selected = await select_next_question(db, session=session, prior_follow_up=None)
@@ -95,6 +106,8 @@ async def create_session(
         competency=selected.competency,
         level=selected.level,
         selection_reason=selected.reason,
+        claim_id=selected.claim_id,
+        panelist=selected.panelist,
     )
 
     return _session_out(session, first_question)
@@ -187,6 +200,35 @@ async def get_session_summary(
     def _avg(values: list[float]) -> float | None:
         return round(sum(values) / len(values), 2) if values else None
 
+    claim_rows = await repo.list_claims_for_session(db, session_id=session_id, user_id=user.id)
+    panel_scores: dict[str, list[float]] = {}
+    panel_questions: dict[str, int] = {}
+    panelist_by_session_question_id = {sq.id: sq.panelist for sq in session_questions}
+    for sq in session_questions:
+        if sq.panelist:
+            panel_questions[sq.panelist] = panel_questions.get(sq.panelist, 0) + 1
+    for answer in answers:
+        score = rubric_overall_score(answer.rubric)
+        key = (
+            panelist_by_session_question_id.get(answer.session_question_id)
+            if answer.session_question_id
+            else None
+        )
+        if score is not None and key:
+            panel_scores.setdefault(key, []).append(score)
+    panel_assessments = [
+        PanelAssessment(
+            panelist=member.key,
+            name=member.name,
+            title=member.title,
+            label=panel.assessment_label(member.key),
+            questions=panel_questions[member.key],
+            avg_score=_avg(panel_scores.get(member.key, [])),
+        )
+        for member in panel.PANEL
+        if member.key in panel_questions
+    ]
+
     return SessionSummary(
         session=_session_out(session),
         questions_completed=len(answers),
@@ -198,4 +240,6 @@ async def get_session_summary(
         avg_wpm=_avg([float(a.wpm) for a in answers]),
         avg_filler_count=_avg([float(a.filler_count) for a in answers]),
         avg_clarity=_avg([float(a.clarity) for a in answers if a.clarity is not None]),
+        claims=[claim_out(row) for row in claim_rows],
+        panel_assessments=panel_assessments,
     )

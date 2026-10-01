@@ -16,9 +16,30 @@ class AnalyzedCompetency(BaseModel):
     resume_evidence: Literal["strong", "medium", "basic", "missing", "unknown"] = "unknown"
 
 
+class ResumeClaim(BaseModel):
+    """A substantive statement the resume makes. `quote` must appear verbatim in the resume text
+    (checked in services/job_service.py) or the claim is dropped."""
+
+    claim: str = Field(min_length=3, max_length=200)
+    type: Literal[
+        "numeric",
+        "ownership",
+        "leadership",
+        "technical",
+        "performance",
+        "scale",
+        "team_size",
+        "business_impact",
+        "resume",
+    ] = "resume"
+    importance: Literal["high", "medium", "low"]
+    quote: str = Field(min_length=3, max_length=300)
+
+
 class JobAnalysis(BaseModel):
     seniority: Literal["intern", "junior", "mid", "senior", "lead", "unknown"] = "unknown"
     competencies: list[AnalyzedCompetency] = Field(min_length=1, max_length=MAX_PLAN_COMPETENCIES)
+    resume_claims: list[ResumeClaim] = Field(default=[], max_length=5)
 
     @field_validator("competencies")
     @classmethod
