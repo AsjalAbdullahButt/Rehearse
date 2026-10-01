@@ -1,4 +1,8 @@
+import Link from "next/link";
+
 import { RecoveryState } from "@/components/ui/recovery-state";
+import { AttemptComparison } from "@/components/report/attempt-comparison";
+import { RetryAnswer } from "@/components/report/retry-answer";
 import { BeforeAfterToggle } from "@/components/report/before-after-toggle";
 import { ReportNextSteps } from "@/components/report/report-next-steps";
 import { RubricBars } from "@/components/report/rubric-bars";
@@ -7,9 +11,12 @@ import { Card } from "@/components/ui/card";
 import { Stat } from "@/components/ui/stat";
 import { hasCompleteFeedback } from "@/lib/interview/feedback";
 import { rubricAreas, strongestRubricArea } from "@/lib/interview/rubric-insights";
-import { fetchAnswerReport } from "@/lib/interview/server";
+import { fetchAnswerReport, fetchAttempts } from "@/lib/interview/server";
 import { toTranscriptParts } from "@/lib/interview/transcript";
 import type { Category } from "@/lib/interview/types";
+
+// Must match apps/api/app/routers/answers.py's MAX_ATTEMPTS_PER_QUESTION.
+const MAX_ATTEMPTS_PER_QUESTION = 5;
 
 const CATEGORY_LABELS: Record<Category, string> = {
   behavioral: "Behavioral",
@@ -42,6 +49,8 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
   }
 
   const { feedback } = report;
+  const comparison = await fetchAttempts(answerId).catch(() => null);
+  const isRetry = report.attempt_number > 1;
   if (!hasCompleteFeedback(feedback)) {
     return (
       <RecoveryState
@@ -84,6 +93,7 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
           <p className="text-text text-sm leading-relaxed">{feedback.improvements[0]}</p>
         </div>
       ) : null}
+      {comparison ? <AttemptComparison comparison={comparison} /> : null}
       <Card className="flex flex-col gap-8">
         <div className="flex flex-wrap items-center gap-8">
           <ScoreRing score={feedback.clarity} label="Clarity" />
@@ -238,13 +248,28 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
           <p className="text-text text-sm">{feedback.follow_up_question}</p>
         </div>
 
-        <ReportNextSteps
-          sessionId={report.session_id}
-          questionNumber={report.question_number}
-          questionCount={report.question_count}
-          sessionStatus={report.session_status}
-          nextQuestion={report.next_question}
+        <RetryAnswer
+          report={report}
+          attemptsUsed={comparison?.attempts.length ?? 1}
+          maxAttempts={MAX_ATTEMPTS_PER_QUESTION}
         />
+
+        {isRetry ? (
+          <Link
+            href={`/session/${report.session_id}/summary`}
+            className="text-lime inline-flex min-h-11 items-center text-sm underline underline-offset-4"
+          >
+            Back to your interview summary
+          </Link>
+        ) : (
+          <ReportNextSteps
+            sessionId={report.session_id}
+            questionNumber={report.question_number}
+            questionCount={report.question_count}
+            sessionStatus={report.session_status}
+            nextQuestion={report.next_question}
+          />
+        )}
       </Card>
     </div>
   );

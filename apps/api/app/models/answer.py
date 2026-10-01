@@ -80,4 +80,10 @@ class Answer(Base):
     # rather than two columns that are always mutually exclusive anyway.
     answer_example: Mapped[str | None] = mapped_column(Text)
     idempotency_key: Mapped[str | None] = mapped_column(String(255))
+    # A retry is a new row pointing at the answer it re-attempts (never replacing it). Originals
+    # have attempt_number 1 and original_answer_id NULL; session aggregates only count originals.
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    original_answer_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("answers.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)

@@ -40,6 +40,9 @@ class AnswerReport(BaseModel):
     question_count: int
     session_status: SessionStatus
     next_question: SessionQuestionOut | None
+    # 1 for an original answer; >1 for a retry of `original_answer_id`.
+    attempt_number: int = 1
+    original_answer_id: str | None = None
 
     model_config = {"from_attributes": True}
 

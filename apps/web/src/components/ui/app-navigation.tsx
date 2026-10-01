@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 const destinations = [
   { href: "/interview", label: "Interview" },
+  { href: "/mastery", label: "Skills" },
   { href: "/progress", label: "Progress" },
   { href: "/settings", label: "Settings" },
 ];

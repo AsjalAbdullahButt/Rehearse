@@ -504,21 +504,41 @@ async def get_answer_for_session_question(
     """Backs the "no double-answering the same question" check in answers.py — a session's
     questions are already scoped to their owning session/user by the time this is called."""
     result = await db.execute(
-        select(Answer).where(Answer.session_question_id == session_question_id)
+        select(Answer).where(
+            Answer.session_question_id == session_question_id,
+            Answer.original_answer_id.is_(None),
+        )
     )
     return result.scalar_one_or_none()
 
 
+async def list_attempts(db: AsyncSession, *, original_answer_id: str, user_id: str) -> list[Answer]:
+    """The original answer plus every retry of it, oldest first — owner-scoped."""
+    result = await db.execute(
+        select(Answer)
+        .where(
+            Answer.user_id == user_id,
+            (Answer.id == original_answer_id) | (Answer.original_answer_id == original_answer_id),
+        )
+        .order_by(Answer.attempt_number)
+    )
+    return list(result.scalars().all())
+
+
 async def list_answers_for_user(db: AsyncSession, *, user_id: str) -> list[Answer]:
     result = await db.execute(
-        select(Answer).where(Answer.user_id == user_id).order_by(Answer.created_at.desc())
+        select(Answer)
+        .where(Answer.user_id == user_id, Answer.original_answer_id.is_(None))
+        .order_by(Answer.created_at.desc())
     )
     return list(result.scalars().all())
 
 
 async def list_answers_for_session(db: AsyncSession, *, session_id: str) -> list[Answer]:
     result = await db.execute(
-        select(Answer).where(Answer.session_id == session_id).order_by(Answer.created_at)
+        select(Answer)
+        .where(Answer.session_id == session_id, Answer.original_answer_id.is_(None))
+        .order_by(Answer.created_at)
     )
     return list(result.scalars().all())
 
@@ -568,7 +588,11 @@ async def get_progress_for_user(
         return []
 
     session_ids = [session.id for session in sessions]
-    answers_result = await db.execute(select(Answer).where(Answer.session_id.in_(session_ids)))
+    answers_result = await db.execute(
+        select(Answer).where(
+            Answer.session_id.in_(session_ids), Answer.original_answer_id.is_(None)
+        )
+    )
     answers_by_session: dict[str, list[Answer]] = defaultdict(list)
     for answer in answers_result.scalars().all():
         answers_by_session[answer.session_id].append(answer)
@@ -769,3 +793,20 @@ async def save_candidate_competency(
     await db.commit()
     await db.refresh(row)
     return row
+
+
+async def get_latest_job_target_id_for_role(
+    db: AsyncSession, *, user_id: str, role: str
+) -> str | None:
+    """The job target of the user's most recent session for this role, if any session had one."""
+    result = await db.execute(
+        select(InterviewSession.job_target_id)
+        .where(
+            InterviewSession.user_id == user_id,
+            InterviewSession.role == role,
+            InterviewSession.job_target_id.is_not(None),
+        )
+        .order_by(InterviewSession.started_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()

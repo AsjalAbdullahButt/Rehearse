@@ -545,6 +545,95 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
     project only ever signs with one shared secret. See `docs/runbook.md`'s new "Production
     config" section for what a startup `ValidationError` here means operationally.
 
+- **Adaptive interview engine, round 1 (2026-10-02) — Phases 0–1 of the "adaptive platform"
+  master prompt, plus the backend of Feature 10.** The remaining phases are *not* started — see
+  "Known gaps — current" for the explicit list.
+  - **Decision layer vs. LLM.** `services/adaptive_engine.py` is pure (no DB, no LLM): given the
+    job's competency plan, the candidate's persistent mastery and the session history it picks
+    the next *competency, level (1-5) and mode* (`coverage`/`deepen`/`diagnostic`/`fallback`).
+    `services/question_orchestrator.py` turns that into a question: the free LLM follow-up (when
+    probing the same competency) → a matching bank question → a generated one
+    (`llm.generate_question`, capped at `MAX_GENERATED_PER_SESSION`) → any unused bank question.
+    Any generation failure degrades to the bank; an AI outage never stalls an interview. Every
+    served question records `competency`/`level`/`selection_reason` on `session_questions`.
+  - **Interviewer styles change behaviour, not just prose.** `services/interviewer_policy.py`
+    (`policy_for(style)`): start-level offset, how far difficulty moves after strong/weak answers,
+    depth-probe budget per competency, whether a middling answer is pressed, plus the tone
+    paragraph used in the feedback/question prompts (the feedback prompt's old hard-coded "warm
+    coach" opener is gone; no style = realistic). Only fields something consumes exist;
+    `hint_level`/`feedback_frequency` are defined but **not yet consumed by the UI**.
+  - **Competencies.** `services/competency.py`: canonical taxonomy + alias/keyword normalization
+    (`normalize_competency` — LLM-supplied names are always mapped through it), 1-5 levels, and
+    the mastery maths (`update_mastery`: running average for the first attempts then a fixed
+    recency weight, confidence grows with attempts, evidence nudged by difficulty).
+    `CandidateCompetency` (migration 0011) is the persistent per-user/per-role mastery row,
+    updated by `services/mastery.py` after every answer *before* the next question is chosen.
+    `GET /v1/mastery[?role=]` exposes it (strongest/weakest need ≥2 attempts). Bank questions
+    carry nullable `competency`/`level` etc.; pre-taxonomy rows are classified at runtime by
+    `infer_competency` (keyword rules + `BANK_COMPETENCY_OVERRIDES` — covers all 96 seed
+    questions, asserted by hand when written) and `scripts/seed.py` now stores the tag.
+  - **Job targets & custom roles.** `sessions.role` is now a plain string: a preset slug or the
+    slugified title of any custom role (`role_title` = display name). `services/job_service.py`
+    resolves a `JobTarget` + `JobCompetency` rows (weighted plan with per-competency resume
+    evidence) via one cached LLM call (`llm.analyze_job_target`, cached by a hash of
+    role/JD/background); a preset role without a JD uses a static default plan; any failure falls
+    back to a default plan. Custom roles borrow the HR/general bank and rely on generated
+    questions. Deliberately **no separate `RoleProfile` table**: role identity = key + title +
+    the job target's competency map. Focus topics boost matching competencies; resume gaps
+    (`missing`/`basic`) boost priority.
+  - **Language is real now.** `core/languages.py` lists only languages Whisper can transcribe
+    (en/ur/hi/pa); `SessionCreate.language` is validated against it, `stt.transcribe` passes the
+    session language to Whisper, prompts instruct feedback/questions in that language, and the
+    web app uses the matching BCP-47 tag for live captions and TTS (both best-effort per browser).
+  - **Session state.** `SessionStatus.ENDED_EARLY` + `SESSION_STATUS_TRANSITIONS`;
+    `POST /v1/sessions/{id}/end` (owner-scoped, 409 if already finished) via
+    `repo.transition_session_status`, whose allowed-from check lives in the UPDATE's WHERE
+    clause. The web UI does not call it yet.
+  - **Web.** Setup form: custom-role input, interview-language pills; `types.ts` mirrors the new
+    fields; progress role filter accepts custom roles.
+  - **Tests.** API 267 → 328 (`test_competency`, `test_adaptive_engine`, `test_job_service`,
+    `test_question_orchestrator`, `test_adaptive_flow`); a conftest autouse fixture makes
+    `llm.generate_question`/`analyze_job_target` behave like a provider outage so no test reaches
+    the network and every session test also exercises the fallback path. Web 208 → 211.
+    Migration 0011's first push only upgraded/downgraded/re-upgraded against SQLite, which
+    doesn't model collation — real MySQL CI then caught a genuine bug (the three new tables were
+    missing the `mysql_charset`/`mysql_collate` kwargs every other migration passes to
+    `create_table`, so their VARCHAR keys collated differently from `users.id` and MySQL refused
+    the foreign key with error 3780). Fixed in a follow-up commit and now verified green against
+    CI's real MySQL 8 service, not just SQLite. No live Groq call was made for any of the new
+    prompts.
+
+- **Learning system, round 2 (2026-10-02) — Phase 2 of the adaptive-platform prompt (Features 9,
+  10, 11, 14).**
+  - **Re-answer (9).** `answers.attempt_number` + `original_answer_id` (migration 0012). A retry
+    is a *new* row via `POST /v1/answers` with `retry_of_answer_id` (must be the caller's own
+    answer to the same session question; any attempt id resolves to the root; max
+    `MAX_ATTEMPTS_PER_QUESTION = 5`, mirrored in the report page). A retry never advances the
+    session, never updates mastery, and is excluded from session aggregates/progress via
+    `original_answer_id IS NULL` filters in `repo.py` (it *does* count toward the daily answer
+    cap — it costs real STT/LLM usage). `GET /v1/answers/{id}/attempts` →
+    `services/comparison.py`: improved = component up ≥1 point, still-weak = <6, focus-next =
+    lowest component, filler/WPM deltas — all computed from stored scores, no LLM. Web:
+    `RetryAnswer` + `AttemptComparison` on `/report/[answerId]`.
+  - **Mastery page (10).** `/mastery` (nav item "Skills"): readiness card, strongest/weakest/
+    biggest-risk, today's practice, per-skill bars (accessible `progressbar`s; skills with <2
+    answers are visually marked "early"). `GET /v1/mastery` now includes `role` per skill.
+  - **Spaced repetition (11).** `services/spaced_repetition.py`, pure: interval by mastery band
+    (1/2/4/7 days, 14 once ≥90%), halved when >50% of attempts failed; due = last practice +
+    interval. `GET /v1/practice-plan[?role=]` returns today's ≤3 due skills (most overdue first),
+    upcoming reviews, an estimated 3 questions/9 minutes, and `focus_topics` — "Start today's
+    practice" links to `/interview?role=…&count=3&topics=…`, which pre-fills the setup form's
+    focus topics (the engine boosts matching competencies).
+  - **Readiness (14).** `services/readiness.py` + `GET /v1/readiness?role=`: plan-weighted mean
+    of mastery shrunk toward 50% by confidence, over assessed competencies only; **no score**
+    (null) when <30% of the plan is assessed or <3 answers; per-category scores, drivers,
+    plain-language explanation. Called the "Rehearse Readiness Score"; not a percentile and the UI
+    says so. Plan = explicit/latest job target for the role, else the role's default plan.
+  - **Tests.** API 328 → 348 (`test_learning_system.py`), web 211 → 221. Migration 0012
+    upgrade/downgrade/upgrade verified on SQLite only. The browser recording path of
+    `RetryAnswer` (MediaRecorder) is not covered by an automated test, same limitation as
+    `InterviewFlow`.
+
 ## Known gaps / deliberate scope cuts from Phase 2
 
 - **No design mockup files, still.** `/design` was empty; Phase 2 was built from a dark-mode PDF
@@ -589,6 +678,16 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   Chromium is installed in this workspace; older notes saying no browser is available are
   historical. Cross-browser back-navigation protection, individual answer links from summaries,
   and a persisted explicit early-end state remain follow-ups requiring further UI/API work.
+
+- **Adaptive-platform master prompt — not yet built (as of 2026-10-02):** claim extraction/
+  probing (Feature 2), panel interviews (6), resume-consistency checks (12), prosody/pitch/energy
+  analysis (7), camera coaching (8), coding/system-design/case modes (13), shareable reports (15),
+  email verification/password reset, CSP nonce migration, and the dashboard/report redesign.
+  Also missing for what *is* built: an "ended early" button in the web UI, a mastery-over-time history chart, a dashboard/"continue training" home,
+  per-session `SessionCompetencyState` table (session coverage is derived from `session_questions`
+  + answers instead), a `RoleProfile` table, difficulty levels on the bank beyond the coarse
+  easy/medium/hard mapping (levels 1 and 5 only ever come from generated questions or follow-ups),
+  and consumption of `InterviewerPolicy.hint_level`/`feedback_frequency` in the interview UI.
 
 - **No password-reset flow.** Change-password (requires knowing the current password) and full
   account deletion exist; there's no "forgot password" email flow, since that needs a transactional

@@ -147,7 +147,7 @@ async def to_answer_report(
         )
         if answered_question is not None:
             question_number = answered_question.sequence_number
-            if question_number < session.question_count:
+            if answer.original_answer_id is None and question_number < session.question_count:
                 session_questions = await repo.list_session_questions_for_session(
                     db, session_id=session.id
                 )
@@ -190,4 +190,6 @@ async def to_answer_report(
         question_count=session.question_count,
         session_status=session.status,
         next_question=next_question_out,
+        attempt_number=answer.attempt_number,
+        original_answer_id=answer.original_answer_id,
     )

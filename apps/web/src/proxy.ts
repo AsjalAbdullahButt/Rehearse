@@ -4,7 +4,7 @@ import { apiFetch, type TokenResponse } from "@/lib/auth/api";
 import { ACCESS_TOKEN_COOKIE, buildSessionCookies, REFRESH_TOKEN_COOKIE } from "@/lib/auth/cookies";
 import { isTokenExpired } from "@/lib/auth/tokens";
 
-const APP_PREFIXES = ["/interview", "/report", "/progress", "/settings"];
+const APP_PREFIXES = ["/interview", "/report", "/progress", "/mastery", "/settings"];
 
 function redirectToSignIn(request: NextRequest): NextResponse {
   const redirectUrl = request.nextUrl.clone();

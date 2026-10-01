@@ -59,6 +59,8 @@ function isQuestionCountOption(
 
 export function SessionSetupForm({
   initialRole,
+  initialCustomRole,
+  initialFocusTopics,
   initialFocus,
   initialDifficulty,
   initialQuestionCount,
@@ -71,6 +73,10 @@ export function SessionSetupForm({
   onSubmit,
 }: {
   initialRole?: Role;
+  /** A role that isn't a preset (e.g. from a practice-plan link for a custom role). */
+  initialCustomRole?: string;
+  /** Pre-fills the focus-topics field (e.g. today's spaced-repetition skills). */
+  initialFocusTopics?: string[];
   /** A session-focused link (e.g. "Practice this weak area" on the summary page) can hand a
    * specific focus straight through instead of leaving the candidate to reselect "Mixed" and
    * then a category by hand. */
@@ -96,7 +102,7 @@ export function SessionSetupForm({
   onSubmit: (value: SessionCreateInput) => void;
 }) {
   const [role, setRole] = useState<Role | null>(initialRole ?? null);
-  const [customRole, setCustomRole] = useState("");
+  const [customRole, setCustomRole] = useState(initialCustomRole ?? "");
   const [language, setLanguage] = useState<LanguageCode>("en");
   const [difficulty, setDifficulty] = useState<Difficulty>(initialDifficulty ?? "medium");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("mid");
@@ -112,7 +118,9 @@ export function SessionSetupForm({
   const hasSavedResumeMemory = Boolean(
     initialCandidateBackground || initialSkills?.length || initialYearsExperience,
   );
-  const [showPersonalize, setShowPersonalize] = useState(hasSavedResumeMemory);
+  const [showPersonalize, setShowPersonalize] = useState(
+    hasSavedResumeMemory || Boolean(initialFocusTopics?.length),
+  );
   const [industry, setIndustry] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [candidateBackground, setCandidateBackground] = useState(initialCandidateBackground ?? "");
@@ -120,7 +128,7 @@ export function SessionSetupForm({
   const [yearsExperience, setYearsExperience] = useState(
     initialYearsExperience != null ? String(initialYearsExperience) : "",
   );
-  const [focusTopics, setFocusTopics] = useState("");
+  const [focusTopics, setFocusTopics] = useState(initialFocusTopics?.join(", ") ?? "");
   const [interviewerStyle, setInterviewerStyle] = useState<InterviewerStyle | null>(null);
 
   function handleResumeExtracted(extraction: ResumeExtraction) {

@@ -11,11 +11,13 @@ from app.core.languages import resolve_language
 from app.core.limits import MAX_AUDIO_FILE_BYTES
 from app.core.rate_limit import client_ip_key, enforce_rate_limit, user_or_ip_key
 from app.db import get_db
+from app.models.answer import Answer
 from app.models.user import User
 from app.schemas.answer import AnswerReport
+from app.schemas.attempts import AttemptComparison
 from app.schemas.feedback import compute_overall_score
+from app.services import comparison, llm, mastery, repo, stt
 from app.services import feedback as feedback_service
-from app.services import llm, mastery, repo, stt
 from app.services.interviewer_policy import policy_for
 from app.services.question_orchestrator import NoQuestionAvailableError, select_next_question
 
@@ -26,6 +28,7 @@ ALLOWED_AUDIO_CONTENT_TYPES = {"audio/webm", "audio/ogg"}
 DURATION_CAP_GRACE_S = 10
 IDEMPOTENCY_KEY_TTL_S = 24 * 60 * 60
 MAX_IDEMPOTENCY_KEY_LENGTH = 128
+MAX_ATTEMPTS_PER_QUESTION = 5
 
 
 def _base_content_type(content_type: str | None) -> str:
@@ -92,6 +95,7 @@ async def create_answer(
     session_id: Annotated[str, Form()],
     session_question_id: Annotated[str, Form()],
     audio: Annotated[UploadFile, File()],
+    retry_of_answer_id: Annotated[str | None, Form(max_length=36)] = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
@@ -155,7 +159,28 @@ async def create_answer(
             "question_not_found", "Question not found.", status_code=status.HTTP_404_NOT_FOUND
         )
 
-    if await repo.get_answer_for_session_question(db, session_question_id=session_question.id):
+    original: Answer | None = None
+    attempt_number = 1
+    if retry_of_answer_id:
+        original = await repo.get_answer_for_user(db, answer_id=retry_of_answer_id, user_id=user.id)
+        # A retry may name any attempt in the chain; always attach it to the root answer.
+        if original is not None and original.original_answer_id:
+            original = await repo.get_answer_for_user(
+                db, answer_id=original.original_answer_id, user_id=user.id
+            )
+        if original is None or original.session_question_id != session_question.id:
+            raise ApiError(
+                "answer_not_found", "Answer not found.", status_code=status.HTTP_404_NOT_FOUND
+            )
+        attempts = await repo.list_attempts(db, original_answer_id=original.id, user_id=user.id)
+        if len(attempts) >= MAX_ATTEMPTS_PER_QUESTION:
+            raise ApiError(
+                "too_many_attempts",
+                f"You can try a question at most {MAX_ATTEMPTS_PER_QUESTION} times.",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        attempt_number = len(attempts) + 1
+    elif await repo.get_answer_for_session_question(db, session_question_id=session_question.id):
         raise ApiError(
             "question_already_answered",
             "This question has already been answered.",
@@ -230,6 +255,8 @@ async def create_answer(
         feedback=llm_feedback,
     )
     answer.idempotency_key = idempotency_key
+    answer.attempt_number = attempt_number
+    answer.original_answer_id = original.id if original else None
     try:
         saved = await repo.create_answer(db, answer=answer)
     except IntegrityError:
@@ -247,6 +274,11 @@ async def create_answer(
             if existing is not None:
                 return await feedback_service.to_answer_report(db, answer=existing, session=session)
         raise
+
+    if original is not None:
+        # A retry is practice on a question that already counted: it must not advance the
+        # session or double-count toward the candidate's mastery.
+        return await feedback_service.to_answer_report(db, answer=saved, session=session)
 
     # Feed the answer into the candidate's persistent competency model before choosing what to
     # ask next, so the very next question already reflects it.
@@ -310,3 +342,37 @@ async def get_answer(
             "session_not_found", "Session not found.", status_code=status.HTTP_404_NOT_FOUND
         )
     return await feedback_service.to_answer_report(db, answer=answer, session=session)
+
+
+@router.get("/answers/{answer_id}/attempts", response_model=AttemptComparison)
+async def get_attempt_comparison(
+    answer_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AttemptComparison:
+    """Every attempt at one question (any attempt's id resolves to the whole chain), compared
+    first-to-latest. Owner-scoped: another user's id is indistinguishable from a missing one."""
+    answer = await repo.get_answer_for_user(db, answer_id=answer_id, user_id=user.id)
+    if answer is None:
+        raise ApiError(
+            "answer_not_found", "Answer not found.", status_code=status.HTTP_404_NOT_FOUND
+        )
+    root_id = answer.original_answer_id or answer.id
+    rows = await repo.list_attempts(db, original_answer_id=root_id, user_id=user.id)
+    return comparison.compare_attempts(
+        [
+            comparison.AttemptData(
+                answer_id=row.id,
+                attempt_number=row.attempt_number,
+                transcript=row.transcript,
+                created_at=row.created_at,
+                rubric=row.rubric,
+                clarity=row.clarity,
+                wpm=float(row.wpm),
+                filler_count=row.filler_count,
+                word_count=len(row.words),
+                improvements=list((row.feedback or {}).get("improvements") or []),
+            )
+            for row in rows
+        ]
+    )

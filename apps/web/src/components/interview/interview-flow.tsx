@@ -85,6 +85,8 @@ async function parseApiError(response: Response): Promise<ParsedApiError> {
 
 export function InterviewFlow({
   initialRole,
+  initialCustomRole,
+  initialFocusTopics,
   initialFocus,
   initialDifficulty,
   initialQuestionCount,
@@ -93,6 +95,8 @@ export function InterviewFlow({
   profile,
 }: {
   initialRole?: Role;
+  initialCustomRole?: string;
+  initialFocusTopics?: string[];
   initialFocus?: Focus;
   initialDifficulty?: Difficulty;
   initialQuestionCount?: number;
@@ -395,6 +399,8 @@ export function InterviewFlow({
       <div className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
         <SessionSetupForm
           initialRole={initialRole}
+          initialCustomRole={initialCustomRole}
+          initialFocusTopics={initialFocusTopics}
           initialFocus={initialFocus}
           initialDifficulty={initialDifficulty}
           initialQuestionCount={initialQuestionCount}

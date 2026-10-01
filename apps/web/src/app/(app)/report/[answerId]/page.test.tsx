@@ -12,9 +12,13 @@ class FakeIntersectionObserver {
   disconnect(): void {}
 }
 
-const { fetchAnswerReportMock } = vi.hoisted(() => ({ fetchAnswerReportMock: vi.fn() }));
+const { fetchAnswerReportMock, fetchAttemptsMock } = vi.hoisted(() => ({
+  fetchAnswerReportMock: vi.fn(),
+  fetchAttemptsMock: vi.fn(),
+}));
 vi.mock("@/lib/interview/server", () => ({
   fetchAnswerReport: fetchAnswerReportMock,
+  fetchAttempts: fetchAttemptsMock,
 }));
 
 const { pushMock, refreshMock } = vi.hoisted(() => ({
@@ -76,6 +80,8 @@ function baseReport(): AnswerReport {
       category: "behavioral",
       source: "bank",
     },
+    attempt_number: 1,
+    original_answer_id: null,
   };
 }
 
@@ -84,6 +90,8 @@ describe("ReportPage", () => {
     vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
     pushMock.mockClear();
     refreshMock.mockClear();
+    fetchAttemptsMock.mockReset();
+    fetchAttemptsMock.mockResolvedValue(null);
   });
 
   it("renders a 'feedback unavailable' state instead of throwing when feedback is null", async () => {
@@ -292,5 +300,86 @@ describe("ReportPage", () => {
 
     expect(toggle).toHaveAttribute("aria-checked", "true");
     expect(localStorage.getItem("rehearse:auto-advance:session-1")).toBe("true");
+  });
+
+  it("offers a retry and no comparison for a first attempt", async () => {
+    fetchAnswerReportMock.mockResolvedValue(baseReport());
+
+    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+
+    expect(screen.getByRole("button", { name: "Record a new answer" })).toBeInTheDocument();
+    expect(screen.queryByText("How your retry compares")).not.toBeInTheDocument();
+  });
+
+  it("shows the attempt comparison on a retry, with a way back to the summary", async () => {
+    fetchAnswerReportMock.mockResolvedValue({
+      ...baseReport(),
+      attempt_number: 2,
+      original_answer_id: "answer-0",
+      next_question: null,
+    });
+    const attempt = (n: number, transcript: string) => ({
+      answer_id: `a${n}`,
+      attempt_number: n,
+      transcript,
+      created_at: "2026-01-01T00:00:00Z",
+      overall_score: 5,
+      clarity: 5,
+      wpm: 120,
+      filler_rate_per_100_words: 3,
+      rubric: { situation: 5 },
+    });
+    fetchAttemptsMock.mockResolvedValue({
+      attempts: [attempt(1, "first words"), attempt(2, "second words")],
+      overall_delta: 2,
+      components: [{ key: "situation", before: 5, after: 7, delta: 2 }],
+      improved: ["situation"],
+      regressed: [],
+      remained_weak: [],
+      focus_next: "situation",
+      filler_rate_delta: -1,
+      wpm_delta: 0,
+      summary: ["Improved: situation."],
+    });
+
+    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+
+    expect(screen.getByText("How your retry compares")).toBeInTheDocument();
+    expect(screen.getByText("Improved: situation.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to your interview summary" })).toHaveAttribute(
+      "href",
+      "/session/session-1/summary",
+    );
+  });
+
+  it("stops offering retries once the attempt limit is reached", async () => {
+    fetchAnswerReportMock.mockResolvedValue(baseReport());
+    fetchAttemptsMock.mockResolvedValue({
+      attempts: Array.from({ length: 5 }, (_, i) => ({
+        answer_id: `a${i}`,
+        attempt_number: i + 1,
+        transcript: "t",
+        created_at: "2026-01-01T00:00:00Z",
+        overall_score: 5,
+        clarity: 5,
+        wpm: 1,
+        filler_rate_per_100_words: 0,
+        rubric: {},
+      })),
+      overall_delta: 0,
+      components: [],
+      improved: [],
+      regressed: [],
+      remained_weak: [],
+      focus_next: null,
+      filler_rate_delta: 0,
+      wpm_delta: 0,
+      summary: [],
+    });
+
+    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+
+    expect(screen.queryByRole("button", { name: "Record a new answer" })).not.toBeInTheDocument();
+    expect(screen.getByText(/used all 5 attempts/)).toBeInTheDocument();
   });
 });

@@ -4,7 +4,16 @@
 
 import { apiFetch, type UserPublic } from "@/lib/auth/api";
 import { peekAccessToken } from "@/lib/auth/session";
-import type { AnswerReport, ProgressOut, Profile, SessionSummary } from "@/lib/interview/types";
+import type {
+  AnswerReport,
+  AttemptComparison,
+  MasteryOut,
+  PracticePlan,
+  ProgressOut,
+  Profile,
+  ReadinessOut,
+  SessionSummary,
+} from "@/lib/interview/types";
 
 async function fetchFromApi<T>(path: string, distinguishFailure = false): Promise<T | null> {
   const accessToken = await peekAccessToken();
@@ -28,6 +37,22 @@ export function fetchCurrentUser(): Promise<UserPublic | null> {
 
 export function fetchAnswerReport(answerId: string): Promise<AnswerReport | null> {
   return fetchFromApi<AnswerReport>(`/v1/answers/${encodeURIComponent(answerId)}`, true);
+}
+
+export function fetchAttempts(answerId: string): Promise<AttemptComparison | null> {
+  return fetchFromApi<AttemptComparison>(`/v1/answers/${encodeURIComponent(answerId)}/attempts`);
+}
+
+export function fetchMastery(): Promise<MasteryOut | null> {
+  return fetchFromApi<MasteryOut>("/v1/mastery", true);
+}
+
+export function fetchReadiness(role: string): Promise<ReadinessOut | null> {
+  return fetchFromApi<ReadinessOut>(`/v1/readiness?role=${encodeURIComponent(role)}`);
+}
+
+export function fetchPracticePlan(role: string): Promise<PracticePlan | null> {
+  return fetchFromApi<PracticePlan>(`/v1/practice-plan?role=${encodeURIComponent(role)}`);
 }
 
 export function fetchProgress(page = 1): Promise<ProgressOut | null> {

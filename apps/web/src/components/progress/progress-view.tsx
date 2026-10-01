@@ -33,7 +33,7 @@ function roleName(slug: string): string {
   const preset = ROLE_OPTIONS.find((option) => option.slug === slug)?.name;
   if (preset) return preset;
   // A custom role is stored as its slugified title ('devops-engineer').
-  return slug.replace(/-/g, " ").replace(/\w/g, (char) => char.toUpperCase());
+  return slug.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function formatAvg(value: number | null, digits = 0): string {

@@ -252,6 +252,9 @@ export interface AnswerReport {
   question_count: number;
   session_status: SessionStatus;
   next_question: SessionQuestion | null;
+  /** 1 for an original answer; >1 for a retry of `original_answer_id`. */
+  attempt_number: number;
+  original_answer_id: string | null;
 }
 
 export interface ProgressRow {
@@ -286,3 +289,101 @@ export interface Profile {
 }
 
 export type ProfileUpdate = Partial<Profile>;
+
+/** Mirrors apps/api/app/schemas/attempts.py — every attempt at one question, compared. */
+export interface AttemptOut {
+  answer_id: string;
+  attempt_number: number;
+  transcript: string;
+  created_at: string;
+  overall_score: number | null;
+  clarity: number | null;
+  wpm: number;
+  filler_rate_per_100_words: number;
+  rubric: Record<string, number>;
+}
+
+export interface ComponentDelta {
+  key: string;
+  before: number;
+  after: number;
+  delta: number;
+}
+
+export interface AttemptComparison {
+  attempts: AttemptOut[];
+  overall_delta: number | null;
+  components: ComponentDelta[];
+  improved: string[];
+  regressed: string[];
+  remained_weak: string[];
+  focus_next: string | null;
+  filler_rate_delta: number | null;
+  wpm_delta: number | null;
+  summary: string[];
+}
+
+/** Mirrors apps/api/app/schemas/mastery.py and readiness.py. */
+export interface CompetencyMastery {
+  role: string;
+  competency: string;
+  name: string;
+  mastery: number;
+  confidence: number;
+  questions_attempted: number;
+  successful_attempts: number;
+  highest_level: number;
+  last_practiced_at: string | null;
+}
+
+export interface MasteryOut {
+  role: string | null;
+  competencies: CompetencyMastery[];
+  strongest: string | null;
+  weakest: string | null;
+  needs_practice: string[];
+}
+
+export interface ReadinessDriver {
+  competency: string;
+  name: string;
+  weight: number;
+  mastery: number | null;
+  confidence: number | null;
+  attempts: number;
+  assessed: boolean;
+  resume_evidence: string;
+}
+
+/** The Rehearse Readiness Score: `score` is null when there isn't enough evidence, never a
+ * guess, and it is not a percentile of other candidates. */
+export interface ReadinessOut {
+  role: string;
+  score: number | null;
+  coverage: number;
+  total_attempts: number;
+  categories: { category: Category; score: number }[];
+  strongest: string | null;
+  main_risk: string | null;
+  drivers: ReadinessDriver[];
+  explanation: string[];
+}
+
+export interface ScheduledSkill {
+  competency: string;
+  name: string;
+  mastery: number;
+  interval_days: number;
+  due_at: string;
+  days_until_due: number;
+  is_due: boolean;
+}
+
+export interface PracticePlan {
+  role: string | null;
+  today: ScheduledSkill[];
+  upcoming: ScheduledSkill[];
+  question_count: number;
+  estimated_minutes: number;
+  focus_topics: string[];
+}

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 
 class CompetencyMasteryOut(BaseModel):
+    role: str
     competency: str
     name: str
     # 0-100, derived from the recency-weighted mastery estimate.
