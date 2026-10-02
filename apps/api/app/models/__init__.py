@@ -11,6 +11,7 @@ from app.models.profile import Profile
 from app.models.question import Question
 from app.models.rate_limit_counter import RateLimitCounter
 from app.models.refresh_token import RefreshToken
+from app.models.report_share import ReportShare
 from app.models.session_question import SessionQuestion
 from app.models.user import User
 
@@ -25,6 +26,7 @@ __all__ = [
     "Profile",
     "Question",
     "RateLimitCounter",
+    "ReportShare",
     "RefreshToken",
     "SessionQuestion",
     "User",

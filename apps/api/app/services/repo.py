@@ -34,6 +34,7 @@ from app.models.profile import Profile
 from app.models.question import Question
 from app.models.rate_limit_counter import RateLimitCounter
 from app.models.refresh_token import RefreshToken
+from app.models.report_share import ReportShare
 from app.models.session_question import SessionQuestion
 from app.models.user import User
 from app.schemas.feedback import rubric_overall_score
@@ -582,6 +583,64 @@ async def count_answers_today(db: AsyncSession, *, user_id: str) -> int:
         .with_for_update()
     )
     return result.scalar_one()
+
+
+# ─── report shares ───────────────────────────────────────────────────────
+
+
+async def create_report_share(db: AsyncSession, *, share: ReportShare) -> ReportShare:
+    db.add(share)
+    await db.commit()
+    await db.refresh(share)
+    return share
+
+
+async def list_report_shares(
+    db: AsyncSession, *, answer_id: str, user_id: str
+) -> list[ReportShare]:
+    result = await db.execute(
+        select(ReportShare)
+        .where(ReportShare.answer_id == answer_id, ReportShare.user_id == user_id)
+        .order_by(ReportShare.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def revoke_report_share(db: AsyncSession, *, share_id: str, user_id: str) -> bool:
+    result = await db.execute(
+        select(ReportShare).where(
+            ReportShare.id == share_id,
+            ReportShare.user_id == user_id,
+            ReportShare.revoked_at.is_(None),
+        )
+    )
+    share = result.scalar_one_or_none()
+    if share is None:
+        return False
+    share.revoked_at = utcnow()
+    db.add(share)
+    await db.commit()
+    return True
+
+
+async def get_active_report_share_by_hash(
+    db: AsyncSession, *, token_hash: str
+) -> ReportShare | None:
+    now = utcnow()
+    result = await db.execute(
+        select(ReportShare).where(
+            ReportShare.token_hash == token_hash,
+            ReportShare.revoked_at.is_(None),
+            (ReportShare.expires_at.is_(None)) | (ReportShare.expires_at > now),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def mark_report_share_accessed(db: AsyncSession, *, share: ReportShare) -> None:
+    share.last_accessed_at = utcnow()
+    db.add(share)
+    await db.commit()
 
 
 # ─── progress ────────────────────────────────────────────────────────────

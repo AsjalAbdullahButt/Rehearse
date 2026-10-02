@@ -324,6 +324,28 @@ export interface AnswerReport {
   visual_delivery?: VisualDelivery | null;
 }
 
+export type ReportShareAudience = "mentor" | "recruiter" | "professor";
+
+export interface ReportShare {
+  id: string;
+  answer_id: string;
+  audience: ReportShareAudience;
+  note: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  last_accessed_at: string | null;
+  is_active: boolean;
+  url: string | null;
+  token: string | null;
+}
+
+export interface SharedReport {
+  share: ReportShare;
+  report: AnswerReport;
+  session: SessionSummary;
+}
+
 export interface ProgressRow {
   session_id: string;
   role: string;

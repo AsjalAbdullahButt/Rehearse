@@ -7,23 +7,20 @@ from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.db import get_db
-from app.models.enums import Category, SessionStatus
+from app.models.enums import SessionStatus
 from app.models.interview_session import InterviewSession
 from app.models.session_question import SessionQuestion
 from app.models.user import User
-from app.schemas.feedback import rubric_overall_score
 from app.schemas.session import (
-    AnswerCategoryBreakdown,
-    PanelAssessment,
     SessionCreate,
     SessionOut,
     SessionQuestionOut,
     SessionSummary,
 )
-from app.services import job_service, panel, repo
-from app.services.feedback import claim_out
+from app.services import job_service, repo
 from app.services.job_service import role_key_for_title
 from app.services.question_orchestrator import NoQuestionAvailableError, select_next_question
+from app.services.session_summary import build_session_summary
 
 router = APIRouter()
 
@@ -177,69 +174,4 @@ async def get_session_summary(
         raise ApiError(
             "session_not_found", "Session not found.", status_code=status.HTTP_404_NOT_FOUND
         )
-
-    answers = await repo.list_answers_for_session(db, session_id=session_id)
-    session_questions = await repo.list_session_questions_for_session(db, session_id=session_id)
-    category_by_session_question_id = {sq.id: sq.category for sq in session_questions}
-
-    scores_by_category: dict[Category, list[float]] = {}
-    overall_scores: list[float] = []
-    for answer in answers:
-        score = rubric_overall_score(answer.rubric)
-        if score is None:
-            continue
-        overall_scores.append(score)
-        category = (
-            category_by_session_question_id.get(answer.session_question_id)
-            if answer.session_question_id
-            else None
-        )
-        if category is not None:
-            scores_by_category.setdefault(category, []).append(score)
-
-    def _avg(values: list[float]) -> float | None:
-        return round(sum(values) / len(values), 2) if values else None
-
-    claim_rows = await repo.list_claims_for_session(db, session_id=session_id, user_id=user.id)
-    panel_scores: dict[str, list[float]] = {}
-    panel_questions: dict[str, int] = {}
-    panelist_by_session_question_id = {sq.id: sq.panelist for sq in session_questions}
-    for sq in session_questions:
-        if sq.panelist:
-            panel_questions[sq.panelist] = panel_questions.get(sq.panelist, 0) + 1
-    for answer in answers:
-        score = rubric_overall_score(answer.rubric)
-        key = (
-            panelist_by_session_question_id.get(answer.session_question_id)
-            if answer.session_question_id
-            else None
-        )
-        if score is not None and key:
-            panel_scores.setdefault(key, []).append(score)
-    panel_assessments = [
-        PanelAssessment(
-            panelist=member.key,
-            name=member.name,
-            title=member.title,
-            label=panel.assessment_label(member.key),
-            questions=panel_questions[member.key],
-            avg_score=_avg(panel_scores.get(member.key, [])),
-        )
-        for member in panel.PANEL
-        if member.key in panel_questions
-    ]
-
-    return SessionSummary(
-        session=_session_out(session),
-        questions_completed=len(answers),
-        overall_score=_avg(overall_scores),
-        category_breakdown=[
-            AnswerCategoryBreakdown(category=category, avg_score=_avg(values))
-            for category, values in scores_by_category.items()
-        ],
-        avg_wpm=_avg([float(a.wpm) for a in answers]),
-        avg_filler_count=_avg([float(a.filler_count) for a in answers]),
-        avg_clarity=_avg([float(a.clarity) for a in answers if a.clarity is not None]),
-        claims=[claim_out(row) for row in claim_rows],
-        panel_assessments=panel_assessments,
-    )
+    return await build_session_summary(db, session=session)

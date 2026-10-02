@@ -13,7 +13,9 @@ import type {
   ProgressOut,
   Profile,
   ReadinessOut,
+  ReportShare,
   SessionSummary,
+  SharedReport,
 } from "@/lib/interview/types";
 
 async function fetchFromApi<T>(path: string, distinguishFailure = false): Promise<T | null> {
@@ -46,6 +48,16 @@ export function fetchFeatures(): Promise<Features | null> {
 
 export function fetchAttempts(answerId: string): Promise<AttemptComparison | null> {
   return fetchFromApi<AttemptComparison>(`/v1/answers/${encodeURIComponent(answerId)}/attempts`);
+}
+
+export function fetchReportShares(answerId: string): Promise<ReportShare[] | null> {
+  return fetchFromApi<ReportShare[]>(`/v1/reports/${encodeURIComponent(answerId)}/shares`);
+}
+
+export async function fetchSharedReport(token: string): Promise<SharedReport | null> {
+  const response = await apiFetch(`/v1/shared-reports/${encodeURIComponent(token)}`);
+  if (!response.ok) return null;
+  return (await response.json()) as SharedReport;
 }
 
 export function fetchMastery(): Promise<MasteryOut | null> {

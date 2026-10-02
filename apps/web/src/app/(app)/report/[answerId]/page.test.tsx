@@ -12,13 +12,15 @@ class FakeIntersectionObserver {
   disconnect(): void {}
 }
 
-const { fetchAnswerReportMock, fetchAttemptsMock } = vi.hoisted(() => ({
+const { fetchAnswerReportMock, fetchAttemptsMock, fetchReportSharesMock } = vi.hoisted(() => ({
   fetchAnswerReportMock: vi.fn(),
   fetchAttemptsMock: vi.fn(),
+  fetchReportSharesMock: vi.fn(),
 }));
 vi.mock("@/lib/interview/server", () => ({
   fetchAnswerReport: fetchAnswerReportMock,
   fetchAttempts: fetchAttemptsMock,
+  fetchReportShares: fetchReportSharesMock,
 }));
 
 const { pushMock, refreshMock } = vi.hoisted(() => ({
@@ -92,6 +94,8 @@ describe("ReportPage", () => {
     refreshMock.mockClear();
     fetchAttemptsMock.mockReset();
     fetchAttemptsMock.mockResolvedValue(null);
+    fetchReportSharesMock.mockReset();
+    fetchReportSharesMock.mockResolvedValue([]);
   });
 
   it("renders a 'feedback unavailable' state instead of throwing when feedback is null", async () => {

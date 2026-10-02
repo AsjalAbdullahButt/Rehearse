@@ -7,13 +7,14 @@ import { AttemptComparison } from "@/components/report/attempt-comparison";
 import { RetryAnswer } from "@/components/report/retry-answer";
 import { BeforeAfterToggle } from "@/components/report/before-after-toggle";
 import { ReportNextSteps } from "@/components/report/report-next-steps";
+import { ShareReportControl } from "@/components/report/share-report-control";
 import { RubricBars } from "@/components/report/rubric-bars";
 import { ScoreRing } from "@/components/report/score-ring";
 import { Card } from "@/components/ui/card";
 import { Stat } from "@/components/ui/stat";
 import { hasCompleteFeedback } from "@/lib/interview/feedback";
 import { rubricAreas, strongestRubricArea } from "@/lib/interview/rubric-insights";
-import { fetchAnswerReport, fetchAttempts } from "@/lib/interview/server";
+import { fetchAnswerReport, fetchAttempts, fetchReportShares } from "@/lib/interview/server";
 import { toTranscriptParts } from "@/lib/interview/transcript";
 import type { Category } from "@/lib/interview/types";
 
@@ -52,6 +53,7 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
 
   const { feedback } = report;
   const comparison = await fetchAttempts(answerId).catch(() => null);
+  const shares = (await fetchReportShares(answerId).catch(() => null)) ?? [];
   const isRetry = report.attempt_number > 1;
   if (!hasCompleteFeedback(feedback)) {
     return (
@@ -96,6 +98,7 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
         </div>
       ) : null}
       {comparison ? <AttemptComparison comparison={comparison} /> : null}
+      <ShareReportControl answerId={answerId} initialShares={shares} />
       <Card className="flex flex-col gap-8">
         <div className="flex flex-wrap items-center gap-8">
           <ScoreRing score={feedback.clarity} label="Clarity" />

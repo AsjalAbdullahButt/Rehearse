@@ -15,6 +15,7 @@ from app.routers import (
     profile,
     progress,
     questions,
+    reports,
     resume,
     sessions,
 )
@@ -43,7 +44,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.allowed_origins_list,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "X-Request-Id"],
         expose_headers=["X-Request-Id"],
     )
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router, prefix="/v1", tags=["sessions"])
     app.include_router(answers.router, prefix="/v1", tags=["answers"])
     app.include_router(progress.router, prefix="/v1", tags=["progress"])
+    app.include_router(reports.router, prefix="/v1", tags=["reports"])
     app.include_router(mastery.router, prefix="/v1", tags=["mastery"])
     app.include_router(features.router, prefix="/v1", tags=["features"])
     app.include_router(profile.router, prefix="/v1", tags=["profile"])
