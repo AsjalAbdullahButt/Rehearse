@@ -82,6 +82,29 @@ describe("SessionSetupForm", () => {
     );
   });
 
+  it("defaults coding-style modes to a technical focus", () => {
+    const onSubmit = renderForm();
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Coding" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ interview_mode: "coding", focus: "technical" }),
+    );
+  });
+
+  it("does not override a focus the candidate explicitly chose", () => {
+    const onSubmit = renderForm();
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Behavioral" }));
+    fireEvent.click(screen.getByRole("radio", { name: "System design" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ interview_mode: "system_design", focus: "behavioral" }),
+    );
+  });
+
   it("only offers a panel interview when the API has it switched on", () => {
     const { unmount } = render(
       <ToastProvider>

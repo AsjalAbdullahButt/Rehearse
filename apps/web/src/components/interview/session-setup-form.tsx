@@ -59,6 +59,11 @@ function isQuestionCountOption(
   return (QUESTION_COUNT_OPTIONS as readonly number[]).includes(value ?? Number.NaN);
 }
 
+function defaultFocusForMode(mode: InterviewMode): Focus {
+  if (mode === "case_study") return "situational";
+  return mode === "technical_qa" ? "mixed" : "technical";
+}
+
 export function SessionSetupForm({
   initialRole,
   panelAvailable = false,
@@ -114,6 +119,7 @@ export function SessionSetupForm({
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("mid");
   const [focus, setFocus] = useState<Focus>(initialFocus ?? "mixed");
   const [interviewMode, setInterviewMode] = useState<InterviewMode>("technical_qa");
+  const [focusWasChosen, setFocusWasChosen] = useState(Boolean(initialFocus));
   const [questionCount, setQuestionCount] = useState<(typeof QUESTION_COUNT_OPTIONS)[number]>(
     isQuestionCountOption(initialQuestionCount) ? initialQuestionCount : DEFAULT_QUESTION_COUNT,
   );
@@ -263,7 +269,10 @@ export function SessionSetupForm({
                       value={option.slug}
                       label={option.name}
                       selected={focus === option.slug}
-                      onSelect={setFocus}
+                      onSelect={(value) => {
+                        setFocusWasChosen(true);
+                        setFocus(value);
+                      }}
                     />
                   ))}
                 </div>
@@ -281,7 +290,10 @@ export function SessionSetupForm({
                       value={option.slug}
                       label={option.name}
                       selected={interviewMode === option.slug}
-                      onSelect={setInterviewMode}
+                      onSelect={(value) => {
+                        setInterviewMode(value);
+                        if (!focusWasChosen) setFocus(defaultFocusForMode(value));
+                      }}
                     />
                   ))}
                 </div>

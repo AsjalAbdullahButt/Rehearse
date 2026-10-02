@@ -703,6 +703,7 @@ async def get_progress_for_user(
                 session_id=session.id,
                 role=session.role,
                 difficulty=session.difficulty,
+                interview_mode=session.interview_mode,
                 started_at=session.started_at,
                 answer_count=len(answers),
                 avg_wpm=_avg([float(a.wpm) for a in answers]),

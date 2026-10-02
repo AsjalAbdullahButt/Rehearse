@@ -361,6 +361,7 @@ export interface ProgressRow {
   session_id: string;
   role: string;
   difficulty: Difficulty;
+  interview_mode: InterviewMode;
   started_at: string;
   answer_count: number;
   avg_wpm: number | null;

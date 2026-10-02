@@ -14,6 +14,7 @@ function row(overrides: Partial<ProgressRow> = {}): ProgressRow {
     session_id: "session-1",
     role: "backend",
     difficulty: "medium",
+    interview_mode: "technical_qa",
     started_at: "2026-01-01T00:00:00Z",
     answer_count: 3,
     avg_wpm: 120,
@@ -39,6 +40,12 @@ describe("ProgressView", () => {
     );
 
     expect(screen.getAllByText(/Answers/).length).toBe(2);
+  });
+
+  it("shows each session's interview mode", () => {
+    render(<ProgressView sessions={[row({ interview_mode: "system_design" })]} />);
+
+    expect(screen.getByText("System design")).toBeInTheDocument();
   });
 
   it("does not show a role filter when only one role is present", () => {

@@ -2,13 +2,14 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.enums import Difficulty
+from app.models.enums import Difficulty, InterviewMode
 
 
 class ProgressRow(BaseModel):
     session_id: str
     role: str
     difficulty: Difficulty
+    interview_mode: InterviewMode
     started_at: datetime
     answer_count: int
     avg_wpm: float | None

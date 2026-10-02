@@ -9,10 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { OptionPill } from "@/components/ui/option-pill";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
-import { ROLE_OPTIONS } from "@/lib/interview/types";
-import type { Category, ProgressRow } from "@/lib/interview/types";
+import { INTERVIEW_MODE_OPTIONS, ROLE_OPTIONS } from "@/lib/interview/types";
+import type { Category, InterviewMode, ProgressRow } from "@/lib/interview/types";
 
 const DIFFICULTY_TONE = { easy: "mint", medium: "amber", hard: "coral" } as const;
+const MODE_TONE: Record<InterviewMode, "lime" | "violet" | "mint" | "amber"> = {
+  technical_qa: "lime",
+  coding: "violet",
+  system_design: "mint",
+  case_study: "amber",
+};
 
 // Fixed categorical order/colors, reused everywhere a category needs an identity color (see
 // lib/interview/rubric-insights.ts for the same field order) — coral/amber stay reserved for
@@ -34,6 +40,10 @@ function roleName(slug: string): string {
   if (preset) return preset;
   // A custom role is stored as its slugified title ('devops-engineer').
   return slug.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function modeName(mode: InterviewMode): string {
+  return INTERVIEW_MODE_OPTIONS.find((option) => option.slug === mode)?.name ?? "Technical Q&A";
 }
 
 function formatAvg(value: number | null, digits = 0): string {
@@ -222,6 +232,7 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
               <div className="flex items-center gap-2">
                 <span className="text-text text-sm font-medium">{roleName(row.role)}</span>
                 <Badge tone={DIFFICULTY_TONE[row.difficulty]}>{row.difficulty}</Badge>
+                <Badge tone={MODE_TONE[row.interview_mode]}>{modeName(row.interview_mode)}</Badge>
               </div>
               <span className="text-muted text-xs">
                 {new Date(row.started_at).toLocaleDateString(undefined, {
