@@ -1,5 +1,6 @@
 import { ClaimsList } from "@/components/report/claims-list";
 import { DeliveryCard } from "@/components/report/delivery-card";
+import { ExportReportButton } from "@/components/report/export-report-button";
 import { RubricBars } from "@/components/report/rubric-bars";
 import { ScoreRing } from "@/components/report/score-ring";
 import { Card } from "@/components/ui/card";
@@ -69,6 +70,7 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
           Shared by the candidate from Rehearse. Raw audio and video are not included; this report
           contains the transcript-derived coaching and interview summary only.
         </p>
+        <ExportReportButton />
       </div>
 
       <Card className="grid gap-4 sm:grid-cols-4">

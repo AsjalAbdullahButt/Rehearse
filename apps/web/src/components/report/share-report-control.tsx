@@ -96,7 +96,7 @@ export function ShareReportControl({
   }
 
   return (
-    <Card className="flex flex-col gap-4">
+    <Card className="no-print flex flex-col gap-4">
       <div>
         <h2 className="text-text text-base font-semibold">Share this report</h2>
         <p className="text-muted mt-1 text-sm">

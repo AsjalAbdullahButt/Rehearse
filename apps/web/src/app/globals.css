@@ -285,3 +285,49 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+@media print {
+  :root,
+  .dark,
+  .light {
+    color-scheme: light;
+    --ink: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #ffffff;
+    --line: #d9d9d9;
+    --text: #111111;
+    --muted: #555555;
+    --lime: #315000;
+    --lime-fill: #315000;
+    --lime-ink: #ffffff;
+    --violet: #3d3190;
+    --coral: #9f251f;
+    --amber: #6b4100;
+    --mint: #08794b;
+  }
+
+  @page {
+    margin: 18mm;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  details,
+  section,
+  article,
+  li,
+  [class*="rounded-"] {
+    break-inside: avoid;
+  }
+}

@@ -6,6 +6,7 @@ import { ClaimsList } from "@/components/report/claims-list";
 import { AttemptComparison } from "@/components/report/attempt-comparison";
 import { RetryAnswer } from "@/components/report/retry-answer";
 import { BeforeAfterToggle } from "@/components/report/before-after-toggle";
+import { ExportReportButton } from "@/components/report/export-report-button";
 import { ReportNextSteps } from "@/components/report/report-next-steps";
 import { ShareReportControl } from "@/components/report/share-report-control";
 import { RubricBars } from "@/components/report/rubric-bars";
@@ -82,13 +83,14 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
         </p>
         <a
           href="#report-next-steps"
-          className="text-lime inline-flex min-h-11 items-center text-sm underline underline-offset-4"
+          className="no-print text-lime inline-flex min-h-11 items-center text-sm underline underline-offset-4"
         >
           Jump to next steps
         </a>
         <h1 className="font-display text-text text-2xl font-bold text-balance">
           {report.question_text}
         </h1>
+        <ExportReportButton />
       </div>
 
       {feedback.improvements[0] ? (
