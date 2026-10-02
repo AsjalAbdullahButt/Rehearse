@@ -299,6 +299,7 @@ async def _try_generate(
             competency=decision.competency,
             category=decision.category,
             level=decision.level,
+            interview_mode=session.interview_mode,
             mode=decision.mode.value,
             already_asked=already_asked,
             previous_answer_summary=previous_answer_summary,

@@ -71,6 +71,17 @@ describe("SessionSetupForm", () => {
     expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ language: "ur" }));
   });
 
+  it("sends the selected interview mode", () => {
+    const onSubmit = renderForm();
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("radio", { name: "System design" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ interview_mode: "system_design" }),
+    );
+  });
+
   it("only offers a panel interview when the API has it switched on", () => {
     const { unmount } = render(
       <ToastProvider>

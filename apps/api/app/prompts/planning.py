@@ -10,7 +10,7 @@ from typing import Any
 from groq.types.chat import ChatCompletionMessageParam
 
 from app.core.languages import resolve_language
-from app.models.enums import Category
+from app.models.enums import Category, InterviewMode
 from app.services.competency import CANONICAL_COMPETENCIES, competency_name
 from app.services.interviewer_policy import InterviewerPolicy
 
@@ -69,11 +69,29 @@ def _question_system_prompt(
     policy: InterviewerPolicy,
     category: Category,
     level: int,
+    interview_mode: InterviewMode,
     language: str | None,
     persona: str | None,
 ) -> str:
     lang = resolve_language(language)
     persona_line = f"\n{persona}\n" if persona else ""
+    mode_instruction = {
+        InterviewMode.TECHNICAL_QA: (
+            "Use a conventional interview Q&A format. The answer should be explainable aloud."
+        ),
+        InterviewMode.CODING: (
+            "Use a spoken coding/debugging format. Ask for algorithmic reasoning, edge cases, "
+            "complexity, or debugging steps. Do not require executing code."
+        ),
+        InterviewMode.SYSTEM_DESIGN: (
+            "Use a system-design format. Ask for architecture, components, APIs, data models, "
+            "scaling bottlenecks, tradeoffs, and failure modes."
+        ),
+        InterviewMode.CASE_STUDY: (
+            "Use a case-study format. Ask for structured problem framing, assumptions, options, "
+            "tradeoffs, business/user impact, and a recommendation."
+        ),
+    }[interview_mode]
     return f"""{policy.tone_instruction}
 {persona_line}
 You are writing the NEXT question for a mock interview. {_DATA_ONLY_WARNING}
@@ -82,6 +100,7 @@ Write exactly one question that:
 - tests the target competency "{{competency}}" at difficulty level {level} on a 1-5 scale
   (1 foundation, 2 junior, 3 intermediate, 4 advanced, 5 expert);
 - is a "{category.value}" question;
+- follows this interview format: {mode_instruction}
 - is specific and answerable aloud in about two minutes;
 - does not repeat or paraphrase anything in "already_asked";
 - if "previous_answer_summary" is present and mode is "deepen", builds on it (a harder angle on the
@@ -102,6 +121,7 @@ def build_question_messages(
     competency: str,
     category: Category,
     level: int,
+    interview_mode: InterviewMode,
     mode: str,
     already_asked: list[str],
     previous_answer_summary: str | None,
@@ -111,10 +131,16 @@ def build_question_messages(
     persona: str | None = None,
 ) -> list[ChatCompletionMessageParam]:
     system = _question_system_prompt(
-        policy=policy, category=category, level=level, language=language, persona=persona
+        policy=policy,
+        category=category,
+        level=level,
+        interview_mode=interview_mode,
+        language=language,
+        persona=persona,
     ).replace("{competency}", competency_name(competency))
     payload = {
         "role_title": role_title,
+        "interview_mode": interview_mode.value,
         "mode": mode,
         "already_asked": already_asked[-8:],
         "previous_answer_summary": previous_answer_summary,

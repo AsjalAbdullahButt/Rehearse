@@ -48,6 +48,13 @@ class InterviewerStyle(enum.StrEnum):
     CHALLENGING = "challenging"
 
 
+class InterviewMode(enum.StrEnum):
+    TECHNICAL_QA = "technical_qa"
+    CODING = "coding"
+    SYSTEM_DESIGN = "system_design"
+    CASE_STUDY = "case_study"
+
+
 class SessionStatus(enum.StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"

@@ -12,6 +12,7 @@ import {
   DIFFICULTY_OPTIONS,
   EXPERIENCE_LEVEL_OPTIONS,
   FOCUS_OPTIONS,
+  INTERVIEW_MODE_OPTIONS,
   INTERVIEWER_STYLE_OPTIONS,
   LANGUAGE_OPTIONS,
   QUESTION_COUNT_OPTIONS,
@@ -22,6 +23,7 @@ import type {
   Difficulty,
   ExperienceLevel,
   Focus,
+  InterviewMode,
   InterviewerStyle,
   LanguageCode,
   ResumeExtraction,
@@ -111,6 +113,7 @@ export function SessionSetupForm({
   const [difficulty, setDifficulty] = useState<Difficulty>(initialDifficulty ?? "medium");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("mid");
   const [focus, setFocus] = useState<Focus>(initialFocus ?? "mixed");
+  const [interviewMode, setInterviewMode] = useState<InterviewMode>("technical_qa");
   const [questionCount, setQuestionCount] = useState<(typeof QUESTION_COUNT_OPTIONS)[number]>(
     isQuestionCountOption(initialQuestionCount) ? initialQuestionCount : DEFAULT_QUESTION_COUNT,
   );
@@ -167,6 +170,7 @@ export function SessionSetupForm({
       difficulty,
       experience_level: experienceLevel,
       focus,
+      interview_mode: interviewMode,
       question_count: questionCount,
       answer_cap_s: answerCapS,
       company: company.trim() || undefined,
@@ -260,6 +264,24 @@ export function SessionSetupForm({
                       label={option.name}
                       selected={focus === option.slug}
                       onSelect={setFocus}
+                    />
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="flex flex-col gap-3 sm:col-span-2">
+                <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
+                  Interview mode
+                </legend>
+                <div className="flex flex-wrap gap-2">
+                  {INTERVIEW_MODE_OPTIONS.map((option) => (
+                    <OptionPill
+                      name="interview-mode"
+                      key={option.slug}
+                      value={option.slug}
+                      label={option.name}
+                      selected={interviewMode === option.slug}
+                      onSelect={setInterviewMode}
                     />
                   ))}
                 </div>

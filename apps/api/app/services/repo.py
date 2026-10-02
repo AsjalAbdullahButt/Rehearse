@@ -24,6 +24,7 @@ from app.models.enums import (
     Difficulty,
     Focus,
     InterviewerStyle,
+    InterviewMode,
     Role,
     SessionStatus,
 )
@@ -288,6 +289,7 @@ async def create_session(
     job_target_id: str | None = None,
     experience_level: str | None = None,
     focus: Focus = Focus.MIXED,
+    interview_mode: InterviewMode = InterviewMode.TECHNICAL_QA,
     question_count: int = 5,
     answer_cap_s: int = 120,
     company: str | None = None,
@@ -309,6 +311,7 @@ async def create_session(
         difficulty=difficulty,
         experience_level=experience_level,
         focus=focus,
+        interview_mode=interview_mode,
         question_count=question_count,
         answer_cap_s=answer_cap_s,
         company=company,

@@ -22,6 +22,7 @@ from app.models.enums import (
     ExperienceLevel,
     Focus,
     InterviewerStyle,
+    InterviewMode,
     SessionStatus,
 )
 from app.models.profile import ANSWER_CAP_CHOICES
@@ -86,6 +87,11 @@ class InterviewSession(Base):
         nullable=False,
         default=Focus.MIXED,
     )
+    interview_mode: Mapped[InterviewMode] = mapped_column(
+        SAEnum(InterviewMode, native_enum=False, length=24, validate_strings=True),
+        nullable=False,
+        default=InterviewMode.TECHNICAL_QA,
+    )
     question_count: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     # Applies to every question in the session (set once at setup) — the API no longer trusts a
     # per-answer time_cap_s form field the client could vary from one submission to the next.
@@ -127,5 +133,6 @@ class InterviewSession(Base):
             "focus_topics": self.focus_topics,
             "years_experience": self.years_experience,
             "interviewer_style": self.interviewer_style,
+            "interview_mode": self.interview_mode,
             "language": self.language,
         }

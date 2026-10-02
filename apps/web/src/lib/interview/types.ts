@@ -56,6 +56,15 @@ export const FOCUS_OPTIONS: { slug: Focus; name: string }[] = [
   { slug: "mixed", name: "Mixed" },
 ];
 
+export type InterviewMode = "technical_qa" | "coding" | "system_design" | "case_study";
+
+export const INTERVIEW_MODE_OPTIONS: { slug: InterviewMode; name: string }[] = [
+  { slug: "technical_qa", name: "Technical Q&A" },
+  { slug: "coding", name: "Coding" },
+  { slug: "system_design", name: "System design" },
+  { slug: "case_study", name: "Case study" },
+];
+
 // Mirrors apps/api/app/models/interview_session.py's QUESTION_COUNT_CHOICES.
 export const QUESTION_COUNT_OPTIONS = [3, 5, 8] as const;
 
@@ -127,6 +136,7 @@ export interface SessionCreateInput {
   difficulty: Difficulty;
   experience_level: ExperienceLevel;
   focus: Focus;
+  interview_mode?: InterviewMode;
   question_count: (typeof QUESTION_COUNT_OPTIONS)[number];
   answer_cap_s: (typeof TIME_CAP_OPTIONS)[number];
   company?: string;
@@ -152,6 +162,7 @@ export interface InterviewSession {
   difficulty: Difficulty;
   experience_level: ExperienceLevel | null;
   focus: Focus;
+  interview_mode: InterviewMode;
   question_count: number;
   answer_cap_s: number;
   company: string | null;

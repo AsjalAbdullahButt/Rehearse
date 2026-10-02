@@ -68,6 +68,7 @@ async def create_session(
         difficulty=body.difficulty,
         experience_level=body.experience_level,
         focus=body.focus,
+        interview_mode=body.interview_mode,
         question_count=body.question_count,
         answer_cap_s=body.answer_cap_s,
         company=body.company,

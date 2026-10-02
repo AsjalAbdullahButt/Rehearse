@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.config import get_settings
 from app.core.errors import ApiError
-from app.models.enums import Category
+from app.models.enums import Category, InterviewMode
 from app.prompts.feedback import build_messages
 from app.prompts.planning import build_job_analysis_messages, build_question_messages
 from app.prompts.resume import build_messages as build_resume_messages
@@ -307,6 +307,7 @@ async def generate_question(
     category: Category,
     level: int,
     mode: str,
+    interview_mode: InterviewMode = InterviewMode.TECHNICAL_QA,
     already_asked: list[str],
     previous_answer_summary: str | None,
     candidate_context: dict[str, Any],
@@ -320,6 +321,7 @@ async def generate_question(
         competency=competency,
         category=category,
         level=level,
+        interview_mode=interview_mode,
         mode=mode,
         already_asked=already_asked,
         previous_answer_summary=previous_answer_summary,

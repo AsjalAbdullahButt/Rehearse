@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import Category, Difficulty, QuestionSource, Role
+from app.models.enums import Category, Difficulty, InterviewMode, QuestionSource, Role
 from app.models.question import Question
 from app.schemas.planning import AnalyzedCompetency, GeneratedQuestion, JobAnalysis
 from app.services import llm, repo
@@ -104,6 +104,27 @@ async def test_generates_a_question_when_the_bank_has_no_match(
     assert seen["language"] == "ur"
     assert seen["policy"].style == "challenging"
     assert seen["competency"] == question["competency"]
+
+
+async def test_generated_questions_receive_the_interview_mode(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = register_user()
+    await _bank(db_session, "An unrelated filler question.", competency="testing")
+    seen: dict[str, Any] = {}
+
+    async def fake_generate(**kwargs: Any) -> GeneratedQuestion:
+        seen.update(kwargs)
+        return GeneratedQuestion(text="Design a rate limiter for a public API.")
+
+    monkeypatch.setattr(llm, "generate_question", fake_generate)
+
+    _create(client, user, interview_mode="system_design")
+
+    assert seen["interview_mode"] == InterviewMode.SYSTEM_DESIGN
 
 
 async def test_a_generation_failure_falls_back_to_the_bank_instead_of_failing(

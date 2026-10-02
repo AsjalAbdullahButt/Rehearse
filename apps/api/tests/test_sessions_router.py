@@ -53,6 +53,7 @@ async def test_create_session_returns_the_new_session_with_a_first_question(
     assert body["difficulty"] == "medium"
     assert body["experience_level"] == "mid"
     assert body["focus"] == "mixed"
+    assert body["interview_mode"] == "technical_qa"
     assert body["question_count"] == 5
     assert body["answer_cap_s"] == 120
     assert body["status"] == "in_progress"
@@ -94,6 +95,36 @@ async def test_create_session_accepts_optional_personalization_fields(
     assert body["industry"] == "Fintech"
     assert body["interviewer_style"] == "realistic"
     assert body["language"] == "en"
+
+
+async def test_create_session_accepts_interview_mode(
+    client: TestClient, db_session: AsyncSession, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+    await _seed_question(db_session)
+
+    response = client.post(
+        "/v1/sessions",
+        json=_session_payload(interview_mode="system_design"),
+        headers=_auth_headers(user),
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["interview_mode"] == "system_design"
+
+
+def test_create_session_rejects_invalid_interview_mode(
+    client: TestClient, register_user: Callable[..., dict[str, Any]]
+) -> None:
+    user = register_user()
+
+    response = client.post(
+        "/v1/sessions",
+        json=_session_payload(interview_mode="whiteboard_magic"),
+        headers=_auth_headers(user),
+    )
+
+    assert response.status_code == 422
 
 
 def test_create_session_rejects_an_invalid_question_count(

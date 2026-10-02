@@ -9,6 +9,7 @@ from app.models.enums import (
     ExperienceLevel,
     Focus,
     InterviewerStyle,
+    InterviewMode,
     QuestionSource,
     SessionStatus,
 )
@@ -38,6 +39,7 @@ class SessionCreate(BaseModel):
     difficulty: Difficulty
     experience_level: ExperienceLevel
     focus: Focus
+    interview_mode: InterviewMode = InterviewMode.TECHNICAL_QA
     question_count: int
     answer_cap_s: int
     company: str | None = Field(default=None, max_length=MAX_COMPANY_LENGTH)
@@ -147,6 +149,7 @@ class SessionOut(BaseModel):
     difficulty: Difficulty
     experience_level: ExperienceLevel | None
     focus: Focus
+    interview_mode: InterviewMode
     question_count: int
     answer_cap_s: int
     company: str | None
