@@ -80,6 +80,32 @@ class ChangePasswordRequest(BaseModel):
         return _validate_new_password(value)
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class PasswordResetRequestResponse(BaseModel):
+    sent: bool = True
+    reset_url: str | None = None
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=512)
+    new_password: str = Field(
+        min_length=NEW_PASSWORD_MIN_LENGTH, max_length=NEW_PASSWORD_MAX_LENGTH
+    )
+
+    @field_validator("new_password")
+    @classmethod
+    def _reject_common_password(cls, value: str) -> str:
+        return _validate_new_password(value)
+
+
 class DeleteAccountRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=NEW_PASSWORD_MAX_LENGTH)
 

@@ -31,6 +31,7 @@ from app.models.enums import (
 from app.models.interview_claim import InterviewClaim
 from app.models.interview_session import InterviewSession
 from app.models.job_target import JobCompetency, JobTarget
+from app.models.password_reset_token import PasswordResetToken
 from app.models.profile import Profile
 from app.models.question import Question
 from app.models.rate_limit_counter import RateLimitCounter
@@ -100,6 +101,7 @@ async def delete_user_and_all_data(db: AsyncSession, *, user_id: str) -> None:
     target_ids = select(JobTarget.id).where(JobTarget.user_id == user_id)
     await db.execute(delete(JobCompetency).where(JobCompetency.job_target_id.in_(target_ids)))
     await db.execute(delete(JobTarget).where(JobTarget.user_id == user_id))
+    await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
     await db.execute(delete(RefreshToken).where(RefreshToken.user_id == user_id))
     await db.execute(delete(Profile).where(Profile.id == user_id))
     await db.execute(delete(User).where(User.id == user_id))
@@ -199,8 +201,7 @@ async def revoke_refresh_token(db: AsyncSession, *, token_hash: str) -> None:
 
 async def revoke_all_refresh_tokens(db: AsyncSession, *, user_id: str) -> None:
     """Backs "log out everywhere": revokes every still-active refresh token for a user in one
-    statement, e.g. after a reported compromise (there's no password-reset flow yet to pair
-    this with — see the known-gaps note in AGENTS.md)."""
+    statement, e.g. after a reported compromise or a completed password reset."""
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
@@ -210,6 +211,62 @@ async def revoke_all_refresh_tokens(db: AsyncSession, *, user_id: str) -> None:
 
 
 # ─── questions ───────────────────────────────────────────────────────────
+
+
+async def create_password_reset_token(
+    db: AsyncSession, *, user_id: str, token_hash: str, expires_at: datetime
+) -> PasswordResetToken:
+    await db.execute(
+        update(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user_id, PasswordResetToken.used_at.is_(None))
+        .values(used_at=utcnow())
+    )
+    row = PasswordResetToken(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def get_active_password_reset_token_by_hash(
+    db: AsyncSession, *, token_hash: str
+) -> PasswordResetToken | None:
+    result = await db.execute(
+        select(PasswordResetToken)
+        .where(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > utcnow(),
+        )
+        .with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
+async def complete_password_reset(
+    db: AsyncSession, *, reset_token: PasswordResetToken, password_hash: str
+) -> None:
+    now = utcnow()
+    await db.execute(
+        update(User)
+        .where(User.id == reset_token.user_id)
+        .values(password_hash=password_hash, token_version=User.token_version + 1)
+    )
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == reset_token.user_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    await db.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == reset_token.user_id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
+    await db.commit()
+
 
 # In-process TTL cache: the question bank changes rarely (a seed script, not user writes) but
 # is read on every interview setup. Instance-local like the rate limiter in core/rate_limit.py

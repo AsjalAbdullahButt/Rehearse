@@ -1,4 +1,5 @@
 import logging
+import secrets
 import uuid
 from datetime import timedelta
 
@@ -27,6 +28,9 @@ from app.schemas.auth import (
     DeleteAccountRequest,
     LoginRequest,
     LogoutRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
+    PasswordResetRequestResponse,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -36,6 +40,7 @@ from app.services import repo
 
 router = APIRouter()
 logger = logging.getLogger("rehearse.api")
+PASSWORD_RESET_TTL_MINUTES = 30
 
 
 async def _issue_token_pair(
@@ -129,6 +134,76 @@ async def login(
         )
 
     return await _issue_token_pair(db, user)
+
+
+@router.post("/auth/password-reset/request", response_model=PasswordResetRequestResponse)
+async def request_password_reset(
+    request: Request,
+    body: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+) -> PasswordResetRequestResponse:
+    await enforce_rate_limit(
+        request,
+        db,
+        scope="password_reset_ip",
+        limit=10,
+        window_seconds=60,
+        key_func=client_ip_key,
+    )
+    await enforce_rate_limit(
+        request,
+        db,
+        scope="password_reset_email",
+        limit=5,
+        window_seconds=60 * 60,
+        key_func=lambda _req: f"email:{body.email}",
+    )
+
+    user = await repo.get_user_by_email(db, email=body.email)
+    if user is None:
+        return PasswordResetRequestResponse()
+
+    token = secrets.token_urlsafe(48)
+    await repo.create_password_reset_token(
+        db,
+        user_id=user.id,
+        token_hash=hash_token(token),
+        expires_at=utcnow() + timedelta(minutes=PASSWORD_RESET_TTL_MINUTES),
+    )
+
+    settings = get_settings()
+    reset_url = f"/reset-password?token={token}" if settings.environment == "development" else None
+    return PasswordResetRequestResponse(reset_url=reset_url)
+
+
+@router.post("/auth/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_password_reset(
+    request: Request,
+    body: PasswordResetConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await enforce_rate_limit(
+        request,
+        db,
+        scope="password_reset_confirm",
+        limit=10,
+        window_seconds=60,
+        key_func=client_ip_key,
+    )
+
+    reset_token = await repo.get_active_password_reset_token_by_hash(
+        db, token_hash=hash_token(body.token)
+    )
+    if reset_token is None:
+        raise ApiError(
+            "reset_token_invalid",
+            "This reset link is invalid or expired.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    await repo.complete_password_reset(
+        db, reset_token=reset_token, password_hash=hash_password(body.new_password)
+    )
 
 
 REFRESH_REUSE_GRACE_PERIOD_S = 5

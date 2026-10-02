@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -6,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.interview_session import InterviewSession
+from app.models.password_reset_token import PasswordResetToken
 from app.models.profile import Profile
 from app.models.user import User
 from app.routers import auth as auth_router
@@ -409,6 +411,133 @@ def test_change_password_invalidates_the_access_token_used_to_change_it(
     me_response = client.get("/v1/auth/me", headers={"Authorization": f"Bearer {old_access_token}"})
     assert me_response.status_code == 401
     assert me_response.json()["error"]["code"] == "session_invalidated"
+
+
+async def test_password_reset_request_creates_dev_reset_link_without_logging_user_out(
+    client: TestClient, db_session: AsyncSession
+) -> None:
+    body = _register(client)
+
+    response = client.post("/v1/auth/password-reset/request", json={"email": "User@Example.com"})
+
+    assert response.status_code == 200
+    reset_url = response.json()["reset_url"]
+    assert reset_url.startswith("/reset-password?token=")
+
+    rows = (
+        (
+            await db_session.execute(
+                select(PasswordResetToken).where(
+                    PasswordResetToken.user_id == body["user"]["id"]  # type: ignore[index]
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].used_at is None
+
+    me_response = client.get(
+        "/v1/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+    )
+    assert me_response.status_code == 200
+
+
+async def test_password_reset_request_is_generic_for_unknown_email(
+    client: TestClient, db_session: AsyncSession
+) -> None:
+    response = client.post("/v1/auth/password-reset/request", json={"email": "nobody@example.com"})
+
+    assert response.status_code == 200
+    assert response.json() == {"sent": True, "reset_url": None}
+    count = (
+        await db_session.execute(select(func.count()).select_from(PasswordResetToken))
+    ).scalar_one()
+    assert count == 0
+
+
+async def test_password_reset_confirm_updates_password_and_invalidates_sessions(
+    client: TestClient, db_session: AsyncSession
+) -> None:
+    body = _register(client)
+    old_access_token = body["access_token"]
+    old_refresh_token = body["refresh_token"]
+
+    request_response = client.post(
+        "/v1/auth/password-reset/request", json={"email": "user@example.com"}
+    )
+    reset_url = request_response.json()["reset_url"]
+    token = parse_qs(urlsplit(reset_url).query)["token"][0]
+
+    response = client.post(
+        "/v1/auth/password-reset/confirm",
+        json={"token": token, "new_password": "new-reset-password-123"},
+    )
+
+    assert response.status_code == 204
+
+    old_login = client.post(
+        "/v1/auth/login",
+        json={"email": "user@example.com", "password": "correct-horse-battery-staple"},
+    )
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/v1/auth/login", json={"email": "user@example.com", "password": "new-reset-password-123"}
+    )
+    assert new_login.status_code == 200
+
+    stale_refresh = client.post("/v1/auth/refresh", json={"refresh_token": old_refresh_token})
+    assert stale_refresh.status_code == 401
+
+    stale_access = client.get(
+        "/v1/auth/me", headers={"Authorization": f"Bearer {old_access_token}"}
+    )
+    assert stale_access.status_code == 401
+    assert stale_access.json()["error"]["code"] == "session_invalidated"
+
+    rows = (
+        (
+            await db_session.execute(
+                select(PasswordResetToken).where(
+                    PasswordResetToken.user_id == body["user"]["id"]  # type: ignore[index]
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows
+    assert all(row.used_at is not None for row in rows)
+
+
+def test_password_reset_confirm_rejects_used_or_invalid_token(client: TestClient) -> None:
+    _register(client)
+    request_response = client.post(
+        "/v1/auth/password-reset/request", json={"email": "user@example.com"}
+    )
+    token = parse_qs(urlsplit(request_response.json()["reset_url"]).query)["token"][0]
+
+    first = client.post(
+        "/v1/auth/password-reset/confirm",
+        json={"token": token, "new_password": "new-reset-password-123"},
+    )
+    assert first.status_code == 204
+
+    replay = client.post(
+        "/v1/auth/password-reset/confirm",
+        json={"token": token, "new_password": "another-reset-password-123"},
+    )
+    assert replay.status_code == 400
+    assert replay.json()["error"]["code"] == "reset_token_invalid"
+
+    invalid = client.post(
+        "/v1/auth/password-reset/confirm",
+        json={"token": "x" * 48, "new_password": "another-reset-password-123"},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "reset_token_invalid"
 
 
 def test_register_rejects_a_password_shorter_than_the_new_minimum(client: TestClient) -> None:

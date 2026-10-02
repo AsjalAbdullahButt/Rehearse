@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { PasswordInput } from "@/components/ui/password-input";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { NEW_PASSWORD_MIN_LENGTH, PASSWORD_REQUIREMENTS_HINT } from "@/lib/auth/password-policy";
 import { sanitizeNextPath } from "@/lib/utils";
 
@@ -204,6 +205,15 @@ export function SignInForm() {
             </span>
           )}
         </div>
+
+        {mode === "login" ? (
+          <Link
+            href="/forgot-password"
+            className="text-muted -mt-2 self-start text-sm underline-offset-4 hover:underline"
+          >
+            Forgot password?
+          </Link>
+        ) : null}
 
         {error && (
           <p id="sign-in-form-error" role="alert" className="text-coral text-sm">

@@ -7,6 +7,7 @@ from app.models.candidate_competency import CandidateCompetency
 from app.models.interview_claim import InterviewClaim
 from app.models.interview_session import InterviewSession
 from app.models.job_target import JobCompetency, JobTarget
+from app.models.password_reset_token import PasswordResetToken
 from app.models.profile import Profile
 from app.models.question import Question
 from app.models.rate_limit_counter import RateLimitCounter
@@ -23,6 +24,7 @@ __all__ = [
     "InterviewSession",
     "JobCompetency",
     "JobTarget",
+    "PasswordResetToken",
     "Profile",
     "Question",
     "RateLimitCounter",
