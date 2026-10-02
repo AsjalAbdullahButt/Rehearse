@@ -14,6 +14,8 @@ declare global {
 
 const BAR_COUNT = 56;
 const PLACEHOLDER_PEAKS = Array.from({ length: BAR_COUNT }, () => 0.3);
+const PLAYBACK_START_OFFSET_S = 0.01;
+const PLAYBACK_READY_TIMEOUT_MS = 1500;
 
 const PlayIcon = () => (
   <svg
@@ -68,6 +70,32 @@ async function decodePeaks(blob: Blob): Promise<number[] | null> {
   }
 }
 
+function waitForPlayable(audio: HTMLAudioElement): Promise<void> {
+  if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const cleanup = () => {
+      audio.removeEventListener("loadeddata", finish);
+      audio.removeEventListener("canplay", finish);
+      audio.removeEventListener("error", finish);
+      window.clearTimeout(timeout);
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const timeout = window.setTimeout(finish, PLAYBACK_READY_TIMEOUT_MS);
+
+    audio.addEventListener("loadeddata", finish, { once: true });
+    audio.addEventListener("canplay", finish, { once: true });
+    audio.addEventListener("error", finish, { once: true });
+    audio.load();
+  });
+}
+
 /** A custom playback control for the "listen back before you submit" review step — real
  * transport semantics (a native <button> + a native <input type="range"> underneath the visual
  * waveform, so keyboard/screen-reader users get the same play/pause/seek any audio player
@@ -96,6 +124,21 @@ export function AnswerPlayback({ blob }: { blob: Blob }) {
     };
   }, [blob]);
 
+  async function startPlayback(audio: HTMLAudioElement) {
+    await waitForPlayable(audio);
+    // Some freshly-recorded WebM blobs refuse to audibly start at exactly 0 until the user seeks.
+    // Nudging a few milliseconds in is imperceptible, but it warms the same path seeking did.
+    if (
+      audio.currentTime === 0 &&
+      Number.isFinite(audio.duration) &&
+      audio.duration > PLAYBACK_START_OFFSET_S
+    ) {
+      audio.currentTime = PLAYBACK_START_OFFSET_S;
+      setCurrentTime(PLAYBACK_START_OFFSET_S);
+    }
+    await audio.play();
+  }
+
   function togglePlay() {
     const audio = audioRef.current;
     if (!audio) return;
@@ -106,7 +149,7 @@ export function AnswerPlayback({ blob }: { blob: Blob }) {
     if (isPlaying) {
       audio.pause();
     } else {
-      void audio.play();
+      void startPlayback(audio);
     }
   }
 
@@ -125,7 +168,7 @@ export function AnswerPlayback({ blob }: { blob: Blob }) {
       <audio
         ref={audioRef}
         src={objectUrl}
-        preload="metadata"
+        preload="auto"
         className="hidden"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}

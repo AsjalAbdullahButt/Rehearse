@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AnswerPlayback } from "./answer-playback";
@@ -15,6 +15,7 @@ describe("AnswerPlayback", () => {
     // unless stubbed.
     HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue(undefined);
     HTMLMediaElement.prototype.pause = vi.fn();
+    HTMLMediaElement.prototype.load = vi.fn();
   });
 
   it("starts paused, showing a 'Play recording' control", () => {
@@ -23,12 +24,37 @@ describe("AnswerPlayback", () => {
     expect(screen.getByRole("button", { name: "Play recording" })).toBeInTheDocument();
   });
 
-  it("calls audio.play() when the play button is clicked", () => {
+  it("calls audio.play() when the play button is clicked", async () => {
     render(<AnswerPlayback blob={fakeBlob()} />);
+    const audio = document.querySelector("audio")! as HTMLAudioElement;
+    Object.defineProperty(audio, "readyState", {
+      value: HTMLMediaElement.HAVE_CURRENT_DATA,
+      configurable: true,
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Play recording" }));
 
-    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1));
+  });
+
+  it("loads and primes a fresh recording before the first play", async () => {
+    render(<AnswerPlayback blob={fakeBlob()} />);
+    const audio = document.querySelector("audio")! as HTMLAudioElement;
+    Object.defineProperty(audio, "readyState", {
+      value: HTMLMediaElement.HAVE_NOTHING,
+      configurable: true,
+    });
+    Object.defineProperty(audio, "duration", { value: 12, configurable: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Play recording" }));
+
+    expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+
+    fireEvent.loadedData(audio);
+
+    await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1));
+    expect(audio.currentTime).toBeGreaterThan(0);
   });
 
   it("flips to a 'Pause recording' control once playback actually starts", () => {
