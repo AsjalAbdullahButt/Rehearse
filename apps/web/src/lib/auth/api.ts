@@ -13,6 +13,7 @@ export interface ApiErrorBody {
 export interface UserPublic {
   id: string;
   email: string;
+  email_verified_at?: string | null;
 }
 
 export interface TokenResponse {

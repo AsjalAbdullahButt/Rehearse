@@ -13,6 +13,10 @@ vi.mock("@/hooks/use-session-expiry", () => ({
 
 import { AccountPrivacyPanel } from "./account-privacy-panel";
 
+function renderPanel() {
+  return render(<AccountPrivacyPanel email="user@example.com" initialEmailVerifiedAt={null} />);
+}
+
 describe("AccountPrivacyPanel", () => {
   beforeEach(() => {
     pushMock.mockClear();
@@ -21,7 +25,7 @@ describe("AccountPrivacyPanel", () => {
   });
 
   it("explains that raw audio is never stored", () => {
-    render(<AccountPrivacyPanel />);
+    renderPanel();
 
     expect(screen.getByText(/raw audio recording is never stored/)).toBeInTheDocument();
   });
@@ -29,7 +33,7 @@ describe("AccountPrivacyPanel", () => {
   it("submits a password change and shows a success message", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
 
-    render(<AccountPrivacyPanel />);
+    renderPanel();
     fireEvent.change(screen.getByPlaceholderText("Current password"), {
       target: { value: "old-password" },
     });
@@ -54,7 +58,7 @@ describe("AccountPrivacyPanel", () => {
       }),
     );
 
-    render(<AccountPrivacyPanel />);
+    renderPanel();
     fireEvent.change(screen.getByPlaceholderText("Current password"), {
       target: { value: "wrong-password" },
     });
@@ -69,7 +73,7 @@ describe("AccountPrivacyPanel", () => {
   });
 
   it("requires a confirmation step before deleting the account", () => {
-    render(<AccountPrivacyPanel />);
+    renderPanel();
 
     expect(screen.queryByText(/permanently deletes your account/)).not.toBeInTheDocument();
 
@@ -79,7 +83,7 @@ describe("AccountPrivacyPanel", () => {
   });
 
   it("cancels the delete confirmation without calling the API", () => {
-    render(<AccountPrivacyPanel />);
+    renderPanel();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -91,7 +95,7 @@ describe("AccountPrivacyPanel", () => {
   it("deletes the account and redirects home on success", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
 
-    render(<AccountPrivacyPanel />);
+    renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
     fireEvent.change(screen.getByPlaceholderText("Confirm your password"), {
       target: { value: "correct-password" },

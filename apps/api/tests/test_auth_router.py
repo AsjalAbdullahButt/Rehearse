@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.email_verification_token import EmailVerificationToken
 from app.models.interview_session import InterviewSession
 from app.models.password_reset_token import PasswordResetToken
 from app.models.profile import Profile
@@ -162,6 +163,7 @@ def test_me_returns_current_user(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["email"] == "user@example.com"
+    assert response.json()["email_verified_at"] is None
 
 
 def test_refresh_rotates_tokens(client: TestClient) -> None:
@@ -411,6 +413,109 @@ def test_change_password_invalidates_the_access_token_used_to_change_it(
     me_response = client.get("/v1/auth/me", headers={"Authorization": f"Bearer {old_access_token}"})
     assert me_response.status_code == 401
     assert me_response.json()["error"]["code"] == "session_invalidated"
+
+
+async def test_email_verification_request_creates_dev_link(
+    client: TestClient, db_session: AsyncSession
+) -> None:
+    body = _register(client)
+
+    response = client.post(
+        "/v1/auth/email-verification/request",
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["verified"] is False
+    verification_url = response.json()["verification_url"]
+    assert verification_url.startswith("/verify-email?token=")
+
+    rows = (
+        (
+            await db_session.execute(
+                select(EmailVerificationToken).where(
+                    EmailVerificationToken.user_id == body["user"]["id"]  # type: ignore[index]
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].used_at is None
+
+
+async def test_email_verification_confirm_marks_user_verified_and_consumes_tokens(
+    client: TestClient, db_session: AsyncSession
+) -> None:
+    body = _register(client)
+    request_response = client.post(
+        "/v1/auth/email-verification/request",
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+    token = parse_qs(urlsplit(request_response.json()["verification_url"]).query)["token"][0]
+
+    response = client.post("/v1/auth/email-verification/confirm", json={"token": token})
+
+    assert response.status_code == 204
+    me_response = client.get(
+        "/v1/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+    )
+    assert me_response.status_code == 200
+    assert me_response.json()["email_verified_at"] is not None
+
+    rows = (
+        (
+            await db_session.execute(
+                select(EmailVerificationToken).where(
+                    EmailVerificationToken.user_id == body["user"]["id"]  # type: ignore[index]
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows
+    assert all(row.used_at is not None for row in rows)
+
+
+def test_email_verification_rejects_replayed_or_invalid_token(client: TestClient) -> None:
+    body = _register(client)
+    request_response = client.post(
+        "/v1/auth/email-verification/request",
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+    token = parse_qs(urlsplit(request_response.json()["verification_url"]).query)["token"][0]
+
+    first = client.post("/v1/auth/email-verification/confirm", json={"token": token})
+    assert first.status_code == 204
+
+    replay = client.post("/v1/auth/email-verification/confirm", json={"token": token})
+    assert replay.status_code == 400
+    assert replay.json()["error"]["code"] == "verification_token_invalid"
+
+    invalid = client.post("/v1/auth/email-verification/confirm", json={"token": "x" * 48})
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "verification_token_invalid"
+
+
+def test_email_verification_request_reports_already_verified(client: TestClient) -> None:
+    body = _register(client)
+    request_response = client.post(
+        "/v1/auth/email-verification/request",
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+    token = parse_qs(urlsplit(request_response.json()["verification_url"]).query)["token"][0]
+    confirm_response = client.post("/v1/auth/email-verification/confirm", json={"token": token})
+    assert confirm_response.status_code == 204
+
+    response = client.post(
+        "/v1/auth/email-verification/request",
+        headers={"Authorization": f"Bearer {body['access_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"sent": True, "verified": True, "verification_url": None}
 
 
 async def test_password_reset_request_creates_dev_reset_link_without_logging_user_out(

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -12,15 +13,34 @@ import { NEW_PASSWORD_MIN_LENGTH, PASSWORD_REQUIREMENTS_HINT } from "@/lib/auth/
 
 type PasswordStatus = "idle" | "saving" | "saved" | "error";
 type DeleteStatus = "idle" | "confirming" | "deleting" | "error";
+type VerificationStatus = "idle" | "sending" | "sent" | "verified" | "error";
+
+interface EmailVerificationResponse {
+  sent: boolean;
+  verified: boolean;
+  verification_url?: string | null;
+}
 
 async function parseErrorMessage(response: Response): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
   return body?.error?.message ?? "Something went wrong. Please try again.";
 }
 
-export function AccountPrivacyPanel() {
+interface AccountPrivacyPanelProps {
+  email: string;
+  initialEmailVerifiedAt: string | null;
+}
+
+export function AccountPrivacyPanel({ email, initialEmailVerifiedAt }: AccountPrivacyPanelProps) {
   const router = useRouter();
   const handleSessionExpiry = useSessionExpiry();
+
+  const [emailVerifiedAt, setEmailVerifiedAt] = useState(initialEmailVerifiedAt);
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>(
+    initialEmailVerifiedAt ? "verified" : "idle",
+  );
+  const [verificationUrl, setVerificationUrl] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -30,6 +50,32 @@ export function AccountPrivacyPanel() {
   const [deleteStatus, setDeleteStatus] = useState<DeleteStatus>("idle");
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function handleSendVerification() {
+    setVerificationStatus("sending");
+    setVerificationUrl(null);
+    setVerificationError(null);
+    try {
+      const response = await fetch("/api/auth/email-verification/request", { method: "POST" });
+      if (await handleSessionExpiry(response)) return;
+      if (!response.ok) {
+        setVerificationError(await parseErrorMessage(response));
+        setVerificationStatus("error");
+        return;
+      }
+      const body = (await response.json()) as EmailVerificationResponse;
+      if (body.verified) {
+        setEmailVerifiedAt(new Date().toISOString());
+        setVerificationStatus("verified");
+        return;
+      }
+      setVerificationUrl(body.verification_url ?? null);
+      setVerificationStatus("sent");
+    } catch {
+      setVerificationError("Couldn't reach the server. Try again.");
+      setVerificationStatus("error");
+    }
+  }
 
   async function handleChangePassword() {
     if (!confirmLeavingPage()) return;
@@ -119,6 +165,55 @@ export function AccountPrivacyPanel() {
             history — this cannot be undone.
           </li>
         </ul>
+      </div>
+
+      <div className="border-line flex flex-col gap-3 border-t pt-6">
+        <span className="text-muted text-xs font-medium tracking-wide uppercase">
+          Email verification
+        </span>
+        <div className="flex flex-col gap-1">
+          <p className="text-text text-sm">{email}</p>
+          {emailVerifiedAt ? (
+            <p className="text-mint text-sm">Verified.</p>
+          ) : (
+            <p className="text-muted text-sm">
+              Verify this email so account recovery and security notices can trust it.
+            </p>
+          )}
+        </div>
+        {!emailVerifiedAt ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-auto min-h-11 w-fit py-2"
+                disabled={verificationStatus === "sending"}
+                onClick={() => void handleSendVerification()}
+              >
+                {verificationStatus === "sending" ? "Preparing..." : "Prepare verification link"}
+              </Button>
+              {verificationStatus === "sent" ? (
+                <span role="status" className="text-mint text-sm">
+                  Verification link prepared.
+                </span>
+              ) : null}
+            </div>
+            {verificationUrl ? (
+              <Link
+                href={verificationUrl}
+                className="text-lime w-fit text-sm font-medium underline-offset-4 hover:underline"
+              >
+                Open local verification link
+              </Link>
+            ) : null}
+            {verificationStatus === "error" && verificationError ? (
+              <span role="alert" className="text-coral text-sm">
+                {verificationError}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="border-line flex flex-col gap-3 border-t pt-6">

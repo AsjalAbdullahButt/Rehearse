@@ -12,6 +12,7 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     # Baked into every access/refresh JWT as the "ver" claim (see core/auth.py's _encode_token)
     # and checked against this live column on every authenticated request/refresh

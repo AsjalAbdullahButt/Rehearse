@@ -26,6 +26,8 @@ from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
     DeleteAccountRequest,
+    EmailVerificationConfirmRequest,
+    EmailVerificationRequestResponse,
     LoginRequest,
     LogoutRequest,
     PasswordResetConfirmRequest,
@@ -41,6 +43,7 @@ from app.services import repo
 router = APIRouter()
 logger = logging.getLogger("rehearse.api")
 PASSWORD_RESET_TTL_MINUTES = 30
+EMAIL_VERIFICATION_TTL_HOURS = 24
 
 
 async def _issue_token_pair(
@@ -64,7 +67,7 @@ async def _issue_token_pair(
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        user=UserPublic(id=user.id, email=user.email),
+        user=UserPublic(id=user.id, email=user.email, email_verified_at=user.email_verified_at),
     )
 
 
@@ -206,6 +209,67 @@ async def confirm_password_reset(
     )
 
 
+@router.post("/auth/email-verification/request", response_model=EmailVerificationRequestResponse)
+async def request_email_verification(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> EmailVerificationRequestResponse:
+    await enforce_rate_limit(
+        request,
+        db,
+        scope="email_verification_request",
+        limit=5,
+        window_seconds=60 * 60,
+        key_func=lambda _req: f"user:{user.id}",
+    )
+
+    if user.email_verified_at is not None:
+        return EmailVerificationRequestResponse(verified=True)
+
+    token = secrets.token_urlsafe(48)
+    await repo.create_email_verification_token(
+        db,
+        user_id=user.id,
+        token_hash=hash_token(token),
+        expires_at=utcnow() + timedelta(hours=EMAIL_VERIFICATION_TTL_HOURS),
+    )
+
+    settings = get_settings()
+    verification_url = (
+        f"/verify-email?token={token}" if settings.environment == "development" else None
+    )
+    return EmailVerificationRequestResponse(verification_url=verification_url)
+
+
+@router.post("/auth/email-verification/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_email_verification(
+    request: Request,
+    body: EmailVerificationConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await enforce_rate_limit(
+        request,
+        db,
+        scope="email_verification_confirm",
+        limit=10,
+        window_seconds=60,
+        key_func=client_ip_key,
+    )
+
+    verification_token = await repo.get_active_email_verification_token_by_hash(
+        db, token_hash=hash_token(body.token)
+    )
+    if verification_token is None:
+        raise ApiError(
+            "verification_token_invalid",
+            "This verification link is invalid or expired.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    await repo.complete_email_verification(db, verification_token=verification_token)
+
+
 REFRESH_REUSE_GRACE_PERIOD_S = 5
 """How long after a token is rotated a replay of it is treated as a benign concurrent-tab race
 rather than theft. Deliberately short: a real attacker racing a stolen token against the
@@ -330,7 +394,7 @@ async def logout_all(
 
 @router.get("/auth/me", response_model=UserPublic)
 async def me(user: User = Depends(get_current_user)) -> UserPublic:
-    return UserPublic(id=user.id, email=user.email)
+    return UserPublic(id=user.id, email=user.email, email_verified_at=user.email_verified_at)
 
 
 @router.post("/auth/change-password", status_code=status.HTTP_204_NO_CONTENT)

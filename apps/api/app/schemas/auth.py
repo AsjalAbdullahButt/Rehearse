@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.common_passwords import is_common_password
@@ -106,6 +108,16 @@ class PasswordResetConfirmRequest(BaseModel):
         return _validate_new_password(value)
 
 
+class EmailVerificationRequestResponse(BaseModel):
+    sent: bool = True
+    verified: bool = False
+    verification_url: str | None = None
+
+
+class EmailVerificationConfirmRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=512)
+
+
 class DeleteAccountRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=NEW_PASSWORD_MAX_LENGTH)
 
@@ -113,6 +125,7 @@ class DeleteAccountRequest(BaseModel):
 class UserPublic(BaseModel):
     id: str
     email: str
+    email_verified_at: datetime | None = None
 
 
 class TokenResponse(BaseModel):

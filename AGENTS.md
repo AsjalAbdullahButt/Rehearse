@@ -761,17 +761,18 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   and a persisted explicit early-end state remain follow-ups requiring further UI/API work.
 
 - **Adaptive-platform master prompt — not yet built (as of 2026-10-04):** coding/system-design/
-  case modes (13), shareable reports (15),
-  email verification/password reset, CSP nonce migration, and the dashboard/report redesign.
+  CSP nonce migration, and the dashboard/report redesign.
   Also missing for what *is* built: an "ended early" button in the web UI, a mastery-over-time history chart, a dashboard/"continue training" home,
   per-session `SessionCompetencyState` table (session coverage is derived from `session_questions`
   + answers instead), a `RoleProfile` table, difficulty levels on the bank beyond the coarse
   easy/medium/hard mapping (levels 1 and 5 only ever come from generated questions or follow-ups),
   and consumption of `InterviewerPolicy.hint_level`/`feedback_frequency` in the interview UI.
 
-- **No password-reset flow.** Change-password (requires knowing the current password) and full
-  account deletion exist; there's no "forgot password" email flow, since that needs a transactional
-  email provider this environment has no credentials for.
+- **Account recovery and email verification are implemented locally, but not connected to a
+  transactional email provider.** Password-reset and email-verification tokens are hashed at rest,
+  one-time use, rate-limited, and exposed as local dev links only when `ENVIRONMENT=development`.
+  In production the endpoints deliberately do not return raw tokens; wiring an email provider is
+  still required before real users can receive those links.
 - **No CI/CD deploy stage, dependency/static-analysis scanning, or branch protection.** Needs a
   GitHub Actions setup and repo-settings changes this environment can write but not exercise
   end-to-end without a real GitHub Actions run.
@@ -789,8 +790,8 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   `apps/api/scripts/try_answer.py` remains the way to smoke-test the real integration.
 - **The 2026-09-28 hardening pass's later phases are not started yet**, tracked separately from
   the round-1 items above so they aren't mistaken for done:
-  - No email verification, password-reset, or passkey/WebAuthn support — all need either a
-    transactional email provider or a browser to actually exercise, neither available here.
+  - No passkey/WebAuthn support. Password reset and email verification now exist, but still need
+    a transactional email provider before production delivery.
   - No further OWASP API Top-10 endpoint-by-endpoint re-audit beyond what already existed
     (cross-user authorization tests, idempotency, magic-byte sniffing, etc.) or Groq
     backoff/jitter hardening beyond the existing `groq_retry.py` timeout+retry-once policy.

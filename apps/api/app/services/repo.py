@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.models.answer import Answer
 from app.models.base import utcnow
 from app.models.candidate_competency import CandidateCompetency
+from app.models.email_verification_token import EmailVerificationToken
 from app.models.enums import (
     SESSION_STATUS_TRANSITIONS,
     Category,
@@ -101,6 +102,9 @@ async def delete_user_and_all_data(db: AsyncSession, *, user_id: str) -> None:
     target_ids = select(JobTarget.id).where(JobTarget.user_id == user_id)
     await db.execute(delete(JobCompetency).where(JobCompetency.job_target_id.in_(target_ids)))
     await db.execute(delete(JobTarget).where(JobTarget.user_id == user_id))
+    await db.execute(
+        delete(EmailVerificationToken).where(EmailVerificationToken.user_id == user_id)
+    )
     await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
     await db.execute(delete(RefreshToken).where(RefreshToken.user_id == user_id))
     await db.execute(delete(Profile).where(Profile.id == user_id))
@@ -262,6 +266,59 @@ async def complete_password_reset(
         .where(
             PasswordResetToken.user_id == reset_token.user_id,
             PasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
+    await db.commit()
+
+
+async def create_email_verification_token(
+    db: AsyncSession, *, user_id: str, token_hash: str, expires_at: datetime
+) -> EmailVerificationToken:
+    await db.execute(
+        update(EmailVerificationToken)
+        .where(
+            EmailVerificationToken.user_id == user_id,
+            EmailVerificationToken.used_at.is_(None),
+        )
+        .values(used_at=utcnow())
+    )
+    row = EmailVerificationToken(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def get_active_email_verification_token_by_hash(
+    db: AsyncSession, *, token_hash: str
+) -> EmailVerificationToken | None:
+    result = await db.execute(
+        select(EmailVerificationToken)
+        .where(
+            EmailVerificationToken.token_hash == token_hash,
+            EmailVerificationToken.used_at.is_(None),
+            EmailVerificationToken.expires_at > utcnow(),
+        )
+        .with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
+async def complete_email_verification(
+    db: AsyncSession, *, verification_token: EmailVerificationToken
+) -> None:
+    now = utcnow()
+    await db.execute(
+        update(User)
+        .where(User.id == verification_token.user_id, User.email_verified_at.is_(None))
+        .values(email_verified_at=now)
+    )
+    await db.execute(
+        update(EmailVerificationToken)
+        .where(
+            EmailVerificationToken.user_id == verification_token.user_id,
+            EmailVerificationToken.used_at.is_(None),
         )
         .values(used_at=now)
     )

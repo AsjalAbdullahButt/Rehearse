@@ -1,12 +1,12 @@
 import { AccountPrivacyPanel } from "@/components/settings/account-privacy-panel";
 import { SettingsForm } from "@/components/settings/settings-form";
 import { Card } from "@/components/ui/card";
-import { fetchProfile } from "@/lib/interview/server";
+import { fetchCurrentUser, fetchProfile } from "@/lib/interview/server";
 
 export default async function SettingsPage() {
-  const profile = await fetchProfile();
+  const [profile, user] = await Promise.all([fetchProfile(), fetchCurrentUser()]);
 
-  if (profile === null) {
+  if (profile === null || user === null) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 py-16">
         <Card className="flex max-w-sm flex-col items-center gap-2 text-center">
@@ -20,7 +20,10 @@ export default async function SettingsPage() {
   return (
     <div className="flex flex-1 flex-col items-center gap-8 px-6 py-16">
       <SettingsForm initialProfile={profile} />
-      <AccountPrivacyPanel />
+      <AccountPrivacyPanel
+        email={user.email}
+        initialEmailVerifiedAt={user.email_verified_at ?? null}
+      />
     </div>
   );
 }
