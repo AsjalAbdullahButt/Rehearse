@@ -760,8 +760,7 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   historical. Cross-browser back-navigation protection, individual answer links from summaries,
   and a persisted explicit early-end state remain follow-ups requiring further UI/API work.
 
-- **Adaptive-platform master prompt — not yet built (as of 2026-10-04):** coding/system-design/
-  CSP nonce migration, and the dashboard/report redesign.
+- **Adaptive-platform master prompt not yet built (as of 2026-10-04):** dashboard/report redesign.
   Also missing for what *is* built: an "ended early" button in the web UI, a mastery-over-time history chart, a dashboard/"continue training" home,
   per-session `SessionCompetencyState` table (session coverage is derived from `session_questions`
   + answers instead), a `RoleProfile` table, difficulty levels on the bank beyond the coarse
@@ -799,10 +798,11 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
     real radio-group semantics, light-mode semantic status-text tokens, end-interview
     confirmation, unsaved-recording navigation warning, report-page recovery links, Settings
     dirty-state tracking, or a password-strength meter.
-  - No CSP nonce migration (still `'unsafe-inline'` for scripts — replacing it needs a measured
-    App Router compatibility pass, not a blind swap), no structured-JSON-log/Sentry wiring beyond
-    the existing request-ID correlation, no DB-TLS-required startup check, and no CI security
-    scanning (Dependabot/CodeQL/Semgrep) beyond what git/GitHub already provide by default.
+  - CSP now uses per-request nonces for scripts through `proxy.ts`, so script-src no longer
+    needs `'unsafe-inline'`. `style-src 'unsafe-inline'` remains because React/Motion dynamic
+    style attributes are still used heavily. No structured-JSON-log/Sentry wiring beyond the
+    existing request-ID correlation, no DB-TLS-required startup check, and no CI security scanning
+    (Dependabot/CodeQL/Semgrep) beyond what git/GitHub already provide by default.
   - No async job-queue redesign for answer processing (`POST answer → job_id` → polling) — not
     justified without real production latency measurements first, per that phase's own
     instructions.

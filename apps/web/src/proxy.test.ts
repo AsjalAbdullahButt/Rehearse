@@ -32,6 +32,17 @@ describe("proxy middleware", () => {
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
+  it("adds a nonce-backed CSP to public routes without script unsafe-inline", async () => {
+    const response = await proxy(requestFor("/sign-in"));
+    const csp = response.headers.get("content-security-policy");
+
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self' 'nonce-");
+    expect(csp).toContain("'strict-dynamic'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(response.headers.get("x-middleware-request-x-nonce")).toBeTruthy();
+  });
+
   it("passes through when the access token is still valid", async () => {
     const response = await proxy(requestFor("/interview", { [ACCESS_TOKEN_COOKIE]: makeJwt(600) }));
     expect(response.headers.get("location")).toBeNull();
@@ -41,12 +52,17 @@ describe("proxy middleware", () => {
   it("forwards the current pathname as a header, for Server Components that can't read it themselves", async () => {
     const response = await proxy(requestFor("/progress", { [ACCESS_TOKEN_COOKIE]: makeJwt(600) }));
     expect(response.headers.get("x-middleware-request-x-pathname")).toBe("/progress");
+    expect(response.headers.get("x-middleware-request-x-nonce")).toBeTruthy();
+    expect(response.headers.get("content-security-policy")).toContain(
+      `nonce-${response.headers.get("x-middleware-request-x-nonce")}`,
+    );
   });
 
   it("redirects to sign-in, preserving the target path, when there is no session at all", async () => {
     const response = await proxy(requestFor("/progress"));
     expect(response.headers.get("location")).toContain("/sign-in");
     expect(response.headers.get("location")).toContain("next=%2Fprogress");
+    expect(response.headers.get("content-security-policy")).toContain("script-src");
   });
 
   it("refreshes an expired-but-refreshable session and lets the request through with new cookies, instead of redirecting", async () => {
