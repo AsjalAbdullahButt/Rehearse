@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Bricolage_Grotesque, Geist, JetBrains_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 
@@ -33,7 +34,14 @@ export const metadata: Metadata = {
     "Practice interviews out loud. Rehearse transcribes your answer, measures filler words, pace and pauses, scores behavioral, technical, and situational answers, and shows a stronger sample answer.",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  // Reading the request's headers opts the whole app into per-request rendering. The CSP
+  // (src/proxy.ts) carries a fresh nonce on every response, and Next can only stamp that nonce
+  // onto a page's scripts while rendering the request — a prerendered page has none, so the
+  // browser blocks all of its scripts and the page never hydrates (caught only by loading the
+  // production build in a real browser). The same nonce goes to next-themes' inline script,
+  // which otherwise is blocked too and the saved theme isn't applied before first paint.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html
       lang="en"
@@ -42,6 +50,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body className="font-body flex min-h-full flex-col">
         <ThemeProvider
+          nonce={nonce}
           attribute="class"
           defaultTheme="dark"
           enableSystem={false}

@@ -70,6 +70,6 @@ describe("SignInForm", () => {
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a-real-password" } });
     fireEvent.submit(screen.getByRole("tabpanel"));
 
-    await vi.waitFor(() => expect(assignMock).toHaveBeenCalledWith("/interview"));
+    await vi.waitFor(() => expect(assignMock).toHaveBeenCalledWith("/dashboard"));
   });
 });

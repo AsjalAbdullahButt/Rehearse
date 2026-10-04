@@ -4,7 +4,7 @@ import { apiFetch, type TokenResponse } from "@/lib/auth/api";
 import { ACCESS_TOKEN_COOKIE, buildSessionCookies, REFRESH_TOKEN_COOKIE } from "@/lib/auth/cookies";
 import { isTokenExpired } from "@/lib/auth/tokens";
 
-const APP_PREFIXES = ["/interview", "/report", "/progress", "/mastery", "/settings"];
+const APP_PREFIXES = ["/dashboard", "/interview", "/report", "/progress", "/mastery", "/settings"];
 const isDev = process.env.NODE_ENV === "development";
 
 function createNonce(): string {

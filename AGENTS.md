@@ -715,6 +715,42 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
     `DeliveryCard`, `CameraCoachPanel`, report page). Migration 0014 (SQLite only).
     `InterviewFlow`'s capture wiring has no jsdom test (same limitation as the rest of it).
 
+- **Hardening + "continue training" home (2026-10-04).**
+  - **DB TLS is enforced in production.** `DATABASE_TLS` (unset = on in production, off elsewhere)
+    makes `db.py` pass a verifying `ssl` context (certificate *and* hostname) to the MySQL driver
+    (`Settings.database_connect_args`); `DATABASE_SSL_CA` points at a host CA bundle (Aiven needs
+    one) and a bad path fails at boot rather than skipping verification. Production refuses to
+    start with `DATABASE_TLS=false`. Non-MySQL URLs (the SQLite in tests) are exempt. **Not
+    verified against a real TLS MySQL server** — only the settings logic and the context's
+    verification flags are tested.
+  - **Bug found and fixed along the way:** `POST /v1/answers` never checked the session was still
+    in progress, so an ended-early (or finished) interview could still take an answer to its
+    outstanding question and then generate new questions. It now returns 409 `session_not_active`
+    for any new answer to a non-in-progress session; retrying an *existing* answer stays allowed.
+  - **Explicit early end in the UI.** `EndInterviewButton` (two-step confirm; BFF route
+    `POST /api/interview/sessions/[sessionId]/end`) on the unfinished-summary page and the
+    dashboard; the summary page now says "Interview ended early" rather than implying completion.
+  - **`/dashboard` (nav "Home", logo, and the default post-sign-in destination).**
+    `DashboardView`: resume/end the in-progress interview or start one, readiness and today's
+    practice for the role with the most practice, the three weakest skills (≥2 answers only), and
+    the five most recent interviews with honest status labels. Every block is real data or an
+    honest empty state; "most improved skill" is deliberately absent because per-skill history
+    isn't stored. `roleLabel` (`lib/interview/role-label.ts`) replaced two duplicated helpers.
+  - **Production regression fixed: the nonce CSP had broken every public page.** The nonce-based
+    CSP (`src/proxy.ts`) only works on pages rendered per request, but `/`, `/sign-in` and
+    `/styleguide` were statically prerendered — their scripts carried no nonce, so Chromium blocked
+    all 16-17 chunks on each and none of them hydrated; `next-themes`' inline script was blocked
+    too. Unit tests and `next build` can't see this; loading the production build in a real
+    browser did. Fix: `RootLayout` reads `headers()` (which makes the whole app dynamic, as Next's
+    CSP guide requires) and passes the proxy's `x-nonce` to `ThemeProvider`. Verified: zero CSP
+    violations and every script tag matching the response nonce on `/`, `/sign-in`,
+    `/styleguide`; the camera coach still loads its WASM and model under the new policy. New
+    Playwright regression test in `e2e/landing.spec.ts`. Cost, as the guide warns: no static
+    prerendering or CDN caching for any page.
+  - **CI scanning config** (Dependabot + CodeQL) — see the CI gap entry below for what is and is
+    not active yet.
+  - **Tests.** API 419 → 427, web 260 → 277.
+
 ## Known gaps / deliberate scope cuts from Phase 2
 
 - **No design mockup files, still.** `/design` was empty; Phase 2 was built from a dark-mode PDF
@@ -760,8 +796,10 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   historical. Cross-browser back-navigation protection, individual answer links from summaries,
   and a persisted explicit early-end state remain follow-ups requiring further UI/API work.
 
-- **Adaptive-platform master prompt not yet built (as of 2026-10-04):** dashboard/report redesign.
-  Also missing for what *is* built: an "ended early" button in the web UI, a mastery-over-time history chart, a dashboard/"continue training" home,
+- **Adaptive-platform master prompt, remaining (as of 2026-10-04):** a report-page redesign
+  (the report is still one long page, not the sectioned layout the prompt describes) and a
+  "most improved skill" dashboard block (needs mastery-over-time history, which isn't stored).
+  Also missing for what *is* built: a mastery-over-time history chart,
   per-session `SessionCompetencyState` table (session coverage is derived from `session_questions`
   + answers instead), a `RoleProfile` table, difficulty levels on the bank beyond the coarse
   easy/medium/hard mapping (levels 1 and 5 only ever come from generated questions or follow-ups),
@@ -772,9 +810,12 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   one-time use, rate-limited, and exposed as local dev links only when `ENVIRONMENT=development`.
   In production the endpoints deliberately do not return raw tokens; wiring an email provider is
   still required before real users can receive those links.
-- **No CI/CD deploy stage, dependency/static-analysis scanning, or branch protection.** Needs a
-  GitHub Actions setup and repo-settings changes this environment can write but not exercise
-  end-to-end without a real GitHub Actions run.
+- **No CI/CD deploy stage or branch protection.** Needs repo-settings changes and a real GitHub
+  Actions run to exercise. Dependency and static-analysis scanning is now *configured*
+  (`.github/dependabot.yml`: weekly npm/pip/actions updates; `.github/workflows/codeql.yml`:
+  CodeQL `security-extended` for JS/TS and Python on push, PR and weekly) but has not run yet, and
+  Dependabot security updates / code-scanning alerts still have to be switched on in the
+  repository's security settings.
 - **No production error-tracking service** (e.g. Sentry) — needs an external account/credential
   this environment doesn't have. Request-ID correlation and structured, PII-free error logging
   *are* in place without one (see the "Observability" bullet above); a Sentry/APM integration
@@ -801,8 +842,8 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
   - CSP now uses per-request nonces for scripts through `proxy.ts`, so script-src no longer
     needs `'unsafe-inline'`. `style-src 'unsafe-inline'` remains because React/Motion dynamic
     style attributes are still used heavily. No structured-JSON-log/Sentry wiring beyond the
-    existing request-ID correlation, no DB-TLS-required startup check, and no CI security scanning
-    (Dependabot/CodeQL/Semgrep) beyond what git/GitHub already provide by default.
+    existing request-ID correlation. (The DB-TLS startup check and Dependabot/CodeQL config now
+    exist — see the 2026-10-04 "Continue training" entry in Status.)
   - No async job-queue redesign for answer processing (`POST answer → job_id` → polling) — not
     justified without real production latency measurements first, per that phase's own
     instructions.

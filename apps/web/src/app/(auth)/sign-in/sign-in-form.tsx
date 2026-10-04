@@ -18,7 +18,7 @@ interface AuthErrorBody {
 
 export function SignInForm() {
   const searchParams = useSearchParams();
-  const next = sanitizeNextPath(searchParams.get("next"), "/interview");
+  const next = sanitizeNextPath(searchParams.get("next"), "/dashboard");
 
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");

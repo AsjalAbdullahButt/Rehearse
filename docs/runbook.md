@@ -113,6 +113,11 @@ With `ENVIRONMENT=production`:
   it's what lets rate limiting trust the Next.js BFF's forwarded client IP; see
   `app/core/rate_limit.py`.
 - `/docs`, `/redoc`, `/openapi.json` are disabled unless `ENABLE_API_DOCS=true` is also set.
+- The MySQL connection is **encrypted and certificate-verified** (`DATABASE_TLS` defaults to on in
+  production; startup raises `ValidationError` if it is explicitly set false). If the managed host
+  signs with its own certificate authority (Aiven does), download its CA bundle and set
+  `DATABASE_SSL_CA` to the file's path — a wrong path fails at boot rather than silently skipping
+  verification. Local development and staging default to unencrypted so a Docker MySQL works as-is.
 - `JWT_ALGORITHM` is validated against an HMAC-only allow-list (`HS256`/`HS384`/`HS512`)
   regardless of environment — this project signs and verifies with one shared secret, never a
   keypair.

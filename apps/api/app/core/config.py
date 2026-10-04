@@ -1,3 +1,4 @@
+import ssl
 from functools import lru_cache
 from typing import Literal, Self
 
@@ -49,6 +50,16 @@ class Settings(BaseSettings):
     requirement, ...). Left as "development" by default so a fresh local/CI checkout doesn't
     need a new required env var just to boot — but every real deployment must set this
     explicitly; see docs/runbook.md."""
+
+    database_tls: bool | None = Field(default=None, alias="DATABASE_TLS")
+    """Encrypt the MySQL connection and verify the server's certificate. Unset means "on in
+    production, off elsewhere" (local Docker MySQL has no certificate). Production refuses to
+    start with this explicitly false — see `_enforce_production_requirements`. Has no effect on
+    non-MySQL URLs (the SQLite used by tests)."""
+
+    database_ssl_ca: str | None = Field(default=None, alias="DATABASE_SSL_CA")
+    """Path to a CA bundle to verify the database server against — managed hosts such as Aiven
+    sign with their own CA, which isn't in the system trust store. Unset uses the system store."""
 
     enable_api_docs: bool = Field(default=False, alias="ENABLE_API_DOCS")
     """/docs, /redoc and /openapi.json are always available outside production regardless of
@@ -140,6 +151,23 @@ class Settings(BaseSettings):
             )
         return self
 
+    @property
+    def database_is_mysql(self) -> bool:
+        return self.database_url.get_secret_value().startswith("mysql")
+
+    @property
+    def database_tls_enabled(self) -> bool:
+        if self.database_tls is not None:
+            return self.database_tls
+        return self.environment == "production"
+
+    def database_connect_args(self) -> dict[str, object]:
+        """Driver arguments for the engine. With TLS on, a default SSL context: certificate
+        and hostname are both verified, so a network attacker can't sit in the middle."""
+        if not (self.database_is_mysql and self.database_tls_enabled):
+            return {}
+        return {"ssl": ssl.create_default_context(cafile=self.database_ssl_ca)}
+
     @model_validator(mode="after")
     def _enforce_production_requirements(self) -> Self:
         """Fails startup — not just a warning — on the specific misconfigurations that would
@@ -150,6 +178,13 @@ class Settings(BaseSettings):
         if self.environment != "production":
             return self
 
+        if self.database_is_mysql and not self.database_tls_enabled:
+            raise ValueError(
+                "DATABASE_TLS must not be false when ENVIRONMENT=production: the database holds "
+                "transcripts, resumes and password hashes and must not travel unencrypted. Leave "
+                "DATABASE_TLS unset (it defaults to on in production) and, if the host uses its "
+                "own certificate authority, point DATABASE_SSL_CA at its CA bundle."
+            )
         if self.internal_proxy_secret is None:
             raise ValueError(
                 "INTERNAL_PROXY_SECRET is required when ENVIRONMENT=production: it's what lets "

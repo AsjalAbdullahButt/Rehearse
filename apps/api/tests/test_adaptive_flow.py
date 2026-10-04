@@ -276,3 +276,58 @@ async def test_a_user_cannot_end_someone_elses_session(
     assert response.status_code == 404
     still_open = client.get(f"/v1/sessions/{session['id']}", headers=_auth_headers(owner))
     assert still_open.json()["session"]["status"] == "in_progress"
+
+
+async def test_an_ended_interview_no_longer_accepts_answers(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+    score_for_answers: Callable[[int], None],
+) -> None:
+    user = register_user()
+    await _seed(db_session, "Explain what a database index is.", "sql", 3)
+    session = _create_session(client, user, focus="technical")
+    assert (
+        client.post(f"/v1/sessions/{session['id']}/end", headers=_auth_headers(user)).status_code
+        == 200
+    )
+
+    response = _post_answer(
+        client,
+        session_id=session["id"],
+        session_question_id=session["current_question"]["id"],
+        user=user,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "session_not_active"
+    summary = client.get(f"/v1/sessions/{session['id']}", headers=_auth_headers(user)).json()
+    assert summary["questions_completed"] == 0
+    assert summary["session"]["current_question_number"] == 1  # nothing new was generated
+
+
+async def test_an_existing_answer_can_still_be_retried_after_the_interview_ended(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+    score_for_answers: Callable[[int], None],
+) -> None:
+    user = register_user()
+    await _seed(db_session, "Explain what a database index is.", "sql", 3)
+    session = _create_session(client, user, focus="technical")
+    first = _answer(client, user, session)
+    client.post(f"/v1/sessions/{session['id']}/end", headers=_auth_headers(user))
+
+    retry = client.post(
+        "/v1/answers",
+        data={
+            "session_id": session["id"],
+            "session_question_id": session["current_question"]["id"],
+            "retry_of_answer_id": first["id"],
+        },
+        files={"audio": ("a.webm", b"\x1a\x45\xdf\xa3audio", "audio/webm")},
+        headers=_auth_headers(user),
+    )
+
+    assert retry.status_code == 201
+    assert retry.json()["attempt_number"] == 2

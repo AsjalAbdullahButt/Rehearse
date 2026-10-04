@@ -15,8 +15,11 @@ _settings = get_settings()
 # already covers the same failure mode with a lightweight check-before-use, so the two overlap
 # deliberately rather than relying on either alone.
 _engine_kwargs: dict[str, object] = {"pool_pre_ping": True}
-if _settings.database_url.get_secret_value().startswith("mysql"):
+if _settings.database_is_mysql:
     _engine_kwargs.update(pool_size=3, max_overflow=2, pool_recycle=300)
+    _connect_args = _settings.database_connect_args()
+    if _connect_args:
+        _engine_kwargs["connect_args"] = _connect_args
 
 engine = create_async_engine(_settings.database_url.get_secret_value(), **_engine_kwargs)
 

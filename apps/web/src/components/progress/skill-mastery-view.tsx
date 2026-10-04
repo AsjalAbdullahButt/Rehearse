@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Card } from "@/components/ui/card";
+import { roleLabel } from "@/lib/interview/role-label";
 import type {
   CompetencyMastery,
   PracticePlan,
@@ -8,10 +9,6 @@ import type {
   ScheduledSkill,
 } from "@/lib/interview/types";
 import { cn } from "@/lib/utils";
-
-function roleLabel(slug: string): string {
-  return slug.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
 
 function dueLabel(skill: ScheduledSkill): string {
   if (skill.is_due) return "Due now";

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 const destinations = [
+  { href: "/dashboard", label: "Home" },
   { href: "/interview", label: "Interview" },
   { href: "/mastery", label: "Skills" },
   { href: "/progress", label: "Progress" },

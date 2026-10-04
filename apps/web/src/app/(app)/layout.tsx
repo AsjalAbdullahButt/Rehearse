@@ -35,7 +35,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <header className="border-line shrink-0 border-b sm:flex sm:min-h-16 sm:items-center sm:justify-between sm:px-6">
         <div className="flex h-16 items-center justify-between gap-4 px-4 sm:contents">
           <div className="flex items-center gap-6">
-            <Link href="/interview" className="font-display text-text text-sm font-bold">
+            <Link href="/dashboard" className="font-display text-text text-sm font-bold">
               Rehearse
             </Link>
           </div>

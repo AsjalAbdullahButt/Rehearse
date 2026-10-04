@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { OptionPill } from "@/components/ui/option-pill";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
-import { INTERVIEW_MODE_OPTIONS, ROLE_OPTIONS } from "@/lib/interview/types";
+import { roleLabel } from "@/lib/interview/role-label";
+import { INTERVIEW_MODE_OPTIONS } from "@/lib/interview/types";
 import type { Category, InterviewMode, ProgressRow } from "@/lib/interview/types";
 
 const DIFFICULTY_TONE = { easy: "mint", medium: "amber", hard: "coral" } as const;
@@ -34,13 +35,6 @@ const CATEGORY_LABEL: Record<Category, string> = {
   situational: "Situational",
 };
 const CATEGORY_ORDER: Category[] = ["behavioral", "technical", "situational"];
-
-function roleName(slug: string): string {
-  const preset = ROLE_OPTIONS.find((option) => option.slug === slug)?.name;
-  if (preset) return preset;
-  // A custom role is stored as its slugified title ('devops-engineer').
-  return slug.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
 
 function modeName(mode: InterviewMode): string {
   return INTERVIEW_MODE_OPTIONS.find((option) => option.slug === mode)?.name ?? "Technical Q&A";
@@ -186,7 +180,7 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
               name="role-filter"
               key={role}
               value={role}
-              label={roleName(role)}
+              label={roleLabel(role)}
               selected={roleFilter === role}
               onSelect={setRoleFilter}
             />
@@ -230,7 +224,7 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
           <Card key={row.session_id} className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-text text-sm font-medium">{roleName(row.role)}</span>
+                <span className="text-text text-sm font-medium">{roleLabel(row.role)}</span>
                 <Badge tone={DIFFICULTY_TONE[row.difficulty]}>{row.difficulty}</Badge>
                 <Badge tone={MODE_TONE[row.interview_mode]}>{modeName(row.interview_mode)}</Badge>
               </div>

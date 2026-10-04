@@ -64,3 +64,35 @@ test("sign-in link does not 404", async ({ page }) => {
   const response = await page.request.get("/sign-in");
   expect(response.status()).toBe(200);
 });
+
+// The CSP carries a per-request nonce (src/proxy.ts). Next can only stamp it onto scripts of a page
+// rendered for that request, so a prerendered page ships scripts the browser then blocks and never
+// hydrates; next-themes' inline script needs the nonce passed explicitly. Both regressions were
+// invisible to unit tests and `next build`, and only show in a real browser against `next start`.
+for (const path of ["/", "/sign-in"]) {
+  test(`${path} is rendered per request so every script carries the response's nonce`, async ({
+    page,
+  }) => {
+    const violations: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.text().includes("Content Security Policy")) violations.push(msg.text());
+    });
+
+    const response = await page.goto(path);
+    expect(response).not.toBeNull();
+    const headers = response!.headers();
+    const nonce = /'nonce-([^']+)'/.exec(headers["content-security-policy"] ?? "")?.[1];
+    expect(nonce).toBeTruthy();
+    // A prerendered (static) page cannot have a per-request nonce.
+    expect(headers["x-nextjs-prerender"]).toBeUndefined();
+
+    await page.waitForLoadState("networkidle");
+
+    const scripts = await page.$$eval("script", (nodes) =>
+      nodes.map((node) => ({ nonce: node.nonce, external: node.hasAttribute("src") })),
+    );
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const script of scripts) expect(script.nonce).toBe(nonce);
+    expect(violations).toEqual([]);
+  });
+}

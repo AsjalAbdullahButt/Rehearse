@@ -8,6 +8,7 @@ import type {
   AnswerReport,
   AttemptComparison,
   Features,
+  InterviewSession,
   MasteryOut,
   PracticePlan,
   ProgressOut,
@@ -44,6 +45,10 @@ export function fetchAnswerReport(answerId: string): Promise<AnswerReport | null
 
 export function fetchFeatures(): Promise<Features | null> {
   return fetchFromApi<Features>("/v1/features");
+}
+
+export function fetchRecentSessions(limit = 10): Promise<InterviewSession[] | null> {
+  return fetchFromApi<InterviewSession[]>(`/v1/sessions?limit=${limit}`, true);
 }
 
 export function fetchAttempts(answerId: string): Promise<AttemptComparison | null> {

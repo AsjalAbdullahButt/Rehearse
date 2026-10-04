@@ -1,3 +1,4 @@
+import { EndInterviewButton } from "@/components/interview/end-interview-button";
 import { ClaimsList } from "@/components/report/claims-list";
 import { RecoveryState } from "@/components/ui/recovery-state";
 import Link from "next/link";
@@ -48,7 +49,11 @@ export default async function SessionSummaryPage({
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-16">
       <div className="flex flex-col gap-2">
         <p className="text-muted text-xs font-medium tracking-wide uppercase">
-          {summary.session.status === "completed" ? "Session complete" : "Your progress so far"}
+          {summary.session.status === "completed"
+            ? "Session complete"
+            : summary.session.status === "ended_early"
+              ? "Interview ended early"
+              : "Your progress so far"}
         </p>
         <h1 className="font-display text-text text-2xl font-bold text-balance">
           {summary.questions_completed} question{summary.questions_completed === 1 ? "" : "s"}{" "}
@@ -161,6 +166,7 @@ export default async function SessionSummaryPage({
                 Resume interview
               </Link>
             ) : null}
+            {canResume ? <EndInterviewButton sessionId={summary.session.id} /> : null}
             <Link
               href="/progress"
               className="border-line text-text inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] border px-6 text-sm font-medium transition-colors duration-150 hover:bg-[var(--color-surface-2)]"

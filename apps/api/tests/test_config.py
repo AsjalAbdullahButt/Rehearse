@@ -114,3 +114,85 @@ def test_settings_does_not_require_internal_proxy_secret_outside_production(
     settings = Settings()  # pyright: ignore[reportCallIssue]
 
     assert settings.internal_proxy_secret is None
+
+
+# ─── database TLS ────────────────────────────────────────────────────────
+
+_MYSQL_URL = "mysql+aiomysql://user:pw@db.example.com:3306/rehearse"
+_PROXY_SECRET = "p" * 48
+
+
+def _production_with_mysql(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("DATABASE_URL", _MYSQL_URL)
+    monkeypatch.setenv("INTERNAL_PROXY_SECRET", _PROXY_SECRET)
+
+
+def test_database_tls_defaults_on_in_production_and_off_elsewhere(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _production_with_mysql(monkeypatch)
+    assert Settings().database_tls_enabled is True  # pyright: ignore[reportCallIssue]
+
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    assert Settings().database_tls_enabled is False  # pyright: ignore[reportCallIssue]
+
+
+def test_production_refuses_to_start_with_database_tls_explicitly_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _production_with_mysql(monkeypatch)
+    monkeypatch.setenv("DATABASE_TLS", "false")
+
+    with pytest.raises(ValidationError, match="DATABASE_TLS must not be false"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_database_tls_can_be_turned_off_outside_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("DATABASE_URL", _MYSQL_URL)
+    monkeypatch.setenv("DATABASE_TLS", "false")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.database_tls_enabled is False
+    assert settings.database_connect_args() == {}
+
+
+def test_a_non_mysql_database_is_not_subject_to_the_tls_requirement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("INTERNAL_PROXY_SECRET", _PROXY_SECRET)
+    monkeypatch.setenv("DATABASE_TLS", "false")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]  # conftest's SQLite URL
+
+    assert settings.database_connect_args() == {}
+
+
+def test_tls_connect_args_verify_the_certificate_and_hostname(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ssl
+
+    _production_with_mysql(monkeypatch)
+
+    args = Settings().database_connect_args()  # pyright: ignore[reportCallIssue]
+
+    context = args["ssl"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
+
+
+def test_a_missing_ca_bundle_fails_loudly_rather_than_skipping_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _production_with_mysql(monkeypatch)
+    monkeypatch.setenv("DATABASE_SSL_CA", "/definitely/not/a/real/ca.pem")
+
+    with pytest.raises(OSError):
+        Settings().database_connect_args()  # pyright: ignore[reportCallIssue]

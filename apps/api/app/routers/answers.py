@@ -13,6 +13,7 @@ from app.core.limits import MAX_AUDIO_FILE_BYTES
 from app.core.rate_limit import client_ip_key, enforce_rate_limit, user_or_ip_key
 from app.db import get_db
 from app.models.answer import Answer
+from app.models.enums import SessionStatus
 from app.models.user import User
 from app.schemas.answer import AnswerReport
 from app.schemas.attempts import AttemptComparison
@@ -176,6 +177,17 @@ async def create_answer(
     if session_question is None:
         raise ApiError(
             "question_not_found", "Question not found.", status_code=status.HTTP_404_NOT_FOUND
+        )
+
+    # A finished or ended-early interview takes no new answers: without this, an unanswered
+    # question of an ended session could still be answered, which would then keep generating
+    # follow-up questions for a session the candidate deliberately closed. Retrying an answer
+    # that already exists stays allowed — practice on a finished interview is the point.
+    if retry_of_answer_id is None and session.status != SessionStatus.IN_PROGRESS:
+        raise ApiError(
+            "session_not_active",
+            "This interview has already ended.",
+            status_code=status.HTTP_409_CONFLICT,
         )
 
     original: Answer | None = None
