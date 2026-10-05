@@ -30,7 +30,7 @@ export function DeliveryCard({
 }) {
   return (
     <section aria-label={heading} className="flex flex-col gap-4">
-      <h2 className="text-muted text-xs font-medium tracking-wide uppercase">{heading}</h2>
+      <h3 className="text-muted text-xs font-medium tracking-wide uppercase">{heading}</h3>
       <ul className="flex flex-col gap-2">
         {items.map((item) => (
           <li

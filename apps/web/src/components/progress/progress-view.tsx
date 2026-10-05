@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { OptionPill } from "@/components/ui/option-pill";
+import { ScoreBadge } from "@/components/ui/score-badge";
+import { scoreBandFromTen } from "@/lib/score-band";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import { roleLabel } from "@/lib/interview/role-label";
 import { INTERVIEW_MODE_OPTIONS } from "@/lib/interview/types";
@@ -267,6 +269,9 @@ export function ProgressView({ sessions: initialSessions }: { sessions: Progress
                 <span className="font-mono-metric text-text text-lg tabular-nums">
                   {formatAvg(row.avg_overall_score, 1)}/10
                 </span>
+                {row.avg_overall_score !== null ? (
+                  <ScoreBadge band={scoreBandFromTen(row.avg_overall_score)} className="w-fit" />
+                ) : null}
               </div>
             </div>
 

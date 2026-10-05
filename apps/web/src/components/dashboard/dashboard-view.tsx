@@ -2,7 +2,12 @@ import Link from "next/link";
 
 import { EndInterviewButton } from "@/components/interview/end-interview-button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { ProgressBar } from "@/components/ui/progress-bar";
+import { ScoreBadge } from "@/components/ui/score-badge";
 import { roleLabel } from "@/lib/interview/role-label";
+import { scoreBand } from "@/lib/score-band";
 import type {
   CompetencyMastery,
   InterviewSession,
@@ -51,44 +56,54 @@ export function DashboardView({
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">
-      <div className="flex flex-col gap-2">
-        <p className="text-muted text-xs font-medium tracking-wide uppercase">Home</p>
-        <h1 className="font-display text-text text-2xl font-bold">Continue training</h1>
-      </div>
-
-      <Card className="flex flex-col gap-4">
-        {inProgress ? (
-          <>
-            <h2 className="text-text text-lg font-semibold">Pick up where you left off</h2>
-            <p className="text-muted text-sm">
-              {roleLabel(inProgress.role, inProgress.role_title)} interview · question{" "}
-              {inProgress.current_question_number} of {inProgress.question_count}. Your answers so
-              far are saved.
-            </p>
-            <div className="flex flex-wrap items-start gap-3">
-              <Link
-                href={`/interview?session=${encodeURIComponent(inProgress.id)}`}
-                className={`${linkButton} bg-lime-fill text-lime-ink`}
-              >
-                Resume interview
-              </Link>
-              <EndInterviewButton sessionId={inProgress.id} label="End without finishing" />
-            </div>
-          </>
-        ) : (
-          <>
-            <h2 className="text-text text-lg font-semibold">Start an interview</h2>
-            <p className="text-muted text-sm">
-              {sessions.length === 0
-                ? "Choose a role, answer out loud, and get specific feedback on content and delivery."
-                : "Nothing is in progress. Start a new round whenever you are ready."}
-            </p>
-            <Link href="/interview" className={`${linkButton} bg-lime-fill text-lime-ink w-fit`}>
-              New interview
+      <PageHeader
+        eyebrow="Home"
+        title="Continue training"
+        description={
+          sessions.length === 0
+            ? "Choose a role, answer out loud, and get specific feedback on content and delivery."
+            : "Pick up where you left off, or start a fresh round."
+        }
+        actions={
+          sessions.length > 0 && !inProgress ? (
+            <Link href="/interview" className={`${linkButton} bg-lime-fill text-lime-ink`}>
+              Start new interview
             </Link>
-          </>
-        )}
-      </Card>
+          ) : null
+        }
+      />
+
+      {inProgress ? (
+        <Card className="flex flex-col gap-4">
+          <h2 className="text-text text-lg font-semibold">Pick up where you left off</h2>
+          <p className="text-muted text-sm">
+            {roleLabel(inProgress.role, inProgress.role_title)} interview · question{" "}
+            {inProgress.current_question_number} of {inProgress.question_count}. Your answers so far
+            are saved.
+          </p>
+          <div className="flex flex-wrap items-start gap-3">
+            <Link
+              href={`/interview?session=${encodeURIComponent(inProgress.id)}`}
+              className={`${linkButton} bg-lime-fill text-lime-ink`}
+            >
+              Resume interview
+            </Link>
+            <EndInterviewButton sessionId={inProgress.id} label="End without finishing" />
+          </div>
+        </Card>
+      ) : null}
+
+      {sessions.length === 0 ? (
+        <EmptyState
+          title="You haven't completed an interview yet"
+          description="Practice your first interview and Rehearse will start tracking your skills and progress."
+          action={
+            <Link href="/interview" className={`${linkButton} bg-lime-fill text-lime-ink`}>
+              Start your first interview
+            </Link>
+          }
+        />
+      ) : null}
 
       {role ? (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -97,10 +112,20 @@ export function DashboardView({
               {roleLabel(role)} readiness
             </h2>
             {readiness?.score != null ? (
-              <p className="font-display text-text text-4xl font-bold">
-                {readiness.score}
-                <span className="text-muted text-lg"> / 100</span>
-              </p>
+              <>
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="font-display text-text text-4xl font-bold">
+                    {readiness.score}
+                    <span className="text-muted text-lg"> / 100</span>
+                  </p>
+                  <ScoreBadge band={scoreBand(readiness.score)} />
+                </div>
+                <ProgressBar
+                  value={readiness.score}
+                  label={`${roleLabel(role)} readiness`}
+                  valueText={`${readiness.score} out of 100`}
+                />
+              </>
             ) : (
               <p className="text-text text-base font-medium">Not enough practice yet to score</p>
             )}
@@ -151,11 +176,19 @@ export function DashboardView({
           <h2 className="text-text text-lg font-semibold">Skills to work on</h2>
           <ul className="flex flex-col gap-2">
             {weakest.map((skill) => (
-              <li key={skill.competency} className="flex justify-between text-sm">
-                <span className="text-text">{skill.name}</span>
-                <span className="text-muted font-mono-metric tabular-nums">
-                  {skill.mastery}/100 · {skill.questions_attempted} answers
-                </span>
+              <li key={skill.competency} className="flex flex-col gap-1.5 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-text">{skill.name}</span>
+                  <span className="text-muted font-mono-metric tabular-nums">
+                    {skill.mastery}/100 · {skill.questions_attempted} answers
+                  </span>
+                </div>
+                <ProgressBar
+                  value={skill.mastery}
+                  label={`${skill.name} mastery`}
+                  valueText={`${skill.mastery} out of 100, ${scoreBand(skill.mastery).label}`}
+                  tone={scoreBand(skill.mastery).tone}
+                />
               </li>
             ))}
           </ul>

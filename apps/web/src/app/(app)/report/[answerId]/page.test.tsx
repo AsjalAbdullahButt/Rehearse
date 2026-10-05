@@ -31,7 +31,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock, refresh: refreshMock }),
 }));
 
+import { ToastProvider } from "@/components/ui/toast";
+
 import ReportPage from "./page";
+
+function renderReport(element: React.ReactElement) {
+  return render(<ToastProvider>{element}</ToastProvider>);
+}
 
 function baseReport(): AnswerReport {
   return {
@@ -105,7 +111,7 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.getByText("Feedback unavailable")).toBeInTheDocument();
   });
@@ -121,7 +127,7 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.getByText("Feedback unavailable")).toBeInTheDocument();
   });
@@ -130,7 +136,7 @@ describe("ReportPage", () => {
     fetchAnswerReportMock.mockResolvedValue(baseReport());
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.queryByText("Feedback unavailable")).not.toBeInTheDocument();
     expect(screen.getByText("Tell me about a time you resolved a conflict.")).toBeInTheDocument();
@@ -147,7 +153,7 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.getByText(/strongest part of this answer/)).toBeInTheDocument();
     expect(
@@ -166,7 +172,7 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.queryByText("Nice work —", { exact: false })).not.toBeInTheDocument();
   });
@@ -191,14 +197,14 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.getByText("Technical assessment")).toBeInTheDocument();
     // "Correctness" legitimately appears twice (the rubric bar label and the strongest-area
     // callout naming it by name) — getAllByText just confirms it rendered at all.
     expect(screen.getAllByText("Correctness").length).toBeGreaterThan(0);
     expect(screen.queryByText("Situation")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reference answer" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Reference answer" })).toBeInTheDocument();
   });
 
   it("shows the confidence coaching note when the API returns one", async () => {
@@ -208,7 +214,7 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.getByText(/leaned on filler words/)).toBeInTheDocument();
   });
@@ -220,7 +226,7 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.getByText("This transcription may be unreliable.")).toBeInTheDocument();
   });
@@ -233,7 +239,7 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.getByText("“I led the migration.”")).toBeInTheDocument();
   });
@@ -242,7 +248,7 @@ describe("ReportPage", () => {
     fetchAnswerReportMock.mockResolvedValue(baseReport());
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     const button = screen.getByRole("button", { name: "Continue interview — Question 2 of 3" });
     fireEvent.click(button);
@@ -258,7 +264,7 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     const button = screen.getByRole("button", { name: "View session summary" });
     fireEvent.click(button);
@@ -269,7 +275,7 @@ describe("ReportPage", () => {
     fetchAnswerReportMock.mockResolvedValue(baseReport());
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     fireEvent.click(screen.getByRole("button", { name: "View progress so far" }));
     expect(pushMock).toHaveBeenCalledWith("/session/session-1/summary");
@@ -284,7 +290,7 @@ describe("ReportPage", () => {
     });
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     expect(screen.queryByRole("button", { name: "View progress so far" })).not.toBeInTheDocument();
   });
@@ -293,7 +299,7 @@ describe("ReportPage", () => {
     fetchAnswerReportMock.mockResolvedValue(baseReport());
 
     const element = await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) });
-    render(element);
+    renderReport(element);
 
     const toggle = screen.getByRole("switch", {
       name: "Automatically continue to the next question",
@@ -309,7 +315,7 @@ describe("ReportPage", () => {
   it("offers a retry and no comparison for a first attempt", async () => {
     fetchAnswerReportMock.mockResolvedValue(baseReport());
 
-    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+    renderReport(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
 
     expect(screen.getByRole("button", { name: "Record a new answer" })).toBeInTheDocument();
     expect(screen.queryByText("How your retry compares")).not.toBeInTheDocument();
@@ -346,7 +352,7 @@ describe("ReportPage", () => {
       summary: ["Improved: situation."],
     });
 
-    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+    renderReport(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
 
     expect(screen.getByText("How your retry compares")).toBeInTheDocument();
     expect(screen.getByText("Improved: situation.")).toBeInTheDocument();
@@ -381,7 +387,7 @@ describe("ReportPage", () => {
       summary: [],
     });
 
-    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+    renderReport(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
 
     expect(screen.queryByRole("button", { name: "Record a new answer" })).not.toBeInTheDocument();
     expect(screen.getByText(/used all 5 attempts/)).toBeInTheDocument();
@@ -416,7 +422,7 @@ describe("ReportPage", () => {
       ],
     });
 
-    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+    renderReport(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
 
     expect(screen.getByText("Possible recruiter follow-up")).toBeInTheDocument();
     expect(screen.getByText("A recruiter may ask you to clarify.")).toBeInTheDocument();
@@ -426,7 +432,7 @@ describe("ReportPage", () => {
   it("renders older reports that have no claims or consistency data", async () => {
     fetchAnswerReportMock.mockResolvedValue(baseReport());
 
-    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+    renderReport(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
 
     expect(screen.queryByText("Possible recruiter follow-up")).not.toBeInTheDocument();
     expect(screen.queryByText("Claims a recruiter may ask about")).not.toBeInTheDocument();
@@ -447,7 +453,7 @@ describe("ReportPage", () => {
       },
     });
 
-    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+    renderReport(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
 
     expect(screen.getByRole("region", { name: "Delivery" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /Visual delivery/ })).toBeInTheDocument();
@@ -458,7 +464,7 @@ describe("ReportPage", () => {
   it("omits delivery sections for answers recorded before delivery coaching", async () => {
     fetchAnswerReportMock.mockResolvedValue(baseReport());
 
-    render(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
+    renderReport(await ReportPage({ params: Promise.resolve({ answerId: "answer-1" }) }));
 
     expect(screen.queryByRole("region", { name: "Delivery" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: /Visual delivery/ })).not.toBeInTheDocument();

@@ -91,7 +91,7 @@ describe("DashboardView", () => {
   it("welcomes a brand-new user with one clear action and no invented numbers", () => {
     render(<DashboardView sessions={[]} {...base} />);
 
-    expect(screen.getByRole("link", { name: "New interview" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Start your first interview" })).toHaveAttribute(
       "href",
       "/interview",
     );

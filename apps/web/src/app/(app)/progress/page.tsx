@@ -15,8 +15,8 @@ export default async function ProgressPage({
   if (!progress)
     return (
       <RecoveryState
-        title="Could not load your progress"
-        description="Please try again in a moment."
+        title="We couldn’t load your progress"
+        description="Your sessions are safe — we just couldn’t reach them right now. Please try again."
         retry
       />
     );
@@ -24,7 +24,7 @@ export default async function ProgressPage({
     return (
       <RecoveryState
         title="No sessions yet"
-        description="Answer your first interview question to start tracking your progress."
+        description="Practice your first interview and Rehearse will begin tracking your performance."
       />
     );
   return (

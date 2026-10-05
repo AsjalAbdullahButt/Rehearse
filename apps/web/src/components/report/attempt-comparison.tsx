@@ -11,6 +11,11 @@ function signed(value: number, digits = 1): string {
   return value > 0 ? `+${fixed}` : fixed;
 }
 
+/** Direction arrow so a change reads without colour; decreases are neutral, not alarming. */
+function arrow(value: number): string {
+  return value > 0 ? "↑ " : value < 0 ? "↓ " : "";
+}
+
 /** First attempt vs. latest, with every number derived from stored scores and metrics (see
  * apps/api/app/services/comparison.py) — no AI-written claims about improvement. */
 export function AttemptComparison({ comparison }: { comparison: AttemptComparisonData }) {
@@ -28,7 +33,8 @@ export function AttemptComparison({ comparison }: { comparison: AttemptCompariso
             <>
               {" "}
               — overall{" "}
-              <span className={comparison.overall_delta >= 0 ? "text-mint" : "text-coral"}>
+              <span className={comparison.overall_delta > 0 ? "text-mint" : "text-muted"}>
+                {arrow(comparison.overall_delta)}
                 {signed(comparison.overall_delta)}
               </span>
             </>
@@ -64,9 +70,10 @@ export function AttemptComparison({ comparison }: { comparison: AttemptCompariso
               <td className="font-mono-metric py-2 tabular-nums">{row.after}</td>
               <td
                 className={`font-mono-metric py-2 tabular-nums ${
-                  row.delta > 0 ? "text-mint" : row.delta < 0 ? "text-coral" : "text-muted"
+                  row.delta > 0 ? "text-mint" : "text-muted"
                 }`}
               >
+                {arrow(row.delta)}
                 {signed(row.delta, 0)}
               </td>
             </tr>

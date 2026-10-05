@@ -48,22 +48,21 @@ test("product pages fit narrow screens in both themes", async ({ page }, testInf
 
 test("setup preserves entries on failure and validates experience", async ({ page }) => {
   await page.goto("/interview");
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("radio", { name: "Backend", exact: true }).check();
-  await page.getByRole("button", { name: /Personalize further/ }).click();
   await page.getByLabel("Target company (optional)").fill("Example company");
+  await page.getByText("About you (optional)").click();
   await page.getByLabel("Years of experience").fill("81");
-  await page.getByRole("button", { name: "Start", exact: true }).click();
-  expect(
-    await page
-      .getByLabel("Years of experience")
-      .evaluate((node: HTMLInputElement) => node.validity.valid),
-  ).toBe(false);
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByRole("alert")).toHaveText(/between 0 and 80/);
   await page.getByLabel("Years of experience").fill("5");
   await page.route("**/api/interview/sessions", (route) =>
     route.fulfill({ status: 503, json: { error: { message: "Please try again." } } }),
   );
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Start interview", exact: true }).click();
   await expect(page.getByRole("alert")).toHaveText("Please try again.");
+  await page.getByRole("button", { name: "Edit role" }).click();
   await expect(page.getByLabel("Target company (optional)")).toHaveValue("Example company");
 });
 
@@ -94,8 +93,10 @@ test("history pages link to a resumable summary", async ({ page }) => {
 
 test("recording survives canceled navigation and a temporary rate limit", async ({ page }) => {
   await page.goto("/interview");
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("radio", { name: "Backend", exact: true }).check();
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Start interview", exact: true }).click();
   await page.getByRole("button", { name: "Skip check" }).click();
   await page.getByRole("button", { name: "Start recording" }).click();
   await expect(page.getByRole("button", { name: "Stop recording" })).toBeVisible({

@@ -1,26 +1,31 @@
 import Link from "next/link";
 
-import { RecoveryState } from "@/components/ui/recovery-state";
-import { DeliveryCard } from "@/components/report/delivery-card";
-import { ClaimsList } from "@/components/report/claims-list";
+import { AnswerComparison } from "@/components/report/answer-comparison";
 import { AttemptComparison } from "@/components/report/attempt-comparison";
-import { RetryAnswer } from "@/components/report/retry-answer";
-import { BeforeAfterToggle } from "@/components/report/before-after-toggle";
+import { ClaimsList } from "@/components/report/claims-list";
+import { DeliveryCard } from "@/components/report/delivery-card";
 import { ExportReportButton } from "@/components/report/export-report-button";
+import { ReportNav, ReportSection } from "@/components/report/report-section";
 import { ReportNextSteps } from "@/components/report/report-next-steps";
-import { ShareReportControl } from "@/components/report/share-report-control";
+import { RetryAnswer } from "@/components/report/retry-answer";
 import { RubricBars } from "@/components/report/rubric-bars";
 import { ScoreRing } from "@/components/report/score-ring";
-import { Card } from "@/components/ui/card";
+import { ShareReportControl } from "@/components/report/share-report-control";
+import { RecoveryState } from "@/components/ui/recovery-state";
+import { ScoreBadge } from "@/components/ui/score-badge";
 import { Stat } from "@/components/ui/stat";
 import { hasCompleteFeedback } from "@/lib/interview/feedback";
 import { rubricAreas, strongestRubricArea } from "@/lib/interview/rubric-insights";
 import { fetchAnswerReport, fetchAttempts, fetchReportShares } from "@/lib/interview/server";
 import { toTranscriptParts } from "@/lib/interview/transcript";
 import type { Category } from "@/lib/interview/types";
+import { scoreBandFromTen } from "@/lib/score-band";
 
 // Must match apps/api/app/routers/answers.py's MAX_ATTEMPTS_PER_QUESTION.
 const MAX_ATTEMPTS_PER_QUESTION = 5;
+
+// Past this many words the transcript comparison starts collapsed so the page stays scannable.
+const LONG_TRANSCRIPT_WORDS = 150;
 
 const CATEGORY_LABELS: Record<Category, string> = {
   behavioral: "Behavioral",
@@ -41,10 +46,10 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
   if (!report) {
     return (
       <RecoveryState
-        title={report === undefined ? "Could not load your report" : "Report not found"}
+        title={report === undefined ? "We couldn’t load your report" : "Report not found"}
         description={
           report === undefined
-            ? "Your data could not be loaded right now. Please try again."
+            ? "Your report is safe — we just couldn’t reach it right now. Please try again."
             : "This report does not exist or is not associated with your account."
         }
         retry={report === undefined}
@@ -66,53 +71,214 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
     );
   }
 
+  const areas = rubricAreas(feedback.rubric);
   const strongestArea = strongestRubricArea(feedback.rubric);
+  const contentScore =
+    areas.length > 0
+      ? Math.round((areas.reduce((sum, area) => sum + area.score, 0) / areas.length) * 10) / 10
+      : null;
   // Exactly one of these is ever set, enforced server-side (see hasCompleteFeedback) — a
   // behavioral answer gets a fact-preserving rewrite of the candidate's own answer, a
   // technical/situational one gets a fresh reference example that doesn't need to represent
   // their personal history.
   const isBehavioral = feedback.rubric.category === "behavioral";
   const improvedAnswer = feedback.rewritten_answer ?? feedback.reference_answer ?? "";
+  const moreImprovements = feedback.improvements.slice(1);
+  const hasGrowthColumn = moreImprovements.length > 0 || feedback.missing_information.length > 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-16">
-      <div className="flex flex-col gap-2">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10 sm:px-6 sm:py-14">
+      <header className="flex flex-col gap-3">
         <p className="text-muted text-xs font-medium tracking-wide uppercase">
           Question {report.question_number} of {report.question_count} ·{" "}
           {CATEGORY_LABELS[report.category]}
+          {isRetry ? ` · Attempt ${report.attempt_number}` : ""}
         </p>
-        <a
-          href="#report-next-steps"
-          className="no-print text-lime inline-flex min-h-11 items-center text-sm underline underline-offset-4"
-        >
-          Jump to next steps
-        </a>
-        <h1 className="font-display text-text text-2xl font-bold text-balance">
+        <h1 className="font-display text-text text-2xl font-bold text-balance sm:text-3xl">
           {report.question_text}
         </h1>
-        <ExportReportButton />
-      </div>
-
-      {feedback.improvements[0] ? (
-        <div className="border-lime/30 bg-lime/10 rounded-[var(--radius-tile)] border p-5">
-          <h2 className="text-lime mb-2 text-sm font-semibold">Focus for your next answer</h2>
-          <p className="text-text text-sm leading-relaxed">{feedback.improvements[0]}</p>
+        <div className="no-print flex flex-wrap items-center gap-3">
+          <ShareReportControl answerId={answerId} initialShares={shares} />
+          <ExportReportButton />
         </div>
-      ) : null}
+        <ReportNav />
+      </header>
+
       {comparison ? <AttemptComparison comparison={comparison} /> : null}
-      <ShareReportControl answerId={answerId} initialShares={shares} />
-      <Card className="flex flex-col gap-8">
+
+      <ReportSection
+        id="summary"
+        title="Summary"
+        description="How this answer came across, based on the evaluation of what you said."
+      >
         <div className="flex flex-wrap items-center gap-8">
-          <ScoreRing score={feedback.clarity} label="Clarity" />
-          <div className="grid w-full grid-cols-2 gap-4 sm:w-auto sm:flex-1 sm:grid-cols-3">
-            <Stat label="Filler words" value={report.filler_count} />
-            <Stat label="Pace" value={Math.round(report.wpm)} unit="wpm" />
-            <Stat label="Long pauses" value={report.long_pauses} />
+          <div className="flex flex-col items-center gap-2">
+            <ScoreRing score={feedback.clarity} label="Clarity" />
+            <ScoreBadge band={scoreBandFromTen(feedback.clarity)} />
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
+            {contentScore !== null ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-muted text-xs tracking-wide uppercase">Content score</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-mono-metric text-text text-2xl tabular-nums">
+                    {contentScore}
+                    <span className="text-muted text-sm">/10</span>
+                  </span>
+                  <ScoreBadge band={scoreBandFromTen(contentScore)} />
+                </div>
+                <p className="text-muted text-xs">
+                  The average of the {RUBRIC_SECTION_LABELS[report.category].toLowerCase()} areas
+                  below. Clarity is how clearly you got your point across.
+                </p>
+              </div>
+            ) : null}
           </div>
         </div>
 
-        <details className="border-line border-t pt-6">
-          <summary className="text-muted cursor-pointer text-sm font-medium">
+        {feedback.improvements[0] ? (
+          <div className="border-lime/30 bg-lime/10 rounded-[var(--radius-tile)] border p-5">
+            <h3 className="text-lime mb-2 text-sm font-semibold">Focus for your next answer</h3>
+            <p className="text-text text-sm leading-relaxed">{feedback.improvements[0]}</p>
+          </div>
+        ) : null}
+
+        {strongestArea ? (
+          <p className="bg-lime/10 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">
+            <span className="text-lime font-medium">Nice work —</span> your{" "}
+            <span className="font-medium">{strongestArea.label}</span> was the strongest part of
+            this answer: {strongestArea.praise}. Keep leaning into that.
+          </p>
+        ) : null}
+
+        {report.transcription_quality_warning ? (
+          <p className="bg-amber/15 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">
+            {report.transcription_quality_warning}
+          </p>
+        ) : null}
+
+        {report.rambling ? (
+          <p className="bg-amber/15 text-text w-fit rounded-[var(--radius-pill)] px-3 py-1 text-xs font-medium">
+            This answer could be more focused. Prioritize the key points and use the coaching below.
+          </p>
+        ) : null}
+
+        {!feedback.on_topic ? (
+          <p className="text-coral text-sm">
+            This answer may not have fully addressed the question asked.
+          </p>
+        ) : null}
+      </ReportSection>
+
+      <ReportSection id="breakdown" title="Breakdown">
+        <div>
+          <h3 className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
+            {RUBRIC_SECTION_LABELS[report.category]}
+          </h3>
+          <RubricBars items={areas} />
+        </div>
+
+        <div className={hasGrowthColumn ? "grid gap-6 md:grid-cols-2" : ""}>
+          <div className="flex flex-col gap-3">
+            <h3 className="text-text text-sm font-semibold">What went well</h3>
+            <ul className="flex flex-col gap-2">
+              {feedback.strengths.map((strength, index) => (
+                <li key={index} className="text-text flex gap-2 text-sm">
+                  <span className="text-mint" aria-hidden="true">
+                    ✓
+                  </span>
+                  {strength}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {hasGrowthColumn ? (
+            <div className="flex flex-col gap-3">
+              <h3 className="text-text text-sm font-semibold">Needs improvement</h3>
+              <ul className="flex flex-col gap-2">
+                {moreImprovements.map((improvement, index) => (
+                  <li key={index} className="text-text flex gap-2 text-sm">
+                    <span className="text-lime" aria-hidden="true">
+                      →
+                    </span>
+                    {improvement}
+                  </li>
+                ))}
+                {feedback.missing_information.map((item, index) => (
+                  <li key={`missing-${index}`} className="text-muted flex gap-2 text-sm">
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      <span className="sr-only">Missing: </span>
+                      {item}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {feedback.missing_information.length > 0 ? (
+                <p className="text-muted text-xs">
+                  Items marked with a dot were missing from your answer.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {feedback.rambling_notes ? (
+          <p className="text-muted text-sm">{feedback.rambling_notes}</p>
+        ) : null}
+      </ReportSection>
+
+      <ReportSection
+        id="answer"
+        title="Your answer"
+        description="Compare what you said with a stronger approach."
+      >
+        <details open={report.word_count <= LONG_TRANSCRIPT_WORDS}>
+          <summary className="text-text focus-visible:outline-lime mb-4 min-h-11 cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2">
+            Transcript and {isBehavioral ? "improved answer" : "reference answer"} (
+            {report.word_count} words)
+          </summary>
+          <AnswerComparison
+            yours={toTranscriptParts(report.transcript_parts)}
+            improved={improvedAnswer}
+            improvedLabel={isBehavioral ? "Your answer, improved" : "Reference answer"}
+            improvedHint={
+              isBehavioral
+                ? "Your own answer, tightened — same facts, clearer structure."
+                : "An example of a strong answer. Use it for structure, not to memorize."
+            }
+          />
+        </details>
+
+        {feedback.evidence.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            <h3 className="text-text text-sm font-semibold">From your answer</h3>
+            <ul className="flex flex-col gap-2">
+              {feedback.evidence.map((quote, index) => (
+                <li key={index} className="border-line text-muted border-l-2 pl-3 text-sm italic">
+                  &ldquo;{quote}&rdquo;
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-2">
+          <h3 className="text-text text-sm font-semibold">Follow-up question</h3>
+          <p className="text-muted text-sm">{feedback.follow_up_question}</p>
+        </div>
+      </ReportSection>
+
+      <ReportSection id="delivery" title="Pace and delivery">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <Stat label="Filler words" value={report.filler_count} />
+          <Stat label="Pace" value={Math.round(report.wpm)} unit="wpm" />
+          <Stat label="Long pauses" value={report.long_pauses} />
+        </div>
+
+        <details>
+          <summary className="text-muted focus-visible:outline-lime min-h-11 cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2">
             More delivery metrics
           </summary>
           <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -130,26 +296,6 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
             />
           </div>
         </details>
-
-        {report.transcription_quality_warning ? (
-          <p className="bg-amber/15 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">
-            {report.transcription_quality_warning}
-          </p>
-        ) : null}
-
-        {strongestArea ? (
-          <p className="bg-lime/10 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">
-            <span className="text-lime font-medium">Nice work —</span> your{" "}
-            <span className="font-medium">{strongestArea.label}</span> was the strongest part of
-            this answer: {strongestArea.praise}. Keep leaning into that.
-          </p>
-        ) : null}
-
-        {report.rambling ? (
-          <p className="bg-amber/15 text-amber w-fit rounded-[var(--radius-pill)] px-3 py-1 text-xs font-medium">
-            This answer could be more focused. Prioritize the key points and use the coaching below.
-          </p>
-        ) : null}
 
         {report.confidence_note ? (
           <p className="bg-amber/15 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">
@@ -178,93 +324,12 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
             footnote={report.visual_delivery.disclaimer}
           />
         ) : null}
+      </ReportSection>
 
-        <div>
-          <h2 className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-            {RUBRIC_SECTION_LABELS[report.category]}
-          </h2>
-          <RubricBars items={rubricAreas(feedback.rubric)} />
-        </div>
-
-        <div>
-          <h2 className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-            Transcript
-          </h2>
-          <BeforeAfterToggle
-            before={toTranscriptParts(report.transcript_parts)}
-            after={[{ type: "added", text: improvedAnswer }]}
-            afterLabel={isBehavioral ? "Your answer, improved" : "Reference answer"}
-          />
-        </div>
-
-        {feedback.evidence.length > 0 ? (
-          <div className="flex flex-col gap-3">
-            <h2 className="text-muted text-xs font-medium tracking-wide uppercase">
-              From your answer
-            </h2>
-            <ul className="flex flex-col gap-2">
-              {feedback.evidence.map((quote, index) => (
-                <li key={index} className="border-line text-muted border-l-2 pl-3 text-sm italic">
-                  &ldquo;{quote}&rdquo;
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        <div className="flex flex-col gap-3">
-          <h2 className="text-muted text-xs font-medium tracking-wide uppercase">What went well</h2>
-          <ul className="flex flex-col gap-2">
-            {feedback.strengths.map((strength, index) => (
-              <li key={index} className="text-text flex gap-2 text-sm">
-                <span className="text-mint" aria-hidden="true">
-                  ✓
-                </span>
-                {strength}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {feedback.improvements.length > 1 ? (
-          <div className="flex flex-col gap-3">
-            <h2 className="text-muted text-xs font-medium tracking-wide uppercase">
-              More ways to grow
-            </h2>
-            <ul className="flex flex-col gap-2">
-              {feedback.improvements.slice(1).map((improvement, index) => (
-                <li key={index} className="text-text flex gap-2 text-sm">
-                  <span className="text-lime" aria-hidden="true">
-                    →
-                  </span>
-                  {improvement}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {feedback.missing_information.length > 0 ? (
-          <div className="flex flex-col gap-3">
-            <h2 className="text-muted text-xs font-medium tracking-wide uppercase">
-              Missing from your answer
-            </h2>
-            <ul className="flex flex-col gap-2">
-              {feedback.missing_information.map((item, index) => (
-                <li key={index} className="text-muted flex gap-2 text-sm">
-                  <span aria-hidden="true">·</span>
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
+      <ReportSection id="next-steps" title="Next steps">
         {feedback.consistency_notes && feedback.consistency_notes.length > 0 ? (
           <div className="flex flex-col gap-3">
-            <h2 className="text-muted text-xs font-medium tracking-wide uppercase">
-              Possible recruiter follow-up
-            </h2>
+            <h3 className="text-text text-sm font-semibold">Possible recruiter follow-up</h3>
             <ul className="flex flex-col gap-3">
               {feedback.consistency_notes.map((note, index) => (
                 <li
@@ -283,23 +348,6 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
         ) : null}
 
         <ClaimsList claims={report.claims ?? []} heading="Claims a recruiter may ask about" />
-
-        {feedback.rambling_notes ? (
-          <p className="text-muted text-sm">{feedback.rambling_notes}</p>
-        ) : null}
-
-        {!feedback.on_topic ? (
-          <p className="text-coral text-sm">
-            This answer may not have fully addressed the question asked.
-          </p>
-        ) : null}
-
-        <div className="border-line border-t pt-6">
-          <h2 className="text-muted mb-2 text-xs font-medium tracking-wide uppercase">
-            Follow-up question
-          </h2>
-          <p className="text-text text-sm">{feedback.follow_up_question}</p>
-        </div>
 
         <RetryAnswer
           report={report}
@@ -323,7 +371,7 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
             nextQuestion={report.next_question}
           />
         )}
-      </Card>
+      </ReportSection>
     </div>
   );
 }
