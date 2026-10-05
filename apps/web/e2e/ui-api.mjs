@@ -105,6 +105,20 @@ createServer(async (request, response) => {
       claims: [],
       panel_assessments: [],
     });
+  if (url.pathname.endsWith("/attempts"))
+    return send({
+      attempts: [],
+      overall_delta: null,
+      components: [],
+      improved: [],
+      regressed: [],
+      remained_weak: [],
+      focus_next: null,
+      filler_rate_delta: null,
+      wpm_delta: null,
+      summary: [],
+    });
+  if (url.pathname.endsWith("/shares")) return send([]);
   if (url.pathname.startsWith("/v1/answers/")) return send(report);
   if (url.pathname === "/v1/progress") {
     const offset = Number(url.searchParams.get("offset") ?? 0);

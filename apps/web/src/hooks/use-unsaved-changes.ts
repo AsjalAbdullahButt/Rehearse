@@ -72,7 +72,11 @@ export function useUnsavedChanges(active: boolean, message: string): () => void 
     window.addEventListener(LEAVE_EVENT, confirm);
     window.addEventListener(ALLOW_EVENT, allow);
     if (navigation) navigation.addEventListener("navigate", navigate);
-    else document.addEventListener("click", click, true);
+    // Always guard link clicks directly as well: a client-side router commits its navigation
+    // after an async fetch, by which time the Navigation API event is no longer cancelable, so
+    // it alone cannot stop an in-app link. Accepting the prompt here clears the guard, so the
+    // later "navigate" event does not prompt a second time.
+    document.addEventListener("click", click, true);
     return () => {
       window.removeEventListener("beforeunload", unload);
       window.removeEventListener(LEAVE_EVENT, confirm);

@@ -119,6 +119,8 @@ test("recording survives canceled navigation and a temporary rate limit", async 
     }),
   );
   await page.getByRole("button", { name: "Submit answer" }).click();
-  await expect(page.getByRole("alert")).toContainText("60 seconds");
-  await expect(page.getByRole("button", { name: "Retry upload" })).toBeVisible();
+  await expect(page.locator("[role=alert]:not(#__next-route-announcer__)")).toContainText(
+    "60 seconds",
+  );
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
