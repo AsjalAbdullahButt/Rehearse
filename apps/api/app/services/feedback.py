@@ -62,6 +62,7 @@ def build_answer(
     transcription: TranscriptionResult,
     feedback: LLMFeedback,
     resume_text: str | None = None,
+    input_mode: str = "voice",
 ) -> Answer:
     filler_counts = metrics.count_fillers(transcription.transcript)
     evidence = _verified_evidence(feedback.evidence, transcript=transcription.transcript)
@@ -71,6 +72,7 @@ def build_answer(
         user_id=user_id,
         question_id=question_id,
         session_question_id=session_question_id,
+        input_mode=input_mode,
         category=category.value,
         question_text=question_text,
         transcript=transcription.transcript,
@@ -146,6 +148,7 @@ async def to_answer_report(
     feedback_blob = answer.feedback or {}
     words = [WordTiming.model_validate(word) for word in answer.words]
     word_count = len(words)
+    is_text = answer.input_mode == "text"
     # Pre-Phase-4 rows predate category-specific rubrics entirely — "behavioral" (i.e. STAR) is
     # the only rubric that existed then, so it's the correct rendering default for them.
     category = Category(answer.category) if answer.category else Category.BEHAVIORAL
@@ -219,9 +222,9 @@ async def to_answer_report(
             answer.filler_count, word_count
         ),
         long_pauses=answer.long_pauses,
-        max_pause_s=metrics.max_pause_s(words),
-        total_long_pause_s=metrics.total_long_pause_s(words),
-        avg_pause_s=metrics.avg_pause_s(words),
+        max_pause_s=None if is_text else metrics.max_pause_s(words),
+        total_long_pause_s=0.0 if is_text else metrics.total_long_pause_s(words),
+        avg_pause_s=None if is_text else metrics.avg_pause_s(words),
         rambling=answer.rambling,
         confidence_note=metrics.assess_confidence(answer.filler_count, word_count),
         transcription_quality_warning=answer.transcription_quality_warning,
@@ -233,8 +236,11 @@ async def to_answer_report(
         next_question=next_question_out,
         attempt_number=answer.attempt_number,
         original_answer_id=answer.original_answer_id,
+        input_mode="text" if is_text else "voice",
         claims=[claim_out(row) for row in claim_rows],
-        delivery=delivery.build_delivery(
+        delivery=None
+        if is_text
+        else delivery.build_delivery(
             words,
             duration_s=float(answer.duration_s),
             wpm=float(answer.wpm),

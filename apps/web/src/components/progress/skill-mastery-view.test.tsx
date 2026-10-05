@@ -157,4 +157,20 @@ describe("SkillMasteryView", () => {
       "/mastery?role=devops-engineer",
     );
   });
+
+  it("labels the readiness score and each skill with a quality band, in words", () => {
+    renderView();
+
+    expect(screen.getAllByText("Developing").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Strong").length).toBeGreaterThan(0);
+  });
+
+  it("links the weakest skill to a focused practice session", () => {
+    renderView();
+
+    expect(screen.getByRole("link", { name: "Practice this skill" })).toHaveAttribute(
+      "href",
+      "/interview?role=backend&count=3&topics=Caching",
+    );
+  });
 });

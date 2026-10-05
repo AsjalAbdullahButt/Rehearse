@@ -86,6 +86,11 @@ class Answer(Base):
     # a handful of numbers each. The audio and video themselves are never sent or stored.
     prosody: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     camera: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # "voice" (recorded + transcribed) or "text" (typed). A typed answer has no audio timings, so
+    # pace/pause/delivery metrics are not measured for it and are excluded from voice averages.
+    input_mode: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="voice", server_default="voice"
+    )
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     original_answer_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("answers.id", ondelete="CASCADE"), index=True

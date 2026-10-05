@@ -13,6 +13,7 @@ class ReportShareCreate(BaseModel):
     audience: ShareAudience = "mentor"
     expires_in_days: int | None = Field(default=14, ge=1, le=90)
     note: str | None = Field(default=None, max_length=500)
+    include_transcript: bool = False
 
 
 class ReportShareOut(BaseModel):
@@ -25,6 +26,7 @@ class ReportShareOut(BaseModel):
     created_at: datetime
     last_accessed_at: datetime | None
     is_active: bool
+    include_transcript: bool = False
     url: str | None = None
     token: str | None = None
 

@@ -17,6 +17,13 @@ function row(overrides: Partial<ProgressRow> = {}): ProgressRow {
     interview_mode: "technical_qa",
     started_at: "2026-01-01T00:00:00Z",
     answer_count: 3,
+    status: "completed",
+    question_count: 5,
+    answer_cap_s: 120,
+    focus: "mixed",
+    company: null,
+    role_title: null,
+    total_answer_s: 300,
     avg_wpm: 120,
     avg_filler_count: 2,
     avg_clarity: 7,
@@ -74,7 +81,10 @@ describe("ProgressView", () => {
   it("renders a category trend series for each category present in the data", () => {
     render(
       <ProgressView
-        sessions={[row({ session_id: "s1", category_scores: { behavioral: 8, technical: 6 } })]}
+        sessions={[
+          row({ session_id: "s1", category_scores: { behavioral: 8, technical: 6 } }),
+          row({ session_id: "s2", category_scores: { behavioral: 7, technical: 7 } }),
+        ]}
       />,
     );
 
@@ -132,6 +142,76 @@ describe("ProgressView", () => {
     expect(screen.getByRole("link", { name: "View summary" })).toHaveAttribute(
       "href",
       "/session/session-1/summary",
+    );
+  });
+
+  it("shows an empty-state explanation instead of charts until there are two scored interviews", () => {
+    render(<ProgressView sessions={[row()]} />);
+
+    expect(
+      screen.getByText(/Trends appear after your second scored interview/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Overall score trend")).not.toBeInTheDocument();
+  });
+
+  it("summarises the change from the previous interview once trends exist", () => {
+    render(
+      <ProgressView
+        sessions={[
+          row({ session_id: "new", started_at: "2026-02-01T00:00:00Z", avg_overall_score: 8.2 }),
+          row({ session_id: "old", started_at: "2026-01-01T00:00:00Z", avg_overall_score: 6.9 }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/up 13 points/)).toBeInTheDocument();
+  });
+
+  it("shows percent scores with a quality label, technical and communication, and a retry link", () => {
+    render(
+      <ProgressView
+        sessions={[
+          row({
+            avg_overall_score: 8.2,
+            avg_clarity: 8.8,
+            company: "Acme",
+            category_scores: { technical: 7.8 },
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("82%")).toBeInTheDocument();
+    expect(screen.getByText("Strong")).toBeInTheDocument();
+    expect(screen.getByText("78%")).toBeInTheDocument();
+    expect(screen.getByText("88%")).toBeInTheDocument();
+    expect(screen.getByText(/Acme/)).toBeInTheDocument();
+    expect(screen.getByText(/5 min speaking/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Retry interview" })).toHaveAttribute(
+      "href",
+      "/interview?role=backend&difficulty=medium&focus=mixed&count=5&cap=120",
+    );
+  });
+
+  it("filters by interview type and by status", () => {
+    render(
+      <ProgressView
+        sessions={[
+          row({ session_id: "a", interview_mode: "coding", status: "completed" }),
+          row({ session_id: "b", interview_mode: "system_design", status: "in_progress" }),
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText(/Answers/).length).toBe(2);
+    fireEvent.click(screen.getByRole("radio", { name: "Coding" }));
+    expect(screen.getAllByText(/Answers/).length).toBe(1);
+    fireEvent.click(screen.getByRole("radio", { name: "All types" }));
+    fireEvent.click(screen.getByRole("radio", { name: "In progress" }));
+    expect(screen.getAllByText(/Answers/).length).toBe(1);
+    expect(screen.getByRole("link", { name: "View summary" })).toHaveAttribute(
+      "href",
+      "/session/b/summary",
     );
   });
 });

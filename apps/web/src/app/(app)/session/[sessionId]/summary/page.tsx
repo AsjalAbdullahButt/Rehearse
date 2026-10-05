@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ScoreRing } from "@/components/report/score-ring";
 import { Card } from "@/components/ui/card";
 import { Stat } from "@/components/ui/stat";
+import { repeatSetupHref } from "@/lib/interview/repeat-link";
 import { fetchSessionSummary } from "@/lib/interview/server";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -182,7 +183,7 @@ export default async function SessionSummaryPage({
               </Link>
             ) : null}
             <Link
-              href={`/interview?role=${encodeURIComponent(summary.session.role)}&difficulty=${summary.session.difficulty}&focus=${summary.session.focus}&count=${summary.session.question_count}&cap=${summary.session.answer_cap_s}`}
+              href={repeatSetupHref(summary.session)}
               className="border-line text-text inline-flex h-11 items-center justify-center rounded-[var(--radius-pill)] border px-6 text-sm font-medium transition-colors duration-150 hover:bg-[var(--color-surface-2)]"
             >
               Repeat this setup

@@ -160,3 +160,33 @@ async def test_user_cannot_share_another_users_report(
     )
 
     assert response.status_code == 404
+
+
+async def test_share_hides_the_transcript_unless_the_owner_included_it(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    answer_id = await _create_answer(client, db_session, user)
+
+    private = client.post(
+        f"/v1/reports/{answer_id}/share", json={}, headers=_auth_headers(user)
+    ).json()
+    assert private["include_transcript"] is False
+    hidden = client.get(f"/v1/shared-reports/{private['token']}").json()
+    assert hidden["report"]["transcript"] == ""
+    assert hidden["report"]["transcript_parts"] == []
+
+    # A viewer cannot opt themselves in with a query parameter.
+    still_hidden = client.get(f"/v1/shared-reports/{private['token']}?include_transcript=true")
+    assert still_hidden.json()["report"]["transcript"] == ""
+
+    open_link = client.post(
+        f"/v1/reports/{answer_id}/share",
+        json={"include_transcript": True},
+        headers=_auth_headers(user),
+    ).json()
+    assert open_link["include_transcript"] is True
+    shown = client.get(f"/v1/shared-reports/{open_link['token']}").json()
+    assert shown["report"]["transcript"]

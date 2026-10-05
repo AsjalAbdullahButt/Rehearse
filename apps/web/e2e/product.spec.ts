@@ -124,3 +124,31 @@ test("recording survives canceled navigation and a temporary rate limit", async 
   );
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
+
+test("a typed answer is drafted, submitted with Ctrl+Enter and sent as text, not audio", async ({
+  page,
+}) => {
+  await page.goto("/interview");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("radio", { name: "Backend", exact: true }).check();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Start interview", exact: true }).click();
+  await page.getByRole("button", { name: "Type your answers instead" }).click();
+
+  const box = page.getByLabel("Your answer");
+  await box.fill("I listened to both sides and proposed a shared plan.");
+  await expect(page.getByText(/Draft saved on this device/)).toBeVisible();
+  await page.getByRole("button", { name: "Submit answer" }).waitFor();
+
+  let body = "";
+  await page.route("**/api/interview/answers", async (route) => {
+    body = route.request().postData() ?? "";
+    await route.fulfill({ status: 503, json: { error: { message: "Please try again." } } });
+  });
+  await box.press("Control+Enter");
+
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+  expect(body).toContain('name="answer_text"');
+  expect(body).toContain("shared plan");
+  expect(body).not.toContain('name="audio"');
+});

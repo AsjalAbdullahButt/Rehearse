@@ -925,3 +925,141 @@ async def test_read_capped_returns_full_bytes_when_under_the_cap() -> None:
 )
 def test_base_content_type_strips_codec_parameters(raw: str | None, expected: str) -> None:
     assert _base_content_type(raw) == expected
+
+
+def _post_text_answer(
+    client: TestClient,
+    *,
+    session_id: str,
+    session_question_id: str,
+    user: dict[str, Any],
+    text: str,
+) -> Any:
+    return client.post(
+        "/v1/answers",
+        data={
+            "session_id": session_id,
+            "session_question_id": session_question_id,
+            "answer_text": text,
+        },
+        headers=_auth_headers(user),
+    )
+
+
+async def test_typed_answer_is_scored_without_pace_or_delivery_metrics(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
+
+    response = _post_text_answer(
+        client,
+        session_id=session_id,
+        session_question_id=session_question_id,
+        user=user,
+        text="I would use a token bucket per user,   stored in Redis.",
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["input_mode"] == "text"
+    assert body["transcript"] == "I would use a token bucket per user, stored in Redis."
+    assert body["feedback"]["rubric"]["correctness"] == 8
+    # Nothing was spoken, so nothing about speech is claimed.
+    assert body["wpm"] == 0
+    assert body["duration_s"] == 0
+    assert body["delivery"] is None
+    assert body["max_pause_s"] is None
+    assert body["long_pauses"] == 0
+
+
+async def test_answer_must_have_exactly_one_of_audio_or_text(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
+
+    neither = client.post(
+        "/v1/answers",
+        data={"session_id": session_id, "session_question_id": session_question_id},
+        headers=_auth_headers(user),
+    )
+    assert neither.status_code == 422
+    assert neither.json()["error"]["code"] == "answer_required"
+
+    blank = _post_text_answer(
+        client,
+        session_id=session_id,
+        session_question_id=session_question_id,
+        user=user,
+        text="   ",
+    )
+    assert blank.status_code == 422
+
+    both = client.post(
+        "/v1/answers",
+        data={
+            "session_id": session_id,
+            "session_question_id": session_question_id,
+            "answer_text": "typed",
+        },
+        files={"audio": ("answer.webm", b"\x1a\x45\xdf\xa3fake", "audio/webm")},
+        headers=_auth_headers(user),
+    )
+    assert both.status_code == 422
+    assert both.json()["error"]["code"] == "invalid_answer_input"
+
+
+async def test_typed_answer_over_the_length_cap_is_rejected(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
+
+    response = _post_text_answer(
+        client,
+        session_id=session_id,
+        session_question_id=session_question_id,
+        user=user,
+        text="word " * 2000,
+    )
+
+    assert response.status_code == 422
+
+
+async def test_typed_answers_are_left_out_of_pace_averages(
+    client: TestClient,
+    db_session: AsyncSession,
+    register_user: Callable[..., dict[str, Any]],
+) -> None:
+    user = register_user()
+    session_id, session_question_id, _ = await _create_session_with_question(
+        client, db_session, user
+    )
+    _post_text_answer(
+        client,
+        session_id=session_id,
+        session_question_id=session_question_id,
+        user=user,
+        text="A fully typed answer about token buckets.",
+    )
+
+    progress = client.get("/v1/progress", headers=_auth_headers(user)).json()
+    row = progress["sessions"][0]
+    assert row["avg_wpm"] is None
+    assert row["total_answer_s"] is None
+    assert row["status"] == "in_progress"
+    assert row["question_count"] == 5
+    assert row["focus"] == "technical"

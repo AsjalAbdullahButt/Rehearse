@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -45,6 +46,8 @@ class AnswerReport(BaseModel):
     # 1 for an original answer; >1 for a retry of `original_answer_id`.
     attempt_number: int = 1
     original_answer_id: str | None = None
+    # Typed ("text") answers have no audio: pace, pauses and delivery are not measured.
+    input_mode: Literal["voice", "text"] = "voice"
     # Probe-worthy claims extracted from this answer (empty for older answers and retries).
     claims: list[ClaimOut] = []
     # How the answer sounded (and, if the optional camera coach was on, looked) — kept apart from

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { clearAnswerDraft, TypedAnswer } from "@/components/interview/typed-answer";
 import { Button } from "@/components/ui/button";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import { createIdempotencyKey } from "@/lib/interview/pending-submission";
@@ -28,15 +29,21 @@ export function RetryAnswer({
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const idempotencyKey = useRef(createIdempotencyKey());
+  // A typed answer is retried by typing; either way the other way is one tap away.
+  const [mode, setMode] = useState<"voice" | "text">(
+    report.input_mode === "text" ? "text" : "voice",
+  );
+  const draftId = `retry-${report.id}`;
   const autoStop = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function submit(blob: Blob) {
+  async function submit(answer: { blob: Blob } | { text: string }) {
     setPhase("uploading");
     const form = new FormData();
     form.set("session_id", report.session_id);
     form.set("session_question_id", report.session_question_id ?? "");
     form.set("retry_of_answer_id", report.original_answer_id ?? report.id);
-    form.set("audio", blob, "answer.webm");
+    if ("text" in answer) form.set("answer_text", answer.text);
+    else form.set("audio", answer.blob, "answer.webm");
     try {
       const response = await fetch("/api/interview/answers", {
         method: "POST",
@@ -52,6 +59,7 @@ export function RetryAnswer({
         return;
       }
       const retry = (await response.json()) as AnswerReport;
+      clearAnswerDraft(draftId);
       router.push(`/report/${retry.id}`);
     } catch {
       setMessage("Could not reach the server. Check your connection and try again.");
@@ -60,7 +68,7 @@ export function RetryAnswer({
   }
 
   const recorder = useAudioRecorder((blob) => {
-    void submit(blob);
+    void submit({ blob });
   });
 
   useEffect(
@@ -100,7 +108,25 @@ export function RetryAnswer({
         Apply the feedback above and answer once more. Your first answer is kept, and you will see
         exactly what changed. Retries do not change your skill scores.
       </p>
-      <div className="flex flex-wrap items-center gap-3">
+      {mode === "text" ? (
+        <>
+          <TypedAnswer
+            questionId={draftId}
+            isSubmitting={phase === "uploading"}
+            onSubmit={(text) => {
+              setMessage(null);
+              idempotencyKey.current = createIdempotencyKey();
+              void submit({ text });
+            }}
+          />
+          <div>
+            <Button variant="ghost" size="sm" onClick={() => setMode("voice")}>
+              Record a spoken answer instead
+            </Button>
+          </div>
+        </>
+      ) : null}
+      <div className={mode === "text" ? "hidden" : "flex flex-wrap items-center gap-3"}>
         {phase === "recording" ? (
           <Button onClick={stop}>Stop and submit</Button>
         ) : (
@@ -119,6 +145,11 @@ export function RetryAnswer({
           <span role="status" className="text-coral text-sm">
             Recording — up to {MAX_RETRY_SECONDS / 60} minutes
           </span>
+        ) : null}
+        {phase !== "recording" && phase !== "uploading" ? (
+          <Button variant="ghost" size="sm" onClick={() => setMode("text")}>
+            Type a new answer instead
+          </Button>
         ) : null}
       </div>
       {recorder.error ? (

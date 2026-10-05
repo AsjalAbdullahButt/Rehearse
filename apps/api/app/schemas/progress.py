@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.enums import Difficulty, InterviewMode
+from app.models.enums import Difficulty, InterviewMode, SessionStatus
 
 
 class ProgressRow(BaseModel):
@@ -12,6 +12,15 @@ class ProgressRow(BaseModel):
     interview_mode: InterviewMode
     started_at: datetime
     answer_count: int
+    # What the history list needs to describe a session without a second request.
+    status: SessionStatus
+    question_count: int
+    answer_cap_s: int
+    focus: str
+    company: str | None
+    role_title: str | None
+    # Total speaking time (sum of recorded-answer durations); None if every answer was typed.
+    total_answer_s: float | None
     avg_wpm: float | None
     avg_filler_count: float | None
     avg_clarity: float | None

@@ -1,7 +1,7 @@
 from datetime import timedelta
-from typing import Annotated, cast
+from typing import cast
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -39,6 +39,7 @@ def _share_out(share: ReportShare, *, token: str | None = None) -> ReportShareOu
         created_at=share.created_at,
         last_accessed_at=share.last_accessed_at,
         is_active=is_active,
+        include_transcript=share.include_transcript,
         token=token,
         url=f"/shared/reports/{token}" if token else None,
     )
@@ -77,6 +78,7 @@ async def create_report_share(
             token_hash=report_sharing.hash_share_token(token),
             audience=body.audience,
             note=body.note,
+            include_transcript=body.include_transcript,
             expires_at=expires_at,
         ),
     )
@@ -115,7 +117,6 @@ async def revoke_report_share(
 async def get_shared_report(
     token: str,
     db: AsyncSession = Depends(get_db),
-    include_transcript: Annotated[bool, Query()] = True,
 ) -> SharedReportOut:
     if len(token) == 0 or len(token) > MAX_PUBLIC_TOKEN_LENGTH:
         raise ApiError(
@@ -145,7 +146,8 @@ async def get_shared_report(
 
     await repo.mark_report_share_accessed(db, share=share)
     report = await feedback_service.to_answer_report(db, answer=answer, session=session)
-    if not include_transcript:
+    # Enforced from the link itself, never from a query parameter the viewer controls.
+    if not share.include_transcript:
         report.transcript = ""
         report.transcript_parts = []
     summary = await build_session_summary(db, session=session)

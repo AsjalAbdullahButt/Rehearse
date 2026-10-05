@@ -330,6 +330,8 @@ export interface AnswerReport {
   /** 1 for an original answer; >1 for a retry of `original_answer_id`. */
   attempt_number: number;
   original_answer_id: string | null;
+  /** "text" answers were typed: pace, pauses and delivery are not measured for them. */
+  input_mode?: "voice" | "text";
   claims?: Claim[];
   delivery?: DeliveryReport | null;
   visual_delivery?: VisualDelivery | null;
@@ -347,6 +349,7 @@ export interface ReportShare {
   created_at: string;
   last_accessed_at: string | null;
   is_active: boolean;
+  include_transcript?: boolean;
   url: string | null;
   token: string | null;
 }
@@ -364,6 +367,14 @@ export interface ProgressRow {
   interview_mode: InterviewMode;
   started_at: string;
   answer_count: number;
+  status: SessionStatus;
+  question_count: number;
+  answer_cap_s: number;
+  focus: Focus;
+  company: string | null;
+  role_title: string | null;
+  /** Total speaking time in seconds; null when every answer was typed. */
+  total_answer_s: number | null;
   avg_wpm: number | null;
   avg_filler_count: number | null;
   avg_clarity: number | null;

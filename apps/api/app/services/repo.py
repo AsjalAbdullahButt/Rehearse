@@ -767,6 +767,10 @@ def _avg(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 2) if values else None
 
 
+def _total(values: list[float]) -> float | None:
+    return round(sum(values), 1) if values else None
+
+
 async def get_progress_for_user(
     db: AsyncSession, *, user_id: str, limit: int = 20, offset: int = 0
 ) -> list[ProgressRow]:
@@ -792,6 +796,7 @@ async def get_progress_for_user(
     rows: list[ProgressRow] = []
     for session in sessions:
         answers = answers_by_session[session.id]
+        voice_answers = [a for a in answers if a.input_mode != "text"]
 
         overall_scores = [
             score
@@ -820,7 +825,14 @@ async def get_progress_for_user(
                 interview_mode=session.interview_mode,
                 started_at=session.started_at,
                 answer_count=len(answers),
-                avg_wpm=_avg([float(a.wpm) for a in answers]),
+                status=session.status,
+                question_count=session.question_count,
+                answer_cap_s=session.answer_cap_s,
+                focus=session.focus.value,
+                company=session.company,
+                role_title=session.role_title,
+                total_answer_s=_total([float(a.duration_s) for a in voice_answers]),
+                avg_wpm=_avg([float(a.wpm) for a in voice_answers]),
                 avg_filler_count=_avg([float(a.filler_count) for a in answers]),
                 avg_clarity=_avg([float(a.clarity) for a in answers if a.clarity is not None]),
                 avg_overall_score=_avg(overall_scores),

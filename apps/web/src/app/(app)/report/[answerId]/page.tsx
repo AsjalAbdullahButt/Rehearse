@@ -82,6 +82,7 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
   // technical/situational one gets a fresh reference example that doesn't need to represent
   // their personal history.
   const isBehavioral = feedback.rubric.category === "behavioral";
+  const isTyped = report.input_mode === "text";
   const improvedAnswer = feedback.rewritten_answer ?? feedback.reference_answer ?? "";
   const moreImprovements = feedback.improvements.slice(1);
   const hasGrowthColumn = moreImprovements.length > 0 || feedback.missing_information.length > 0;
@@ -271,31 +272,40 @@ export default async function ReportPage({ params }: { params: Promise<{ answerI
       </ReportSection>
 
       <ReportSection id="delivery" title="Pace and delivery">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <Stat label="Filler words" value={report.filler_count} />
-          <Stat label="Pace" value={Math.round(report.wpm)} unit="wpm" />
-          <Stat label="Long pauses" value={report.long_pauses} />
-        </div>
+        {isTyped ? (
+          <p className="text-muted text-sm">
+            You typed this answer, so pace, pauses and spoken delivery weren&apos;t measured. Answer
+            by voice to get that coaching.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <Stat label="Filler words" value={report.filler_count} />
+              <Stat label="Pace" value={Math.round(report.wpm)} unit="wpm" />
+              <Stat label="Long pauses" value={report.long_pauses} />
+            </div>
 
-        <details>
-          <summary className="text-muted focus-visible:outline-lime min-h-11 cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2">
-            More delivery metrics
-          </summary>
-          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Stat label="Words" value={report.word_count} />
-            <Stat label="Filler rate" value={report.filler_rate_per_100_words} unit="/100w" />
-            <Stat
-              label="Longest pause"
-              value={report.max_pause_s !== null ? report.max_pause_s.toFixed(1) : "—"}
-              unit="s"
-            />
-            <Stat
-              label="Avg pause"
-              value={report.avg_pause_s !== null ? report.avg_pause_s.toFixed(1) : "—"}
-              unit="s"
-            />
-          </div>
-        </details>
+            <details>
+              <summary className="text-muted focus-visible:outline-lime min-h-11 cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2">
+                More delivery metrics
+              </summary>
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <Stat label="Words" value={report.word_count} />
+                <Stat label="Filler rate" value={report.filler_rate_per_100_words} unit="/100w" />
+                <Stat
+                  label="Longest pause"
+                  value={report.max_pause_s !== null ? report.max_pause_s.toFixed(1) : "—"}
+                  unit="s"
+                />
+                <Stat
+                  label="Avg pause"
+                  value={report.avg_pause_s !== null ? report.avg_pause_s.toFixed(1) : "—"}
+                  unit="s"
+                />
+              </div>
+            </details>
+          </>
+        )}
 
         {report.confidence_note ? (
           <p className="bg-amber/15 text-text rounded-[var(--radius-tile)] px-4 py-3 text-sm">

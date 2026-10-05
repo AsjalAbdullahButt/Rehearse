@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { Toggle } from "@/components/ui/toggle";
 import { useToast } from "@/components/ui/toast";
 import type { ReportShare, ReportShareAudience } from "@/lib/interview/types";
 
@@ -52,6 +53,7 @@ export function ShareReportControl({
   const [audience, setAudience] = useState<ReportShareAudience>("mentor");
   const [expiration, setExpiration] = useState<(typeof EXPIRATIONS)[number]["value"]>("14");
   const [revokeId, setRevokeId] = useState<string | null>(null);
+  const [includeTranscript, setIncludeTranscript] = useState(false);
   const [isPending, startTransition] = useTransition();
   const activeShares = useMemo(() => shares.filter((share) => share.is_active), [shares]);
 
@@ -70,6 +72,7 @@ export function ShareReportControl({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             audience,
+            include_transcript: includeTranscript,
             expires_in_days: expiration === "none" ? null : Number(expiration),
           }),
         });
@@ -161,8 +164,11 @@ export function ShareReportControl({
           <div className="bg-surface-2 text-muted rounded-[var(--radius-tile)] px-4 py-3 text-xs">
             <p className="text-text mb-1 font-medium">What the link includes</p>
             The question, your scores and rubric, strengths and improvements, and a few short quotes
-            from your answer. It does not include your full transcript, audio, email or account
-            details.
+            from your answer.{" "}
+            {includeTranscript
+              ? "It also includes your full transcript."
+              : "It does not include your full transcript."}{" "}
+            It never includes your audio, email or account details.
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -196,6 +202,20 @@ export function ShareReportControl({
                 ))}
               </select>
             </label>
+          </div>
+
+          <div className="border-line flex items-center justify-between gap-4 rounded-[var(--radius-tile)] border px-4 py-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-text text-sm font-medium">Include my transcript</span>
+              <span className="text-muted text-xs">
+                Lets the viewer read word for word what you said. Off by default.
+              </span>
+            </div>
+            <Toggle
+              pressed={includeTranscript}
+              onPressedChange={setIncludeTranscript}
+              label="Include my transcript in the shared report"
+            />
           </div>
 
           <Button
@@ -233,7 +253,8 @@ export function ShareReportControl({
                   >
                     <span className="text-muted text-sm">
                       {AUDIENCES.find((item) => item.value === share.audience)?.label ?? "Share"}{" "}
-                      &middot; expires {formatDate(share.expires_at)}
+                      &middot; expires {formatDate(share.expires_at)} &middot;{" "}
+                      {share.include_transcript ? "transcript included" : "no transcript"}
                     </span>
                     <Button variant="ghost" size="sm" onClick={() => setRevokeId(share.id)}>
                       Revoke

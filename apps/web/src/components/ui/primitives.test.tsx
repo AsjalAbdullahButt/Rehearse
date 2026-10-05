@@ -120,6 +120,7 @@ describe("DeviceCheck", () => {
     analyser: null,
     onTestMic: vi.fn(),
     onContinue: vi.fn(),
+    onUseText: vi.fn(),
   };
 
   it("reports each check and confirms when everything works", () => {
@@ -148,5 +149,12 @@ describe("DeviceCheck", () => {
     render(<DeviceCheck {...base} online={false} />);
     expect(screen.getByText(/Offline/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Skip check" })).toBeDisabled();
+  });
+
+  it("offers typing as a way past a missing or unwanted microphone", () => {
+    const onUseText = vi.fn();
+    render(<DeviceCheck {...base} browserSupported={false} onUseText={onUseText} />);
+    fireEvent.click(screen.getByRole("button", { name: "Type your answers instead" }));
+    expect(onUseText).toHaveBeenCalled();
   });
 });

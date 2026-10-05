@@ -19,6 +19,7 @@ from app.schemas.answer import AnswerReport
 from app.schemas.attempts import AttemptComparison
 from app.schemas.delivery import CameraSummary, ProsodySummary
 from app.schemas.feedback import compute_overall_score
+from app.schemas.transcription import TranscriptionResult, WordTiming
 from app.services import claims as claims_service
 from app.services import comparison, llm, mastery, repo, stt
 from app.services import feedback as feedback_service
@@ -34,6 +35,8 @@ DURATION_CAP_GRACE_S = 10
 IDEMPOTENCY_KEY_TTL_S = 24 * 60 * 60
 MAX_IDEMPOTENCY_KEY_LENGTH = 128
 MAX_ATTEMPTS_PER_QUESTION = 5
+# Cap on a typed answer: far above any spoken answer's length, far below anything abusive.
+MAX_ANSWER_TEXT_CHARS = 6000
 # A summary is a dozen numbers; anything bigger is not one.
 MAX_SUMMARY_FIELD_LENGTH = 2000
 
@@ -112,7 +115,8 @@ async def create_answer(
     response: Response,
     session_id: Annotated[str, Form()],
     session_question_id: Annotated[str, Form()],
-    audio: Annotated[UploadFile, File()],
+    audio: Annotated[UploadFile | None, File()] = None,
+    answer_text: Annotated[str | None, Form(max_length=MAX_ANSWER_TEXT_CHARS)] = None,
     retry_of_answer_id: Annotated[str | None, Form(max_length=36)] = None,
     prosody: Annotated[str | None, Form(max_length=MAX_SUMMARY_FIELD_LENGTH)] = None,
     camera: Annotated[str | None, Form(max_length=MAX_SUMMARY_FIELD_LENGTH)] = None,
@@ -226,36 +230,61 @@ async def create_answer(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    if _base_content_type(audio.content_type) not in ALLOWED_AUDIO_CONTENT_TYPES:
+    typed_text = (answer_text or "").strip()
+    if audio is not None and typed_text:
         raise ApiError(
-            "unsupported_media_type",
-            "Audio must be webm or ogg.",
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-        )
-
-    audio_bytes = await _read_capped(audio, MAX_AUDIO_FILE_BYTES)
-
-    if not _looks_like_audio(audio_bytes[: len(_WEBM_MAGIC)]):
-        raise ApiError(
-            "invalid_audio_content",
-            "The uploaded file doesn't look like a webm or ogg audio recording.",
+            "invalid_answer_input",
+            "Send either a recording or typed text, not both.",
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
-
-    # Transcribed in memory and never written to disk or persisted — only the resulting text
-    # (and what's derived from it) gets stored.
-    transcription = await stt.transcribe(
-        audio_bytes,
-        audio.filename or "answer.webm",
-        language=resolve_language(session.language).whisper_code,
-    )
-
-    if transcription.duration_s > session.answer_cap_s + DURATION_CAP_GRACE_S:
+    if audio is None and not typed_text:
         raise ApiError(
-            "duration_exceeds_cap",
-            "Recording exceeds the configured time cap.",
+            "answer_required",
+            "Record or type an answer first.",
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
+    is_text = audio is None
+
+    if audio is None:
+        # Typed answer: there is no audio to transcribe and no timing to measure, so the words
+        # carry zero timings and pace/pause/delivery are reported as not measured (see
+        # feedback.to_answer_report), never invented.
+        transcription = TranscriptionResult(
+            transcript=" ".join(typed_text.split()),
+            words=[WordTiming(word=word, start=0.0, end=0.0) for word in typed_text.split()],
+            duration_s=0.0,
+        )
+    else:
+        if _base_content_type(audio.content_type) not in ALLOWED_AUDIO_CONTENT_TYPES:
+            raise ApiError(
+                "unsupported_media_type",
+                "Audio must be webm or ogg.",
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            )
+
+        audio_bytes = await _read_capped(audio, MAX_AUDIO_FILE_BYTES)
+
+        if not _looks_like_audio(audio_bytes[: len(_WEBM_MAGIC)]):
+            raise ApiError(
+                "invalid_audio_content",
+                "The uploaded file doesn't look like a webm or ogg audio recording.",
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
+
+        # Transcribed in memory and never written to disk or persisted — only the resulting text
+        # (and what's derived from it) gets stored.
+        transcription = await stt.transcribe(
+            audio_bytes,
+            audio.filename or "answer.webm",
+            language=resolve_language(session.language).whisper_code,
+        )
+
+        if transcription.duration_s > session.answer_cap_s + DURATION_CAP_GRACE_S:
+            raise ApiError(
+                "duration_exceeds_cap",
+                "Recording exceeds the configured time cap.",
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            )
 
     if not transcription.transcript.strip():
         raise ApiError(
@@ -285,11 +314,16 @@ async def create_answer(
         transcription=transcription,
         feedback=llm_feedback,
         resume_text=session.candidate_background,
+        input_mode="text" if is_text else "voice",
     )
     answer.idempotency_key = idempotency_key
-    answer.prosody = _parse_summary(ProsodySummary, prosody)
+    answer.prosody = None if is_text else _parse_summary(ProsodySummary, prosody)
     # Camera data is only kept while the feature flag is on, and only as the validated summary.
-    answer.camera = _parse_summary(CameraSummary, camera) if settings.enable_camera_coach else None
+    answer.camera = (
+        _parse_summary(CameraSummary, camera)
+        if settings.enable_camera_coach and not is_text
+        else None
+    )
     answer.attempt_number = attempt_number
     answer.original_answer_id = original.id if original else None
     try:

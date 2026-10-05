@@ -38,6 +38,7 @@ export function DeviceCheck({
   analyser,
   onTestMic,
   onContinue,
+  onUseText,
 }: {
   browserSupported: boolean;
   online: boolean;
@@ -50,6 +51,8 @@ export function DeviceCheck({
   analyser: AnalyserNode | null;
   onTestMic: () => void;
   onContinue: () => void;
+  /** Skip voice entirely and answer by typing. */
+  onUseText: () => void;
 }) {
   const micState: CheckState = micHeard ? "ok" : micError ? "warn" : "pending";
   const micDetail = micHeard
@@ -126,6 +129,16 @@ export function DeviceCheck({
             {micHeard ? "Start interview" : micLive ? "Continue anyway" : "Skip check"}
           </Button>
         </div>
+        <p className="text-muted text-center text-xs">
+          No microphone, or prefer not to speak?{" "}
+          <button
+            type="button"
+            onClick={onUseText}
+            className="text-lime focus-visible:outline-lime min-h-11 px-1 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Type your answers instead
+          </button>
+        </p>
       </Card>
     </div>
   );

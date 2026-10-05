@@ -1,4 +1,6 @@
 import { Card } from "@/components/ui/card";
+import { ScoreBadge } from "@/components/ui/score-badge";
+import { scoreBandFromTen } from "@/lib/score-band";
 import type { AttemptComparison as AttemptComparisonData } from "@/lib/interview/types";
 
 function label(key: string): string {
@@ -9,6 +11,16 @@ function label(key: string): string {
 function signed(value: number, digits = 1): string {
   const fixed = value.toFixed(digits);
   return value > 0 ? `+${fixed}` : fixed;
+}
+
+/** Scores are stored out of 10; people read percentages. */
+function pct(score: number): string {
+  return `${Math.round(score * 10)}%`;
+}
+
+/** A change in score points on the 0-100 scale, e.g. "+13". */
+function pointDelta(delta: number): string {
+  return signed(Math.round(delta * 10), 0);
 }
 
 /** Direction arrow so a change reads without colour; decreases are neutral, not alarming. */
@@ -35,7 +47,7 @@ export function AttemptComparison({ comparison }: { comparison: AttemptCompariso
               — overall{" "}
               <span className={comparison.overall_delta > 0 ? "text-mint" : "text-muted"}>
                 {arrow(comparison.overall_delta)}
-                {signed(comparison.overall_delta)}
+                {pointDelta(comparison.overall_delta)} points
               </span>
             </>
           ) : null}
@@ -61,20 +73,40 @@ export function AttemptComparison({ comparison }: { comparison: AttemptCompariso
           </tr>
         </thead>
         <tbody>
+          {first.overall_score !== null && latest.overall_score !== null ? (
+            <tr className="border-line border-t">
+              <th scope="row" className="text-text py-2 font-medium">
+                Overall
+              </th>
+              <td className="font-mono-metric py-2 tabular-nums">{pct(first.overall_score)}</td>
+              <td className="py-2">
+                <span className="font-mono-metric tabular-nums">{pct(latest.overall_score)}</span>{" "}
+                <ScoreBadge band={scoreBandFromTen(latest.overall_score)} />
+              </td>
+              <td
+                className={`font-mono-metric py-2 tabular-nums ${
+                  latest.overall_score > first.overall_score ? "text-mint" : "text-muted"
+                }`}
+              >
+                {arrow(latest.overall_score - first.overall_score)}
+                {pointDelta(latest.overall_score - first.overall_score)}
+              </td>
+            </tr>
+          ) : null}
           {comparison.components.map((row) => (
             <tr key={row.key} className="border-line border-t">
               <th scope="row" className="text-text py-2 font-normal">
                 {label(row.key)}
               </th>
-              <td className="font-mono-metric py-2 tabular-nums">{row.before}</td>
-              <td className="font-mono-metric py-2 tabular-nums">{row.after}</td>
+              <td className="font-mono-metric py-2 tabular-nums">{pct(row.before)}</td>
+              <td className="font-mono-metric py-2 tabular-nums">{pct(row.after)}</td>
               <td
                 className={`font-mono-metric py-2 tabular-nums ${
                   row.delta > 0 ? "text-mint" : "text-muted"
                 }`}
               >
                 {arrow(row.delta)}
-                {signed(row.delta, 0)}
+                {pointDelta(row.delta)}
               </td>
             </tr>
           ))}

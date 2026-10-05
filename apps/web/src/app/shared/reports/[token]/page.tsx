@@ -3,12 +3,14 @@ import { DeliveryCard } from "@/components/report/delivery-card";
 import { ExportReportButton } from "@/components/report/export-report-button";
 import { RubricBars } from "@/components/report/rubric-bars";
 import { ScoreRing } from "@/components/report/score-ring";
+import { TranscriptHighlight } from "@/components/report/transcript-highlight";
 import { Card } from "@/components/ui/card";
 import { RecoveryState } from "@/components/ui/recovery-state";
 import { Stat } from "@/components/ui/stat";
 import { hasCompleteFeedback } from "@/lib/interview/feedback";
 import { rubricAreas } from "@/lib/interview/rubric-insights";
 import { fetchSharedReport } from "@/lib/interview/server";
+import { toTranscriptParts } from "@/lib/interview/transcript";
 import type { Category, ReportShareAudience } from "@/lib/interview/types";
 
 const CATEGORY_LABELS: Record<Category, string> = {
@@ -67,8 +69,10 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
           Candidate assessment
         </h1>
         <p className="text-muted max-w-2xl text-sm leading-relaxed">
-          Shared by the candidate from Rehearse. Raw audio and video are not included; this report
-          contains the transcript-derived coaching and interview summary only.
+          Shared by the candidate from Rehearse. Raw audio and video are never included.{" "}
+          {report.transcript
+            ? "The candidate chose to include their transcript."
+            : "The transcript is not included; this report has the coaching and interview summary only."}
         </p>
         <ExportReportButton />
       </div>
@@ -104,6 +108,18 @@ export default async function SharedReportPage({ params }: { params: Promise<{ t
           </h3>
           <RubricBars items={rubricAreas(feedback.rubric)} />
         </div>
+
+        {report.transcript ? (
+          <details className="border-line rounded-[var(--radius-tile)] border p-4">
+            <summary className="text-text cursor-pointer text-sm font-medium">
+              Transcript (shared by the candidate)
+            </summary>
+            <TranscriptHighlight
+              parts={toTranscriptParts(report.transcript_parts)}
+              className="text-text mt-4 text-sm leading-relaxed"
+            />
+          </details>
+        ) : null}
 
         <div className="grid gap-6 md:grid-cols-2">
           <section className="flex flex-col gap-3">

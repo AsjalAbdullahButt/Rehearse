@@ -1,6 +1,9 @@
 import Link from "next/link";
 
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { ProgressBar } from "@/components/ui/progress-bar";
+import { ScoreBadge } from "@/components/ui/score-badge";
 import { roleLabel } from "@/lib/interview/role-label";
 import type {
   CompetencyMastery,
@@ -8,6 +11,7 @@ import type {
   ReadinessOut,
   ScheduledSkill,
 } from "@/lib/interview/types";
+import { scoreBand } from "@/lib/score-band";
 import { cn } from "@/lib/utils";
 
 function dueLabel(skill: ScheduledSkill): string {
@@ -25,30 +29,34 @@ function practiceHref(role: string, plan: PracticePlan): string {
   return `/interview?${params.toString()}`;
 }
 
+function skillPracticeHref(role: string, skill: CompetencyMastery): string {
+  const params = new URLSearchParams({ role, count: "3", topics: skill.name });
+  return `/interview?${params.toString()}`;
+}
+
 function MasteryBar({ skill }: { skill: CompetencyMastery }) {
   const thin = skill.questions_attempted < 2;
+  const band = scoreBand(skill.mastery);
   return (
-    <li className="flex items-center gap-3">
-      <span className="text-text w-40 shrink-0 truncate text-sm">{skill.name}</span>
-      <div
-        role="progressbar"
-        aria-label={`${skill.name} mastery`}
-        aria-valuenow={skill.mastery}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        className="bg-surface-2 h-2 flex-1 overflow-hidden rounded-[var(--radius-pill)]"
-      >
-        <div
-          className={cn("h-full rounded-[var(--radius-pill)]", thin ? "bg-muted" : "bg-violet")}
-          style={{ width: `${skill.mastery}%` }}
-        />
-      </div>
-      <span className="font-mono-metric text-muted w-10 text-right text-xs tabular-nums">
-        {skill.mastery}
-      </span>
-      <span className="text-muted hidden w-28 text-right text-xs sm:inline">
-        {skill.questions_attempted} {skill.questions_attempted === 1 ? "answer" : "answers"}
-        {thin ? " · early" : ""}
+    <li className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+      <span className="text-text shrink-0 text-sm sm:w-40 sm:truncate">{skill.name}</span>
+      <ProgressBar
+        value={skill.mastery}
+        label={`${skill.name} mastery`}
+        valueText={`${skill.mastery} out of 100${thin ? ", early estimate" : `, ${band.label}`}`}
+        tone={thin ? undefined : band.tone}
+        className="flex-1"
+      />
+      <span className="flex items-center justify-between gap-3 sm:justify-end">
+        <span className="font-mono-metric text-muted text-xs tabular-nums">{skill.mastery}</span>
+        {thin ? (
+          <span className="text-muted text-xs">
+            {skill.questions_attempted} {skill.questions_attempted === 1 ? "answer" : "answers"} ·
+            early
+          </span>
+        ) : (
+          <ScoreBadge band={band} />
+        )}
       </span>
     </li>
   );
@@ -73,6 +81,8 @@ export function SkillMasteryView({
 }) {
   const nameOf = (key: string | null) =>
     key ? (skills.find((s) => s.competency === key)?.name ?? key) : null;
+  const strongestSkill = skills.find((s) => s.competency === strongest);
+  const weakestSkill = skills.find((s) => s.competency === weakest);
   const mainRisk =
     readiness?.main_risk &&
     (readiness.drivers.find((d) => d.competency === readiness.main_risk)?.name ??
@@ -80,14 +90,11 @@ export function SkillMasteryView({
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">
-      <div className="flex flex-col gap-2">
-        <p className="text-muted text-xs font-medium tracking-wide uppercase">Your skills</p>
-        <h1 className="font-display text-text text-2xl font-bold">Skill mastery</h1>
-        <p className="text-muted text-sm">
-          Built only from the answers you have recorded. Scores firm up as you practise a skill
-          more.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Your skills"
+        title="Skill mastery"
+        description="Built only from the answers you have recorded. Scores firm up as you practise a skill more."
+      />
 
       {roles.length > 1 ? (
         <nav aria-label="Role" className="flex flex-wrap gap-2">
@@ -112,10 +119,21 @@ export function SkillMasteryView({
           {roleLabel(role)} readiness
         </h2>
         {readiness?.score != null ? (
-          <p className="font-display text-text text-5xl font-bold">
-            {readiness.score}
-            <span className="text-muted text-xl"> / 100</span>
-          </p>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="font-display text-text text-5xl font-bold">
+                {readiness.score}
+                <span className="text-muted text-xl"> / 100</span>
+              </p>
+              <ScoreBadge band={scoreBand(readiness.score)} />
+            </div>
+            <ProgressBar
+              value={readiness.score}
+              label={`${roleLabel(role)} readiness`}
+              valueText={`${readiness.score} out of 100, ${scoreBand(readiness.score).label}`}
+              tone={scoreBand(readiness.score).tone}
+            />
+          </div>
         ) : (
           <p className="text-text text-lg font-medium">Not enough practice yet to score</p>
         )}
@@ -124,7 +142,8 @@ export function SkillMasteryView({
             {readiness.categories.map((c) => (
               <li key={c.category} className="text-muted">
                 <span className="capitalize">{c.category}</span>{" "}
-                <span className="text-text font-medium">{c.score}</span>
+                <span className="text-text font-medium">{c.score}</span>{" "}
+                <span className="text-muted text-xs">({scoreBand(c.score).label})</span>
               </li>
             ))}
           </ul>
@@ -144,10 +163,30 @@ export function SkillMasteryView({
         <Card className="flex flex-col gap-1">
           <span className="text-muted text-xs uppercase">Strongest skill</span>
           <span className="text-text text-lg font-medium">{nameOf(strongest) ?? "—"}</span>
+          {strongestSkill ? (
+            <span className="flex items-center gap-2">
+              <span className="font-mono-metric text-muted text-sm">{strongestSkill.mastery}</span>
+              <ScoreBadge band={scoreBand(strongestSkill.mastery)} />
+            </span>
+          ) : null}
         </Card>
         <Card className="flex flex-col gap-1">
           <span className="text-muted text-xs uppercase">Weakest skill</span>
           <span className="text-text text-lg font-medium">{nameOf(weakest) ?? "—"}</span>
+          {weakestSkill ? (
+            <>
+              <span className="flex items-center gap-2">
+                <span className="font-mono-metric text-muted text-sm">{weakestSkill.mastery}</span>
+                <ScoreBadge band={scoreBand(weakestSkill.mastery)} />
+              </span>
+              <Link
+                href={skillPracticeHref(role, weakestSkill)}
+                className="text-lime inline-flex min-h-11 items-center text-sm underline underline-offset-4"
+              >
+                Practice this skill
+              </Link>
+            </>
+          ) : null}
         </Card>
         <Card className="flex flex-col gap-1">
           <span className="text-muted text-xs uppercase">Biggest hiring risk</span>

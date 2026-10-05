@@ -751,6 +751,25 @@ See `/styleguide` (dev route) for a live render of every token and primitive in 
     not active yet.
   - **Tests.** API 419 → 427, web 260 → 277.
 
+- **UI/UX polish pass, round 2 (2026-10-10) — typed answers, share transcript control, history.**
+  - **Typed answers.** `POST /v1/answers` takes exactly one of `audio` or `answer_text` (6000-char
+    cap, `answers.input_mode` = `voice`/`text`, migration 0019). A typed answer is scored by the
+    same LLM rubric, but has no timings: `wpm`/`duration_s` are 0, `delivery` is null, pause fields
+    are null, and typed answers are excluded from pace averages and `total_answer_s`. The web flow
+    offers "type instead" from the device check, the mic-error state and the record button
+    (`TypedAnswer`: local autosave draft, Ctrl/Cmd+Enter), and retries stay in the answer's own mode.
+  - **Share transcript is now per link.** `report_shares.include_transcript` (default false) is
+    chosen when the link is created and enforced when it is opened; the old public
+    `?include_transcript=` query parameter is gone (a viewer could opt themselves in with it).
+  - **History** (`ProgressRow` gained status/question_count/answer_cap_s/focus/company/role_title/
+    total_answer_s): percent scores with a quality band, technical + communication (clarity),
+    speaking time, type/status/role filters, "Retry interview" (`repeatSetupHref`), and a trends
+    empty state until two scored interviews exist. Retry comparison and the Skills page use the
+    same percent/band wording. Light-theme `--coral` darkened for contrast (axe-verified).
+  - **Verification added:** `e2e/a11y.spec.ts` runs axe (WCAG 2 A/AA, serious+critical) plus an
+    overflow check over seven pages at 375/1024px in both themes. Migration 0019 verified on SQLite
+    only. Not verified: a screen reader, a real microphone, MySQL for 0019.
+
 ## Known gaps / deliberate scope cuts from Phase 2
 
 - **No design mockup files, still.** `/design` was empty; Phase 2 was built from a dark-mode PDF

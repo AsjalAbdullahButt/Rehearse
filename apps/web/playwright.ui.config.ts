@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "product.spec.ts",
+  testMatch: ["product.spec.ts", "a11y.spec.ts"],
   workers: 2,
   use: {
     baseURL: "http://127.0.0.1:3199",

@@ -93,6 +93,73 @@ createServer(async (request, response) => {
   if (url.pathname === "/v1/profile")
     return send(request.method === "PATCH" ? { ...profile, ...JSON.parse(body) } : profile);
   if (url.pathname === "/v1/sessions" && request.method === "POST") return send(session);
+  if (url.pathname === "/v1/sessions" && request.method === "GET")
+    return send([{ ...session, status: "completed", current_question: null }, session]);
+  if (url.pathname === "/v1/mastery")
+    return send({
+      role: null,
+      competencies: [
+        ["sql", "SQL & Databases", 82, 4],
+        ["caching", "Caching", 41, 3],
+        ["security", "Security", 64, 2],
+        ["testing", "Testing", 70, 1],
+      ].map(([competency, name, mastery, attempts]) => ({
+        role: "backend",
+        competency,
+        name,
+        mastery,
+        confidence: 60,
+        questions_attempted: attempts,
+        successful_attempts: Math.max(0, attempts - 1),
+        highest_level: 3,
+        last_practiced_at: "2026-09-28T10:00:00Z",
+      })),
+      strongest: "sql",
+      weakest: "caching",
+      needs_practice: ["caching"],
+    });
+  if (url.pathname === "/v1/readiness")
+    return send({
+      role: "backend",
+      score: 68,
+      coverage: 70,
+      total_attempts: 10,
+      categories: [{ category: "technical", score: 70 }],
+      strongest: "sql",
+      main_risk: "caching",
+      drivers: [
+        {
+          competency: "caching",
+          name: "Caching",
+          weight: 1,
+          mastery: 41,
+          confidence: 60,
+          attempts: 3,
+          assessed: true,
+          resume_evidence: "unknown",
+        },
+      ],
+      explanation: ["Based on 10 answers covering 70% of this role's skill plan."],
+    });
+  if (url.pathname === "/v1/practice-plan")
+    return send({
+      role: "backend",
+      today: [
+        {
+          competency: "caching",
+          name: "Caching",
+          mastery: 41,
+          interval_days: 1,
+          due_at: "2026-09-29T00:00:00",
+          days_until_due: -1,
+          is_due: true,
+        },
+      ],
+      upcoming: [],
+      question_count: 3,
+      estimated_minutes: 9,
+      focus_topics: ["caching"],
+    });
   if (url.pathname.startsWith("/v1/sessions/"))
     return send({
       session,
@@ -127,6 +194,14 @@ createServer(async (request, response) => {
         session_id: `session-${offset + i + 1}`,
         role: "backend",
         difficulty: "medium",
+        interview_mode: "technical_qa",
+        status: "completed",
+        question_count: 5,
+        answer_cap_s: 120,
+        focus: "mixed",
+        company: null,
+        role_title: null,
+        total_answer_s: 90,
         started_at: new Date(Date.UTC(2026, 8, 30 - offset - i)).toISOString(),
         answer_count: 1,
         avg_wpm: 120,

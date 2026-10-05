@@ -10,6 +10,7 @@ import { LiveCaption } from "@/components/interview/live-caption";
 import { MicOrb } from "@/components/interview/mic-orb";
 import { RecordingStatus } from "@/components/interview/recording-status";
 import { SessionSetupForm } from "@/components/interview/session-setup-form";
+import { clearAnswerDraft, TypedAnswer } from "@/components/interview/typed-answer";
 import { Waveform } from "@/components/interview/waveform";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -217,14 +218,15 @@ export function InterviewFlow({
   // recording rather than discarding it, since the user's answer must survive a transient
   // network/STT/LLM failure, not force a full re-record.
   async function submitAnswer(submission: PendingSubmission) {
-    const { session, question, blob, idempotencyKey } = submission;
+    const { session, question, blob, text, idempotencyKey } = submission;
     setState({ stage: "analyzing", session, question });
 
     try {
       const formData = new FormData();
       formData.set("session_id", session.id);
       formData.set("session_question_id", question.id);
-      formData.set("audio", blob, "answer.webm");
+      if (text !== undefined) formData.set("answer_text", text);
+      else if (blob) formData.set("audio", blob, "answer.webm");
       if (submission.prosody) formData.set("prosody", submission.prosody);
       if (submission.camera) formData.set("camera", submission.camera);
 
@@ -253,6 +255,7 @@ export function InterviewFlow({
       }
 
       const report = (await response.json()) as AnswerReport;
+      clearAnswerDraft(question.id);
       allowNavigation();
       router.push(`/report/${report.id}`);
     } catch {
@@ -408,6 +411,9 @@ export function InterviewFlow({
   }, [online, toast]);
 
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  // Voice is the default; typing is always one tap away (and the only way on a device with no
+  // usable microphone).
+  const [answerMode, setAnswerMode] = useState<"voice" | "text">("voice");
   const captions = useLiveCaptions(isRecording, speechTag);
 
   const [showSilenceNudge, setShowSilenceNudge] = useState(false);
@@ -451,7 +457,12 @@ export function InterviewFlow({
   });
 
   // Space starts/stops a recording, but only when focus is not on something that uses Space itself.
-  const canStartNow = state.stage === "ready" && !isRecording && !isPreparing && !isFinalizing;
+  const canStartNow =
+    state.stage === "ready" &&
+    answerMode === "voice" &&
+    !isRecording &&
+    !isPreparing &&
+    !isFinalizing;
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== " " || event.repeat || event.ctrlKey || event.metaKey || event.altKey) {
@@ -522,6 +533,11 @@ export function InterviewFlow({
           void recorder.start();
         }}
         onContinue={handleMicCheckContinue}
+        onUseText={() => {
+          if (recorder.status === "recording") recorder.stop();
+          setAnswerMode("text");
+          handleMicCheckContinue();
+        }}
       />
     );
   }
@@ -675,110 +691,157 @@ export function InterviewFlow({
           {question.text}
         </h1>
 
-        <div className="flex flex-col items-center gap-5 text-center">
-          <RecordingStatus phase={phase} clock={formatTime(remaining)} />
-          <MicOrb
-            size={120}
-            animate
-            recording={isRecording}
-            voiceActive={isRecording ? voiceActivity.isSpeaking : undefined}
-          />
+        {answerMode === "text" ? (
+          <>
+            <TypedAnswer
+              key={question.id}
+              questionId={question.id}
+              isSubmitting={false}
+              onSubmit={(text) =>
+                void submitAnswer({
+                  session,
+                  question,
+                  text,
+                  idempotencyKey: createIdempotencyKey(),
+                })
+              }
+            />
+            <div className="flex justify-center">
+              <Button variant="ghost" size="sm" onClick={() => setAnswerMode("voice")}>
+                Answer by voice instead
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col items-center gap-5 text-center">
+              <RecordingStatus phase={phase} clock={formatTime(remaining)} />
+              <MicOrb
+                size={120}
+                animate
+                recording={isRecording}
+                voiceActive={isRecording ? voiceActivity.isSpeaking : undefined}
+              />
 
-          {isRecording ? (
-            <>
-              <Waveform analyser={recorder.analyser} />
-              <LiveCaption isSupported={captions.isSupported} transcript={captions.transcript} />
-              <span className="font-mono-metric text-2xl tabular-nums">
-                <span className={getTimerTone(remaining)}>{formatTime(remaining)}</span>
-              </span>
-              <span aria-live="polite" className="sr-only">
-                {remaining === 30
-                  ? "30 seconds remaining."
-                  : remaining === 10
-                    ? "10 seconds remaining."
-                    : remaining === 0
-                      ? "Time's up."
-                      : ""}
-              </span>
+              {isRecording ? (
+                <>
+                  <Waveform analyser={recorder.analyser} />
+                  <LiveCaption
+                    isSupported={captions.isSupported}
+                    transcript={captions.transcript}
+                  />
+                  <span className="font-mono-metric text-2xl tabular-nums">
+                    <span className={getTimerTone(remaining)}>{formatTime(remaining)}</span>
+                  </span>
+                  <span aria-live="polite" className="sr-only">
+                    {remaining === 30
+                      ? "30 seconds remaining."
+                      : remaining === 10
+                        ? "10 seconds remaining."
+                        : remaining === 0
+                          ? "Time's up."
+                          : ""}
+                  </span>
 
-              {showSilenceNudge ? (
-                <div
-                  role="status"
-                  className="bg-amber/15 flex flex-col items-center gap-3 rounded-[var(--radius-tile)] px-4 py-3"
+                  {showSilenceNudge ? (
+                    <div
+                      role="status"
+                      className="bg-amber/15 flex flex-col items-center gap-3 rounded-[var(--radius-tile)] px-4 py-3"
+                    >
+                      <p className="text-text text-sm">
+                        Still there? Let me know if you missed the question.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="secondary" onClick={handleRepeatQuestion}>
+                          Repeat the question
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setShowSilenceNudge(false)}
+                        >
+                          I&apos;m still thinking
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : isPreparing ? (
+                <p
+                  className="font-mono-metric text-text text-3xl tabular-nums"
+                  aria-live="assertive"
+                  aria-label={`Recording starts in ${prepRemaining} second${prepRemaining === 1 ? "" : "s"}`}
                 >
-                  <p className="text-text text-sm">
-                    Still there? Let me know if you missed the question.
+                  {prepRemaining > 0 ? prepRemaining : "Go!"}
+                </p>
+              ) : recorder.error ? (
+                <div role="alert" className="flex max-w-sm flex-col gap-2">
+                  <p className="text-text text-sm font-medium">
+                    We couldn’t access your microphone.
                   </p>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="secondary" onClick={handleRepeatQuestion}>
-                      Repeat the question
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setShowSilenceNudge(false)}>
-                      I&apos;m still thinking
-                    </Button>
-                  </div>
+                  <p className="text-muted text-sm">{recorder.error.message}</p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="w-fit self-center"
+                    onClick={() => setAnswerMode("text")}
+                  >
+                    Use a text answer instead
+                  </Button>
                 </div>
               ) : null}
-            </>
-          ) : isPreparing ? (
-            <p
-              className="font-mono-metric text-text text-3xl tabular-nums"
-              aria-live="assertive"
-              aria-label={`Recording starts in ${prepRemaining} second${prepRemaining === 1 ? "" : "s"}`}
-            >
-              {prepRemaining > 0 ? prepRemaining : "Go!"}
-            </p>
-          ) : recorder.error ? (
-            <div role="alert" className="flex max-w-sm flex-col gap-2">
-              <p className="text-text text-sm font-medium">We couldn’t access your microphone.</p>
-              <p className="text-muted text-sm">{recorder.error.message}</p>
             </div>
-          ) : null}
-        </div>
 
-        {cameraAvailable ? (
-          <CameraCoachPanel
-            enabled={cameraEnabled}
-            status={camera.status}
-            onToggle={setCameraEnabled}
-            attachVideo={camera.attachVideo}
-            disabled={isRecording || isPreparing || isFinalizing}
-          />
-        ) : null}
+            {cameraAvailable ? (
+              <CameraCoachPanel
+                enabled={cameraEnabled}
+                status={camera.status}
+                onToggle={setCameraEnabled}
+                attachVideo={camera.attachVideo}
+                disabled={isRecording || isPreparing || isFinalizing}
+              />
+            ) : null}
 
-        <div className="bg-surface border-line sticky bottom-0 z-10 -mx-6 mt-auto -mb-6 flex flex-col items-center gap-2 border-t px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:m-0 sm:border-0 sm:p-0">
-          {isRecording ? (
-            <Button
-              size="lg"
-              variant="secondary"
-              className="w-full sm:w-auto"
-              onClick={() => recorder.stop()}
-            >
-              <span aria-hidden="true" className="bg-coral size-3 rounded-[2px]" />
-              Stop recording
-            </Button>
-          ) : (
-            <Button
-              size="lg"
-              className="w-full sm:w-auto"
-              loading={recorder.isStarting}
-              disabled={isPreparing || isFinalizing}
-              onClick={() => setIsPreparing(true)}
-            >
-              {recorder.isStarting
-                ? "Requesting mic access…"
-                : isFinalizing
-                  ? "Finishing up…"
-                  : recorder.error
-                    ? "Try again"
-                    : "Start recording"}
-            </Button>
-          )}
-          <p className="text-muted hidden text-xs sm:block">
-            Press <kbd className="font-mono-metric">Space</kbd> to {isRecording ? "stop" : "start"}{" "}
-            when nothing else is focused.
-          </p>
-        </div>
+            <div className="bg-surface border-line sticky bottom-0 z-10 -mx-6 mt-auto -mb-6 flex flex-col items-center gap-2 border-t px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:m-0 sm:border-0 sm:p-0">
+              {isRecording ? (
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                  onClick={() => recorder.stop()}
+                >
+                  <span aria-hidden="true" className="bg-coral size-3 rounded-[2px]" />
+                  Stop recording
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  className="w-full sm:w-auto"
+                  loading={recorder.isStarting}
+                  disabled={isPreparing || isFinalizing}
+                  onClick={() => setIsPreparing(true)}
+                >
+                  {recorder.isStarting
+                    ? "Requesting mic access…"
+                    : isFinalizing
+                      ? "Finishing up…"
+                      : recorder.error
+                        ? "Try again"
+                        : "Start recording"}
+                </Button>
+              )}
+              {!isRecording && !isPreparing && !isFinalizing ? (
+                <Button variant="ghost" size="sm" onClick={() => setAnswerMode("text")}>
+                  Type my answer instead
+                </Button>
+              ) : null}
+              <p className="text-muted hidden text-xs sm:block">
+                Press <kbd className="font-mono-metric">Space</kbd> to{" "}
+                {isRecording ? "stop" : "start"} when nothing else is focused.
+              </p>
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );

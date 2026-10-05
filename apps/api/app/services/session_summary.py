@@ -59,7 +59,7 @@ async def build_session_summary(db: AsyncSession, *, session: InterviewSession) 
             AnswerCategoryBreakdown(category=category, avg_score=_avg(values))
             for category, values in scores_by_category.items()
         ],
-        avg_wpm=_avg([float(a.wpm) for a in answers]),
+        avg_wpm=_avg([float(a.wpm) for a in answers if a.input_mode != "text"]),
         avg_filler_count=_avg([float(a.filler_count) for a in answers]),
         avg_clarity=_avg([float(a.clarity) for a in answers if a.clarity is not None]),
         claims=[claim_out(row) for row in claim_rows],

@@ -3,7 +3,10 @@ import type { InterviewSession, SessionQuestion } from "@/lib/interview/types";
 export interface PendingAnswerSubmission {
   session: InterviewSession;
   question: SessionQuestion;
-  blob: Blob;
+  /** The recording — set for a spoken answer. */
+  blob?: Blob;
+  /** The typed answer — set instead of `blob` for a typed one. */
+  text?: string;
   /** Generated once per recording (see `createIdempotencyKey`) and reused for every retry of
    * that same recording, so a lost-response retry replays the original request instead of the
    * API processing (and billing Groq for) the same answer twice. A re-record gets a new one. */
