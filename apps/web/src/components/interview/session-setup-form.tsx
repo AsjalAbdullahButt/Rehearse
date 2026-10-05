@@ -718,12 +718,20 @@ export function SessionSetupForm({
             >
               Back
             </Button>
+            {/* Distinct keys matter: without them React reuses one <button> and flips its type to
+                "submit" mid-click, so the click that reaches Review would also submit the form. */}
             {step === STEP_REVIEW ? (
-              <Button type="submit" size="lg" loading={isSubmitting} disabled={!roleValue}>
+              <Button
+                key="start"
+                type="submit"
+                size="lg"
+                loading={isSubmitting}
+                disabled={!roleValue}
+              >
                 {isSubmitting ? "Preparing interview…" : "Start interview"}
               </Button>
             ) : (
-              <Button size="lg" onClick={handleNext}>
+              <Button key="next" size="lg" onClick={handleNext}>
                 {step === STEP_RESUME ? "Continue" : "Next"}
               </Button>
             )}

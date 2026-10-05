@@ -35,6 +35,7 @@ test("product pages fit narrow screens in both themes", async ({ page }, testInf
           await page.evaluate(
             () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
           ),
+          `${path} overflows horizontally at ${width}px (${theme})`,
         ).toBe(true);
         if (width === 320)
           await page.screenshot({
@@ -54,14 +55,14 @@ test("setup preserves entries on failure and validates experience", async ({ pag
   await page.getByText("About you (optional)").click();
   await page.getByLabel("Years of experience").fill("81");
   await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByRole("alert")).toHaveText(/between 0 and 80/);
+  await expect(page.locator("p[role=alert]")).toHaveText(/between 0 and 80/);
   await page.getByLabel("Years of experience").fill("5");
   await page.route("**/api/interview/sessions", (route) =>
     route.fulfill({ status: 503, json: { error: { message: "Please try again." } } }),
   );
   for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Start interview", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText("Please try again.");
+  await expect(page.locator("p[role=alert]")).toHaveText("Please try again.");
   await page.getByRole("button", { name: "Edit role" }).click();
   await expect(page.getByLabel("Target company (optional)")).toHaveValue("Example company");
 });

@@ -102,6 +102,8 @@ createServer(async (request, response) => {
       avg_wpm: 120,
       avg_filler_count: 2,
       avg_clarity: 8,
+      claims: [],
+      panel_assessments: [],
     });
   if (url.pathname.startsWith("/v1/answers/")) return send(report);
   if (url.pathname === "/v1/progress") {

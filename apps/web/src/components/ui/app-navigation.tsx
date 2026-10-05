@@ -14,7 +14,7 @@ export function AppNavigation() {
   return (
     <nav
       aria-label="Main navigation"
-      className="border-line flex justify-center gap-2 border-t px-4 py-2 sm:border-0 sm:p-0"
+      className="border-line flex flex-wrap justify-center gap-1 border-t px-2 py-2 sm:gap-2 sm:border-0 sm:p-0"
     >
       {destinations.map(({ href, label }) => {
         const active =
@@ -27,7 +27,7 @@ export function AppNavigation() {
             href={href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "focus-visible:outline-lime flex min-h-11 items-center justify-center rounded-[var(--radius-pill)] px-4 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2",
+              "focus-visible:outline-lime flex min-h-11 items-center justify-center rounded-[var(--radius-pill)] px-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 sm:px-4",
               active ? "bg-lime/10 text-lime" : "text-muted hover:bg-surface-2 hover:text-text",
             )}
           >

@@ -10,7 +10,18 @@ export function useSpeechVoices(): SpeechSynthesisVoice[] {
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
 
-    const loadVoices = () => setVoices(window.speechSynthesis.getVoices());
+    // `getVoices()` returns a fresh array every call and some browsers fire "voiceschanged"
+    // repeatedly, so keep the previous array when the list is unchanged — otherwise consumers that
+    // depend on it (the interview's `speak`) would re-run and re-read the question aloud each time.
+    const loadVoices = () => {
+      const next = window.speechSynthesis.getVoices();
+      setVoices((prev) =>
+        prev.length === next.length &&
+        prev.every((voice, i) => voice.voiceURI === next[i]?.voiceURI)
+          ? prev
+          : next,
+      );
+    };
     loadVoices();
 
     window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
