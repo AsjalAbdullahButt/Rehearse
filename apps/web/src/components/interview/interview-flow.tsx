@@ -4,17 +4,24 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AnswerPlayback } from "@/components/interview/answer-playback";
+import { DeviceCheck } from "@/components/interview/device-check";
+import { InterviewProgress } from "@/components/interview/interview-progress";
 import { LiveCaption } from "@/components/interview/live-caption";
 import { MicOrb } from "@/components/interview/mic-orb";
+import { RecordingStatus } from "@/components/interview/recording-status";
 import { SessionSetupForm } from "@/components/interview/session-setup-form";
 import { Waveform } from "@/components/interview/waveform";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ErrorState } from "@/components/ui/error-state";
+import { useToast } from "@/components/ui/toast";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import { CameraCoachPanel } from "@/components/interview/camera-coach-panel";
 import { useCameraCoach } from "@/hooks/use-camera-coach";
 import { useCountdown } from "@/hooks/use-countdown";
 import { useLiveCaptions } from "@/hooks/use-live-captions";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useProsodyCapture } from "@/hooks/use-prosody-capture";
 import { useSessionExpiry } from "@/hooks/use-session-expiry";
 import { useSilenceNudge } from "@/hooks/use-silence-nudge";
@@ -65,7 +72,7 @@ type FlowState =
   | { stage: "analyzing"; session: InterviewSession; question: SessionQuestion }
   // `retry` is only set for a failed upload (the recording still exists and can be resent);
   // a setup-time failure (e.g. session creation) has nothing to retry but "start over".
-  | { stage: "error"; message: string; retry?: PendingSubmission };
+  | { stage: "error"; message: string; retry?: PendingSubmission; requestId?: string | null };
 
 /** The first question of a session is the only place a mic-check makes sense — resuming later in
  * an already-in-progress session means the mic was already exercised (this tab or another). */
@@ -76,15 +83,17 @@ function firstStageFor(question: SessionQuestion): "mic-check" | "ready" {
 interface ParsedApiError {
   message: string;
   code: string | null;
+  requestId: string | null;
 }
 
 async function parseApiError(response: Response): Promise<ParsedApiError> {
   const body = (await response.json().catch(() => null)) as {
-    error?: { code?: string; message?: string };
+    error?: { code?: string; message?: string; request_id?: string };
   } | null;
   return {
     message: body?.error?.message ?? "Something went wrong. Please try again.",
     code: body?.error?.code ?? null,
+    requestId: body?.error?.request_id ?? response.headers.get("X-Request-Id"),
   };
 }
 
@@ -146,7 +155,8 @@ export function InterviewFlow({
       );
       if (await handleSessionExpiry(response)) return;
       if (!response.ok) {
-        setState({ stage: "error", message: (await parseApiError(response)).message });
+        const parsed = await parseApiError(response);
+        setState({ stage: "error", message: parsed.message, requestId: parsed.requestId });
         return;
       }
       const summary = (await response.json()) as SessionSummary;
@@ -232,13 +242,13 @@ export function InterviewFlow({
         return;
       }
       if (!response.ok) {
-        const { message } = await parseApiError(response);
+        const { message, requestId } = await parseApiError(response);
         const retryAfter = response.headers.get("Retry-After");
         const retryNote =
           response.status === 429
             ? ` Keep this tab open.${retryAfter && /^\d+$/.test(retryAfter) ? ` Try again in ${retryAfter} seconds.` : " Try again when your limit resets."}`
             : "";
-        setState({ stage: "error", message: message + retryNote, retry: submission });
+        setState({ stage: "error", message: message + retryNote, retry: submission, requestId });
         return;
       }
 
@@ -385,7 +395,19 @@ export function InterviewFlow({
     "Your recording has not been submitted. Leave and discard this recording?",
   );
 
-  const voiceActivity = useVoiceActivity(recorder.analyser, isRecording);
+  const micCheckLive = state.stage === "mic-check" && recorder.status === "recording";
+  const voiceActivity = useVoiceActivity(recorder.analyser, isRecording || micCheckLive);
+
+  // Connectivity: say so when it drops (the recording stays in this tab) and when it returns.
+  const online = useOnlineStatus();
+  const toast = useToast();
+  const wasOnlineRef = useRef(online);
+  useEffect(() => {
+    if (online && !wasOnlineRef.current) toast.push("Connection restored.", "success");
+    wasOnlineRef.current = online;
+  }, [online, toast]);
+
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const captions = useLiveCaptions(isRecording, speechTag);
 
   const [showSilenceNudge, setShowSilenceNudge] = useState(false);
@@ -428,6 +450,27 @@ export function InterviewFlow({
     void recorder.start();
   });
 
+  // Space starts/stops a recording, but only when focus is not on something that uses Space itself.
+  const canStartNow = state.stage === "ready" && !isRecording && !isPreparing && !isFinalizing;
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== " " || event.repeat || event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, button, a, summary, [contenteditable]")) return;
+      if (isRecording) {
+        event.preventDefault();
+        recorder.stop();
+      } else if (canStartNow && !recorder.isStarting) {
+        event.preventDefault();
+        setIsPreparing(true);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isRecording, canStartNow, recorder]);
+
   if (state.stage === "setup") {
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
@@ -455,52 +498,31 @@ export function InterviewFlow({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 sm:px-6 sm:py-12">
         <MicOrb size={100} animate />
-        <p className="text-muted text-sm">Preparing your question…</p>
+        <p className="text-muted text-sm" role="status">
+          Preparing your interview…
+        </p>
       </div>
     );
   }
 
   if (state.stage === "mic-check") {
-    const micIsLive = recorder.status === "recording";
-
+    const browserSupported =
+      typeof MediaRecorder !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
     return (
-      <div className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
-        <Card className="flex w-full max-w-xl flex-col items-center gap-6 text-center">
-          <h1 className="font-display text-text text-xl font-bold">Check your microphone</h1>
-          <p className="text-muted text-sm">
-            Say something out loud — you should see the bars move below. This only happens once per
-            session.
-          </p>
-          <MicOrb size={100} recording={micIsLive} />
-          {micIsLive ? <Waveform analyser={recorder.analyser} /> : null}
-          {recorder.error ? (
-            <p role="alert" className="text-coral text-sm">
-              {recorder.error.message}
-            </p>
-          ) : null}
-          <div className="flex gap-3">
-            {!micIsLive ? (
-              <Button
-                variant="secondary"
-                disabled={recorder.isStarting}
-                onClick={() => {
-                  micCheckActiveRef.current = true;
-                  void recorder.start();
-                }}
-              >
-                {recorder.isStarting
-                  ? "Requesting mic access…"
-                  : recorder.error
-                    ? "Try again"
-                    : "Test my mic"}
-              </Button>
-            ) : null}
-            <Button variant={micIsLive ? "primary" : "ghost"} onClick={handleMicCheckContinue}>
-              {micIsLive ? "Sounds good — continue" : "Skip check"}
-            </Button>
-          </div>
-        </Card>
-      </div>
+      <DeviceCheck
+        browserSupported={browserSupported}
+        online={online}
+        micLive={micCheckLive}
+        micHeard={voiceActivity.hasSpokenAtAll}
+        micStarting={recorder.isStarting}
+        micError={recorder.error?.message ?? null}
+        analyser={recorder.analyser}
+        onTestMic={() => {
+          micCheckActiveRef.current = true;
+          void recorder.start();
+        }}
+        onContinue={handleMicCheckContinue}
+      />
     );
   }
 
@@ -508,61 +530,105 @@ export function InterviewFlow({
     const { retry } = state;
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
-        <Card className="flex max-w-sm flex-col items-center gap-4 text-center">
-          <p role="alert" className="text-text text-sm">
-            {state.message}
-          </p>
-          <div className="flex gap-3">
-            {retry ? <Button onClick={() => void submitAnswer(retry)}>Retry upload</Button> : null}
-            <Button
-              variant={retry ? "secondary" : "primary"}
-              onClick={() => {
-                if (!retry || window.confirm("Discard this recording and start over?"))
-                  setState({ stage: "setup" });
-              }}
-            >
-              {retry ? "Start over" : "Try again"}
-            </Button>
-          </div>
+        <Card className="flex w-full max-w-md flex-col gap-4">
+          <ErrorState
+            title={retry ? "We couldn’t submit your answer" : "We couldn’t start your interview"}
+            description={
+              <>
+                {state.message}
+                {retry ? " Your recording is still on this device." : null}
+              </>
+            }
+            requestId={state.requestId}
+            actions={
+              <>
+                {retry ? <Button onClick={() => void submitAnswer(retry)}>Try again</Button> : null}
+                <Button
+                  variant={retry ? "ghost" : "primary"}
+                  onClick={() => {
+                    if (retry) setConfirmingDiscard(true);
+                    else setState({ stage: "setup" });
+                  }}
+                >
+                  {retry ? "Discard and start over" : "Back to setup"}
+                </Button>
+              </>
+            }
+          />
         </Card>
+        <ConfirmDialog
+          open={confirmingDiscard}
+          title="Discard this recording?"
+          description="Your answer hasn’t been submitted. If you discard it, it can’t be recovered."
+          confirmLabel="Discard recording"
+          danger
+          onCancel={() => setConfirmingDiscard(false)}
+          onConfirm={() => {
+            setConfirmingDiscard(false);
+            setState({ stage: "setup" });
+          }}
+        />
       </div>
     );
   }
 
   if (state.stage === "analyzing") {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 sm:px-6 sm:py-12">
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-8 sm:px-6 sm:py-12">
         <MicOrb size={100} animate />
-        <p className="text-muted text-sm" aria-live="polite">
-          Transcribing your answer, evaluating your response, and preparing coaching feedback…
-        </p>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <RecordingStatus phase="processing" />
+          <p className="text-text text-sm">Evaluating your answer…</p>
+          <p className="text-muted max-w-sm text-xs">
+            We’re transcribing what you said, scoring it, and writing your feedback. This usually
+            takes a few seconds. Keep this tab open.
+          </p>
+        </div>
       </div>
     );
   }
 
+  const offlineBanner = !online ? (
+    <p
+      role="status"
+      className="bg-amber/15 text-text w-full max-w-xl rounded-[var(--radius-tile)] px-4 py-3 text-center text-sm"
+    >
+      Connection lost. Your current answer is still available on this device — reconnect to submit
+      it.
+    </p>
+  ) : null;
+
   if (state.stage === "reviewing") {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-8 sm:px-6 sm:py-12">
-        <Card className="flex w-full max-w-xl flex-col items-center gap-6 text-center">
-          <p className="text-muted text-xs font-medium tracking-wide uppercase">
-            Question {state.session.current_question_number} of {state.session.question_count}
-          </p>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 sm:px-6 sm:py-12">
+        {offlineBanner}
+        <Card className="flex w-full max-w-xl flex-col gap-6">
+          <InterviewProgress
+            current={state.session.current_question_number}
+            total={state.session.question_count}
+            answerCapS={state.session.answer_cap_s}
+            category={state.question.category}
+          />
           <h1 className="font-display text-text text-xl font-bold text-balance sm:text-2xl">
             {state.question.text}
           </h1>
-          <p className="text-muted text-sm">Listen back before you submit.</p>
-          <AnswerPlayback blob={state.blob} />
-          {!voiceActivity.hasSpokenAtAll ? (
-            <p role="alert" className="text-amber max-w-sm text-sm">
-              We didn&apos;t detect any voice in that recording — it may be silent. Check the
-              playback above, and re-record if you can&apos;t hear yourself.
-            </p>
-          ) : null}
-          <div className="flex gap-3">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <RecordingStatus phase="reviewing" />
+            <AnswerPlayback blob={state.blob} />
+            {!voiceActivity.hasSpokenAtAll ? (
+              <p role="alert" className="text-amber max-w-sm text-sm">
+                We didn&apos;t detect any voice in that recording — it may be silent. Check the
+                playback above, and re-record if you can&apos;t hear yourself.
+              </p>
+            ) : null}
+          </div>
+          <div className="bg-surface border-line sticky bottom-0 -mx-6 -mb-6 flex flex-col-reverse gap-3 border-t px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:m-0 sm:flex-row sm:justify-center sm:border-0 sm:p-0">
             <Button variant="secondary" onClick={handleReRecord}>
               Re-record
             </Button>
-            <Button onClick={() => void submitAnswer(state)}>Submit answer</Button>
+            <Button disabled={!online} onClick={() => void submitAnswer(state)}>
+              Submit answer
+            </Button>
           </div>
         </Card>
       </div>
@@ -579,16 +645,26 @@ export function InterviewFlow({
     speak(question.text);
   }
 
+  const phase = isRecording
+    ? "recording"
+    : isFinalizing
+      ? "finishing"
+      : isPreparing
+        ? "preparing"
+        : "ready";
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 py-8 sm:px-6 sm:py-12">
-      <Card className="flex w-full max-w-xl flex-col items-center gap-8 text-center">
-        <p className="text-muted text-xs font-medium tracking-wide uppercase">
-          {isRecording
-            ? "Recording"
-            : `Question ${session.current_question_number} of ${session.question_count}`}
-        </p>
+    <div className="flex flex-1 flex-col items-center gap-4 px-4 py-6 sm:px-6 sm:py-10">
+      {offlineBanner}
+      <Card className="flex w-full max-w-xl flex-1 flex-col gap-6 sm:flex-none">
+        <InterviewProgress
+          current={session.current_question_number}
+          total={session.question_count}
+          answerCapS={session.answer_cap_s}
+          category={question.category}
+        />
         {question.panelist_name ? (
-          <p className="text-muted -mt-4 text-sm">
+          <p className="text-muted text-sm">
             <span className="text-text font-medium">{question.panelist_name}</span>
             {" · "}
             {question.panelist_title}
@@ -599,75 +675,66 @@ export function InterviewFlow({
           {question.text}
         </h1>
 
-        <MicOrb
-          size={140}
-          animate
-          recording={isRecording}
-          voiceActive={isRecording ? voiceActivity.isSpeaking : undefined}
-        />
+        <div className="flex flex-col items-center gap-5 text-center">
+          <RecordingStatus phase={phase} clock={formatTime(remaining)} />
+          <MicOrb
+            size={120}
+            animate
+            recording={isRecording}
+            voiceActive={isRecording ? voiceActivity.isSpeaking : undefined}
+          />
 
-        {isRecording ? (
-          <>
-            <Waveform analyser={recorder.analyser} />
-            <LiveCaption isSupported={captions.isSupported} transcript={captions.transcript} />
-            <span className="font-mono-metric text-2xl tabular-nums">
-              <span className={getTimerTone(remaining)}>{formatTime(remaining)}</span>
-            </span>
-            <span aria-live="polite" className="sr-only">
-              {remaining === 30
-                ? "30 seconds remaining."
-                : remaining === 10
-                  ? "10 seconds remaining."
-                  : remaining === 0
-                    ? "Time's up."
-                    : ""}
-            </span>
+          {isRecording ? (
+            <>
+              <Waveform analyser={recorder.analyser} />
+              <LiveCaption isSupported={captions.isSupported} transcript={captions.transcript} />
+              <span className="font-mono-metric text-2xl tabular-nums">
+                <span className={getTimerTone(remaining)}>{formatTime(remaining)}</span>
+              </span>
+              <span aria-live="polite" className="sr-only">
+                {remaining === 30
+                  ? "30 seconds remaining."
+                  : remaining === 10
+                    ? "10 seconds remaining."
+                    : remaining === 0
+                      ? "Time's up."
+                      : ""}
+              </span>
 
-            {showSilenceNudge ? (
-              <div
-                role="status"
-                className="bg-amber/15 flex flex-col items-center gap-3 rounded-[var(--radius-tile)] px-4 py-3"
-              >
-                <p className="text-amber text-sm">
-                  Still there? Let me know if you missed the question.
-                </p>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={handleRepeatQuestion}>
-                    Repeat the question
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setShowSilenceNudge(false)}>
-                    I&apos;m still thinking
-                  </Button>
+              {showSilenceNudge ? (
+                <div
+                  role="status"
+                  className="bg-amber/15 flex flex-col items-center gap-3 rounded-[var(--radius-tile)] px-4 py-3"
+                >
+                  <p className="text-text text-sm">
+                    Still there? Let me know if you missed the question.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={handleRepeatQuestion}>
+                      Repeat the question
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setShowSilenceNudge(false)}>
+                      I&apos;m still thinking
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : null}
-
-            <Button variant="secondary" onClick={() => recorder.stop()}>
-              Stop recording
-            </Button>
-          </>
-        ) : isFinalizing ? (
-          <p className="text-muted text-sm">Finishing up…</p>
-        ) : isPreparing ? (
-          <p
-            className="font-mono-metric text-text text-3xl tabular-nums"
-            aria-live="assertive"
-            aria-label={`Recording starts in ${prepRemaining} second${prepRemaining === 1 ? "" : "s"}`}
-          >
-            {prepRemaining > 0 ? prepRemaining : "Go!"}
-          </p>
-        ) : (
-          <>
-            {recorder.error ? (
-              <p role="alert" className="text-coral max-w-xs text-sm">
-                {recorder.error.message}
-              </p>
-            ) : null}
-            <Button size="lg" disabled={recorder.isStarting} onClick={() => setIsPreparing(true)}>
-              {recorder.isStarting ? "Requesting mic access…" : "Start recording"}
-            </Button>
-          </>
-        )}
+              ) : null}
+            </>
+          ) : isPreparing ? (
+            <p
+              className="font-mono-metric text-text text-3xl tabular-nums"
+              aria-live="assertive"
+              aria-label={`Recording starts in ${prepRemaining} second${prepRemaining === 1 ? "" : "s"}`}
+            >
+              {prepRemaining > 0 ? prepRemaining : "Go!"}
+            </p>
+          ) : recorder.error ? (
+            <div role="alert" className="flex max-w-sm flex-col gap-2">
+              <p className="text-text text-sm font-medium">We couldn’t access your microphone.</p>
+              <p className="text-muted text-sm">{recorder.error.message}</p>
+            </div>
+          ) : null}
+        </div>
 
         {cameraAvailable ? (
           <CameraCoachPanel
@@ -678,6 +745,40 @@ export function InterviewFlow({
             disabled={isRecording || isPreparing || isFinalizing}
           />
         ) : null}
+
+        <div className="bg-surface border-line sticky bottom-0 z-10 -mx-6 mt-auto -mb-6 flex flex-col items-center gap-2 border-t px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:m-0 sm:border-0 sm:p-0">
+          {isRecording ? (
+            <Button
+              size="lg"
+              variant="secondary"
+              className="w-full sm:w-auto"
+              onClick={() => recorder.stop()}
+            >
+              <span aria-hidden="true" className="bg-coral size-3 rounded-[2px]" />
+              Stop recording
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              className="w-full sm:w-auto"
+              loading={recorder.isStarting}
+              disabled={isPreparing || isFinalizing}
+              onClick={() => setIsPreparing(true)}
+            >
+              {recorder.isStarting
+                ? "Requesting mic access…"
+                : isFinalizing
+                  ? "Finishing up…"
+                  : recorder.error
+                    ? "Try again"
+                    : "Start recording"}
+            </Button>
+          )}
+          <p className="text-muted hidden text-xs sm:block">
+            Press <kbd className="font-mono-metric">Space</kbd> to {isRecording ? "stop" : "start"}{" "}
+            when nothing else is focused.
+          </p>
+        </div>
       </Card>
     </div>
   );

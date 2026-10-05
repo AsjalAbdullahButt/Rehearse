@@ -229,7 +229,11 @@ export function ResumeUpload({
 
         <div className="flex flex-col items-center gap-1">
           <p className="text-text text-sm font-medium">
-            {isBusy ? "Reading your resume…" : "Drag & drop your resume, or"}
+            {isBusy
+              ? "Analyzing your resume…"
+              : fileName && status !== "error"
+                ? "Resume uploaded successfully"
+                : "Drag & drop your resume, or"}
           </p>
           {!isBusy && (
             <button
@@ -237,10 +241,12 @@ export function ResumeUpload({
               onClick={() => inputRef.current?.click()}
               className="text-lime focus-visible:outline-lime text-sm font-medium underline-offset-4 hover:underline hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
             >
-              Browse files
+              {fileName && status !== "error" ? "Replace file" : "Browse files"}
             </button>
           )}
-          <span className="text-muted text-xs">PDF only · up to 2MB · optional</span>
+          <span className="text-muted text-xs">
+            {isBusy ? "Extracting experience and skills…" : "PDF only · up to 2MB · optional"}
+          </span>
         </div>
 
         <AnimatePresence>

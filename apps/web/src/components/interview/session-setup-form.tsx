@@ -1,12 +1,14 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
 
 import { ResumeUpload } from "@/components/interview/resume-upload";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { OptionCard } from "@/components/ui/option-card";
 import { OptionPill } from "@/components/ui/option-pill";
+import { Stepper } from "@/components/ui/stepper";
 import { Textarea } from "@/components/ui/textarea";
 import {
   DIFFICULTY_OPTIONS,
@@ -38,6 +40,33 @@ const MAX_JOB_DESCRIPTION_LENGTH = 12_000;
 const MAX_CANDIDATE_BACKGROUND_LENGTH = 8_000;
 const MAX_FOCUS_TOPICS = 10;
 
+const STEPS = [
+  { id: "resume", label: "Resume" },
+  { id: "job", label: "Job" },
+  { id: "interview", label: "Interview" },
+  { id: "preferences", label: "Preferences" },
+  { id: "review", label: "Review" },
+] as const;
+const STEP_RESUME = 0;
+const STEP_JOB = 1;
+const STEP_INTERVIEW = 2;
+const STEP_PREFERENCES = 3;
+const STEP_REVIEW = 4;
+
+const MODE_DESCRIPTIONS: Record<InterviewMode, string> = {
+  technical_qa: "Questions on your technical knowledge, reasoning and problem-solving.",
+  coding: "Talk through how you would solve coding problems, out loud.",
+  system_design: "Design a system end to end and defend the trade-offs.",
+  case_study: "Work through a realistic business or product scenario.",
+};
+
+const FOCUS_DESCRIPTIONS: Record<Focus, string> = {
+  behavioral: "Past experiences: teamwork, conflict, ownership.",
+  technical: "Role-specific knowledge and reasoning.",
+  situational: "How you would handle realistic what-if scenarios.",
+  mixed: "A balance of all three, like a real interview loop.",
+};
+
 function splitList(value: string, max: number): string[] {
   return value
     .split(",")
@@ -62,6 +91,55 @@ function isQuestionCountOption(
 function defaultFocusForMode(mode: InterviewMode): Focus {
   if (mode === "case_study") return "situational";
   return mode === "technical_qa" ? "mixed" : "technical";
+}
+
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: (ids: { id: string; hintId: string | undefined }) => ReactNode;
+}) {
+  const id = useId();
+  const hintId = useId();
+  return (
+    <div className="flex flex-col gap-2">
+      <label htmlFor={id} className="text-text text-sm font-medium">
+        {label}
+      </label>
+      {hint ? (
+        <p id={hintId} className="text-muted -mt-1 text-xs">
+          {hint}
+        </p>
+      ) : null}
+      {children({ id, hintId: hint ? hintId : undefined })}
+    </div>
+  );
+}
+
+function ChoiceGroup({ legend, children }: { legend: string; children: ReactNode }) {
+  return (
+    <fieldset className="flex flex-col gap-3">
+      <legend className="text-text mb-3 text-sm font-medium">{legend}</legend>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </fieldset>
+  );
+}
+
+function ReviewRow({ label, value, onEdit }: { label: string; value: string; onEdit: () => void }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-3">
+      <div className="min-w-0">
+        <dt className="text-muted text-xs">{label}</dt>
+        <dd className="text-text text-sm break-words">{value}</dd>
+      </div>
+      <Button variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${label.toLowerCase()}`}>
+        Edit
+      </Button>
+    </div>
+  );
 }
 
 export function SessionSetupForm({
@@ -111,6 +189,8 @@ export function SessionSetupForm({
   error?: string | null;
   onSubmit: (value: SessionCreateInput) => void;
 }) {
+  const [step, setStep] = useState(STEP_RESUME);
+  const [triedJobNext, setTriedJobNext] = useState(false);
   const [role, setRole] = useState<Role | null>(initialRole ?? null);
   const [customRole, setCustomRole] = useState(initialCustomRole ?? "");
   const [language, setLanguage] = useState<LanguageCode>("en");
@@ -126,13 +206,10 @@ export function SessionSetupForm({
   const [answerCapS, setAnswerCapS] = useState<(typeof TIME_CAP_OPTIONS)[number]>(
     isTimeCapOption(initialAnswerCapS) ? initialAnswerCapS : DEFAULT_ANSWER_CAP_S,
   );
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const [yearsError, setYearsError] = useState<string | null>(null);
   const [company, setCompany] = useState("");
   const hasSavedResumeMemory = Boolean(
     initialCandidateBackground || initialSkills?.length || initialYearsExperience,
-  );
-  const [showPersonalize, setShowPersonalize] = useState(
-    hasSavedResumeMemory || Boolean(initialFocusTopics?.length),
   );
   const [industry, setIndustry] = useState("");
   const [jobDescription, setJobDescription] = useState("");
@@ -143,9 +220,12 @@ export function SessionSetupForm({
   );
   const [focusTopics, setFocusTopics] = useState(initialFocusTopics?.join(", ") ?? "");
   const [interviewerStyle, setInterviewerStyle] = useState<InterviewerStyle | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  const roleValue = customRole.trim() || role;
+  const roleName = customRole.trim() || ROLE_OPTIONS.find((o) => o.slug === role)?.name || "";
 
   function handleResumeExtracted(extraction: ResumeExtraction) {
-    setShowPersonalize(true);
     if (extraction.candidate_background) setCandidateBackground(extraction.candidate_background);
     if (extraction.skills.length > 0) setSkills(extraction.skills.join(", "));
     if (extraction.years_experience !== null) {
@@ -153,22 +233,49 @@ export function SessionSetupForm({
     }
   }
 
+  function parseYears(): number | null | "invalid" {
+    if (yearsExperience === "") return null;
+    const parsed = Number(yearsExperience);
+    return Number.isInteger(parsed) && parsed >= 0 && parsed <= 80 ? parsed : "invalid";
+  }
+
+  function goTo(index: number) {
+    setStep(index);
+    // Move focus to the new step's heading so keyboard/screen-reader users land on it.
+    requestAnimationFrame(() => headingRef.current?.focus());
+  }
+
+  function handleNext() {
+    if (step === STEP_JOB) {
+      setTriedJobNext(true);
+      if (!roleValue) return;
+      if (parseYears() === "invalid") {
+        setYearsError("Enter a whole number of years between 0 and 80.");
+        return;
+      }
+      setYearsError(null);
+    }
+    goTo(Math.min(step + 1, STEP_REVIEW));
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const roleValue = customRole.trim() || role;
-    if (!roleValue) return;
-    const parsedYearsExperience = yearsExperience === "" ? Number.NaN : Number(yearsExperience);
-    if (
-      yearsExperience !== "" &&
-      (!Number.isInteger(parsedYearsExperience) ||
-        parsedYearsExperience < 0 ||
-        parsedYearsExperience > 80)
-    ) {
-      setValidationError("Enter a whole number of years between 0 and 80.");
-      setShowPersonalize(true);
+    // Enter inside a text field must advance the wizard, never start the interview early.
+    if (step !== STEP_REVIEW) {
+      handleNext();
       return;
     }
-    setValidationError(null);
+    if (!roleValue) {
+      goTo(STEP_JOB);
+      setTriedJobNext(true);
+      return;
+    }
+    const years = parseYears();
+    if (years === "invalid") {
+      setYearsError("Enter a whole number of years between 0 and 80.");
+      goTo(STEP_JOB);
+      return;
+    }
     onSubmit({
       role: roleValue,
       language,
@@ -184,111 +291,245 @@ export function SessionSetupForm({
       job_description: jobDescription.trim() || undefined,
       candidate_background: candidateBackground.trim() || undefined,
       skills: skills.trim() ? splitList(skills, 20) : undefined,
-      years_experience: Number.isFinite(parsedYearsExperience) ? parsedYearsExperience : undefined,
+      years_experience: years ?? undefined,
       focus_topics: focusTopics.trim() ? splitList(focusTopics, MAX_FOCUS_TOPICS) : undefined,
       interviewer_style: interviewerStyle ?? undefined,
     });
   }
 
+  const showRoleError = triedJobNext && !roleValue;
+  const modeName = INTERVIEW_MODE_OPTIONS.find((o) => o.slug === interviewMode)?.name ?? "";
+  const focusName = FOCUS_OPTIONS.find((o) => o.slug === focus)?.name ?? "";
+  const difficultyName = DIFFICULTY_OPTIONS.find((o) => o.slug === difficulty)?.name ?? "";
+  const experienceName = EXPERIENCE_LEVEL_OPTIONS.find((o) => o.slug === experienceLevel)?.name;
+  const languageName = LANGUAGE_OPTIONS.find((o) => o.code === language)?.name ?? "";
+  const capLabel = answerCapS >= 60 ? `${answerCapS / 60} min` : `${answerCapS}s`;
+  const maxMinutes = (questionCount * answerCapS) / 60;
+
+  const stepTitle: Record<number, { title: string; description: string }> = {
+    [STEP_RESUME]: {
+      title: "Start with your resume",
+      description:
+        "Optional. Upload it and we’ll tailor the questions to your experience. You can skip this.",
+    },
+    [STEP_JOB]: {
+      title: "What role are you preparing for?",
+      description: "Choose a role. Adding the company or job description makes questions sharper.",
+    },
+    [STEP_INTERVIEW]: {
+      title: "What kind of interview?",
+      description: "Pick the style of questions you want to practise.",
+    },
+    [STEP_PREFERENCES]: {
+      title: "Difficulty and preferences",
+      description: "Tune how hard, how long and in which language.",
+    },
+    [STEP_REVIEW]: {
+      title: "Review and start",
+      description: "Check everything looks right. You can edit any section before starting.",
+    },
+  };
+  const current = stepTitle[step];
+
   return (
-    <Card className="mx-auto w-full max-w-2xl">
-      <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+    <Card className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      <Stepper steps={STEPS} current={step} onSelect={goTo} />
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-6" noValidate>
         <fieldset disabled={isSubmitting} className="contents">
           <div className="flex flex-col gap-2">
-            <h1 className="font-display text-text text-2xl font-bold">Start a mock interview</h1>
-            <p className="text-muted text-sm">
-              Choose your role and start with the defaults, or tailor your session below.
-            </p>
+            <h1
+              ref={headingRef}
+              tabIndex={-1}
+              className="font-display text-text text-2xl font-bold outline-none"
+            >
+              {current?.title}
+            </h1>
+            <p className="text-muted text-sm">{current?.description}</p>
           </div>
 
-          <fieldset className="flex flex-col gap-3">
-            <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-              Role
-            </legend>
-            <div className="flex flex-wrap gap-2">
-              {ROLE_OPTIONS.map((option) => (
-                <OptionPill
-                  name="role"
-                  key={option.slug}
-                  value={option.slug}
-                  label={option.name}
-                  selected={!customRole.trim() && role === option.slug}
-                  onSelect={(slug) => {
-                    setCustomRole("");
-                    setRole(slug);
-                  }}
-                />
-              ))}
+          {/* Every step stays mounted (just hidden) so Back never loses typed or uploaded input. */}
+          <div hidden={step !== STEP_RESUME} className="flex flex-col gap-4">
+            <ResumeUpload onExtracted={handleResumeExtracted} />
+            {hasSavedResumeMemory ? (
+              <p className="text-muted text-xs">
+                Using the background, skills, and experience saved in your{" "}
+                <a href="/settings" className="text-lime hover:underline">
+                  Settings
+                </a>
+                . Upload a different resume above to change it for this session only.
+              </p>
+            ) : null}
+          </div>
+
+          <div hidden={step !== STEP_JOB}>
+            <div className="flex flex-col gap-6">
+              <ChoiceGroup legend="Role">
+                {ROLE_OPTIONS.map((option) => (
+                  <OptionPill
+                    name="role"
+                    key={option.slug}
+                    value={option.slug}
+                    label={option.name}
+                    selected={!customRole.trim() && role === option.slug}
+                    onSelect={(slug) => {
+                      setCustomRole("");
+                      setRole(slug);
+                    }}
+                  />
+                ))}
+              </ChoiceGroup>
+              <Field
+                label="Or a different role"
+                hint="We’ll build a question plan for any role you type."
+              >
+                {({ id, hintId }) => (
+                  <Input
+                    id={id}
+                    value={customRole}
+                    onChange={(event) => setCustomRole(event.target.value)}
+                    maxLength={MAX_ROLE_LENGTH}
+                    placeholder="e.g. DevOps Engineer"
+                    aria-describedby={hintId}
+                  />
+                )}
+              </Field>
+              {showRoleError ? (
+                <p role="alert" className="text-coral text-sm">
+                  Choose a role, or type one, to continue.
+                </p>
+              ) : null}
+
+              <Field label="Target company (optional)">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    value={company}
+                    onChange={(event) => setCompany(event.target.value)}
+                    maxLength={MAX_COMPANY_LENGTH}
+                    placeholder="e.g. Acme Corp"
+                  />
+                )}
+              </Field>
+              <Field label="Industry (optional)">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    value={industry}
+                    onChange={(event) => setIndustry(event.target.value)}
+                    maxLength={MAX_INDUSTRY_LENGTH}
+                    placeholder="e.g. Fintech"
+                  />
+                )}
+              </Field>
+              <Field
+                label="Job description (optional)"
+                hint="Paste the posting you are preparing for."
+              >
+                {({ id, hintId }) => (
+                  <>
+                    <Textarea
+                      id={id}
+                      value={jobDescription}
+                      onChange={(event) => setJobDescription(event.target.value)}
+                      maxLength={MAX_JOB_DESCRIPTION_LENGTH}
+                      rows={7}
+                      aria-describedby={hintId}
+                    />
+                    <p className="text-muted text-right text-xs tabular-nums">
+                      {jobDescription.length.toLocaleString()} /{" "}
+                      {MAX_JOB_DESCRIPTION_LENGTH.toLocaleString()}
+                    </p>
+                  </>
+                )}
+              </Field>
+
+              <details
+                className="border-line rounded-[var(--radius-tile)] border p-4"
+                open={hasSavedResumeMemory}
+              >
+                <summary className="text-text cursor-pointer text-sm font-medium">
+                  About you (optional)
+                </summary>
+                <div className="mt-4 flex flex-col gap-5">
+                  <Field label="Your background">
+                    {({ id }) => (
+                      <Textarea
+                        id={id}
+                        value={candidateBackground}
+                        onChange={(event) => setCandidateBackground(event.target.value)}
+                        maxLength={MAX_CANDIDATE_BACKGROUND_LENGTH}
+                        rows={5}
+                        placeholder="A short summary of your experience so far."
+                      />
+                    )}
+                  </Field>
+                  <Field label="Primary skills" hint="Separate with commas.">
+                    {({ id, hintId }) => (
+                      <Input
+                        id={id}
+                        value={skills}
+                        onChange={(event) => setSkills(event.target.value)}
+                        placeholder="e.g. Python, React, SQL"
+                        aria-describedby={hintId}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Years of experience">
+                    {({ id }) => (
+                      <>
+                        <Input
+                          id={id}
+                          type="number"
+                          min={0}
+                          max={80}
+                          value={yearsExperience}
+                          onChange={(event) => {
+                            setYearsExperience(event.target.value);
+                            setYearsError(null);
+                          }}
+                          placeholder="e.g. 5"
+                          aria-invalid={yearsError ? true : undefined}
+                        />
+                        {yearsError ? (
+                          <p role="alert" className="text-coral text-sm">
+                            {yearsError}
+                          </p>
+                        ) : null}
+                      </>
+                    )}
+                  </Field>
+                  <Field
+                    label="Focus topics"
+                    hint={`Separate with commas, up to ${MAX_FOCUS_TOPICS}.`}
+                  >
+                    {({ id, hintId }) => (
+                      <Input
+                        id={id}
+                        value={focusTopics}
+                        onChange={(event) => setFocusTopics(event.target.value)}
+                        placeholder="e.g. system design, caching"
+                        aria-describedby={hintId}
+                      />
+                    )}
+                  </Field>
+                </div>
+              </details>
             </div>
-            <label className="flex flex-col gap-2">
-              <span className="text-muted text-xs">
-                Or interview for any other role — we&apos;ll build the question plan for it
-              </span>
-              <Input
-                value={customRole}
-                onChange={(event) => setCustomRole(event.target.value)}
-                maxLength={MAX_ROLE_LENGTH}
-                placeholder="e.g. DevOps Engineer"
-                aria-label="Custom role"
-              />
-            </label>
-          </fieldset>
+          </div>
 
-          <details className="border-line rounded-[var(--radius-tile)] border p-4">
-            <summary className="text-text cursor-pointer text-sm font-medium">
-              Session options: {questionCount} questions, {answerCapS / 60} min per answer
-            </summary>
-            <div className="mt-5 grid gap-6 sm:grid-cols-2">
+          <div hidden={step !== STEP_INTERVIEW}>
+            <div className="flex flex-col gap-6">
               <fieldset className="flex flex-col gap-3">
-                <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-                  Experience level
-                </legend>
-                <div className="flex flex-wrap gap-2">
-                  {EXPERIENCE_LEVEL_OPTIONS.map((option) => (
-                    <OptionPill
-                      name="experience"
-                      key={option.slug}
-                      value={option.slug}
-                      label={option.name}
-                      selected={experienceLevel === option.slug}
-                      onSelect={setExperienceLevel}
-                    />
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="flex flex-col gap-3">
-                <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-                  Interview focus
-                </legend>
-                <div className="flex flex-wrap gap-2">
-                  {FOCUS_OPTIONS.map((option) => (
-                    <OptionPill
-                      name="focus"
-                      key={option.slug}
-                      value={option.slug}
-                      label={option.name}
-                      selected={focus === option.slug}
-                      onSelect={(value) => {
-                        setFocusWasChosen(true);
-                        setFocus(value);
-                      }}
-                    />
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="flex flex-col gap-3 sm:col-span-2">
-                <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-                  Interview mode
-                </legend>
-                <div className="flex flex-wrap gap-2">
+                <legend className="text-text mb-3 text-sm font-medium">Interview mode</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
                   {INTERVIEW_MODE_OPTIONS.map((option) => (
-                    <OptionPill
+                    <OptionCard
                       name="interview-mode"
                       key={option.slug}
                       value={option.slug}
                       label={option.name}
+                      description={MODE_DESCRIPTIONS[option.slug]}
                       selected={interviewMode === option.slug}
                       onSelect={(value) => {
                         setInterviewMode(value);
@@ -300,61 +541,40 @@ export function SessionSetupForm({
               </fieldset>
 
               <fieldset className="flex flex-col gap-3">
-                <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-                  Difficulty
-                </legend>
-                <div className="flex flex-wrap gap-2">
-                  {DIFFICULTY_OPTIONS.map((option) => (
-                    <OptionPill
-                      name="difficulty"
+                <legend className="text-text mb-3 text-sm font-medium">Question focus</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {FOCUS_OPTIONS.map((option) => (
+                    <OptionCard
+                      name="focus"
                       key={option.slug}
                       value={option.slug}
                       label={option.name}
-                      selected={difficulty === option.slug}
-                      onSelect={setDifficulty}
+                      description={FOCUS_DESCRIPTIONS[option.slug]}
+                      selected={focus === option.slug}
+                      onSelect={(value) => {
+                        setFocusWasChosen(true);
+                        setFocus(value);
+                      }}
                     />
                   ))}
                 </div>
               </fieldset>
 
-              <fieldset className="flex flex-col gap-3">
-                <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-                  Number of questions
-                </legend>
-                <div className="flex flex-wrap gap-2">
-                  {QUESTION_COUNT_OPTIONS.map((count) => (
-                    <OptionPill
-                      name="count"
-                      key={count}
-                      value={count.toString()}
-                      label={`${count}`}
-                      selected={questionCount === count}
-                      onSelect={() => setQuestionCount(count)}
-                    />
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="flex flex-col gap-3">
-                <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-                  Answer time cap
-                </legend>
-                <div className="flex flex-wrap gap-2">
-                  {TIME_CAP_OPTIONS.map((seconds) => (
-                    <OptionPill
-                      name="cap"
-                      key={seconds}
-                      value={seconds.toString()}
-                      label={seconds >= 60 ? `${seconds / 60} min` : `${seconds}s`}
-                      selected={answerCapS === seconds}
-                      onSelect={() => setAnswerCapS(seconds)}
-                    />
-                  ))}
-                </div>
-              </fieldset>
+              <ChoiceGroup legend="Interviewer style">
+                {INTERVIEWER_STYLE_OPTIONS.map((option) => (
+                  <OptionPill
+                    name="style"
+                    key={option.slug}
+                    value={option.slug}
+                    label={option.name}
+                    selected={interviewerStyle === option.slug}
+                    onSelect={setInterviewerStyle}
+                  />
+                ))}
+              </ChoiceGroup>
 
               {panelAvailable ? (
-                <label className="border-line flex items-start gap-3 rounded-[var(--radius-tile)] border p-3 sm:col-span-2">
+                <label className="border-line flex items-start gap-3 rounded-[var(--radius-tile)] border p-4">
                   <input
                     type="checkbox"
                     checked={panel}
@@ -370,181 +590,143 @@ export function SessionSetupForm({
                   </span>
                 </label>
               ) : null}
-
-              <fieldset className="flex flex-col gap-3">
-                <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-                  Interview language
-                </legend>
-                <div className="flex flex-wrap gap-2">
-                  {LANGUAGE_OPTIONS.map((option) => (
-                    <OptionPill
-                      name="language"
-                      key={option.code}
-                      value={option.code}
-                      label={option.name}
-                      selected={language === option.code}
-                      onSelect={setLanguage}
-                    />
-                  ))}
-                </div>
-              </fieldset>
             </div>
-          </details>
-          <div className="border-line flex flex-col gap-4 border-t pt-6">
-            <button
-              type="button"
-              onClick={() => setShowPersonalize((value) => !value)}
-              className="text-text text-left text-sm font-medium"
-              aria-expanded={showPersonalize}
-              aria-controls="personalization"
-            >
-              {showPersonalize ? "− Hide personalization" : "+ Personalize further (optional)"}
-            </button>
-
-            {showPersonalize ? (
-              <div id="personalization" className="flex flex-col gap-4">
-                <ResumeUpload onExtracted={handleResumeExtracted} />
-                {hasSavedResumeMemory ? (
-                  <p className="text-muted -mt-4 text-xs">
-                    Using the background, skills, and experience saved in your{" "}
-                    <a href="/settings" className="text-lime hover:underline">
-                      Settings
-                    </a>
-                    . Upload a different resume above, or edit the fields below, to change it for
-                    this session only.
-                  </p>
-                ) : null}
-
-                <label className="flex flex-col gap-3">
-                  <span className="text-muted text-xs font-medium tracking-wide uppercase">
-                    Target company (optional)
-                  </span>
-                  <Input
-                    value={company}
-                    onChange={(event) => setCompany(event.target.value)}
-                    maxLength={MAX_COMPANY_LENGTH}
-                    placeholder="e.g. Acme Corp"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-muted text-xs font-medium tracking-wide uppercase">
-                    Industry
-                  </span>
-                  <Input
-                    value={industry}
-                    onChange={(event) => setIndustry(event.target.value)}
-                    maxLength={MAX_INDUSTRY_LENGTH}
-                    placeholder="e.g. Fintech"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-muted text-xs font-medium tracking-wide uppercase">
-                    Job description
-                  </span>
-                  <Textarea
-                    value={jobDescription}
-                    onChange={(event) => setJobDescription(event.target.value)}
-                    maxLength={MAX_JOB_DESCRIPTION_LENGTH}
-                    placeholder="Paste the job description you're preparing for."
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-muted text-xs font-medium tracking-wide uppercase">
-                    Your background
-                  </span>
-                  <Textarea
-                    value={candidateBackground}
-                    onChange={(event) => setCandidateBackground(event.target.value)}
-                    maxLength={MAX_CANDIDATE_BACKGROUND_LENGTH}
-                    placeholder="A short summary of your experience so far."
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-muted text-xs font-medium tracking-wide uppercase">
-                    Primary skills (comma-separated)
-                  </span>
-                  <Input
-                    value={skills}
-                    onChange={(event) => setSkills(event.target.value)}
-                    placeholder="e.g. Python, React, SQL"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-muted text-xs font-medium tracking-wide uppercase">
-                    Years of experience
-                  </span>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={80}
-                    value={yearsExperience}
-                    onChange={(event) => setYearsExperience(event.target.value)}
-                    placeholder="e.g. 5"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className="text-muted text-xs font-medium tracking-wide uppercase">
-                    Focus topics (comma-separated, up to {MAX_FOCUS_TOPICS})
-                  </span>
-                  <Input
-                    value={focusTopics}
-                    onChange={(event) => setFocusTopics(event.target.value)}
-                    placeholder="e.g. system design, caching"
-                  />
-                </label>
-
-                <fieldset className="flex flex-col gap-3">
-                  <legend className="text-muted mb-3 text-xs font-medium tracking-wide uppercase">
-                    Interviewer style
-                  </legend>
-                  <div className="flex flex-wrap gap-2">
-                    {INTERVIEWER_STYLE_OPTIONS.map((option) => (
-                      <OptionPill
-                        name="style"
-                        key={option.slug}
-                        value={option.slug}
-                        label={option.name}
-                        selected={interviewerStyle === option.slug}
-                        onSelect={setInterviewerStyle}
-                      />
-                    ))}
-                  </div>
-                </fieldset>
-              </div>
-            ) : null}
           </div>
 
-          {validationError ? (
-            <p role="alert" className="text-coral text-sm">
-              {validationError}
+          <div hidden={step !== STEP_PREFERENCES}>
+            <div className="flex flex-col gap-6">
+              <ChoiceGroup legend="Experience level">
+                {EXPERIENCE_LEVEL_OPTIONS.map((option) => (
+                  <OptionPill
+                    name="experience"
+                    key={option.slug}
+                    value={option.slug}
+                    label={option.name}
+                    selected={experienceLevel === option.slug}
+                    onSelect={setExperienceLevel}
+                  />
+                ))}
+              </ChoiceGroup>
+              <ChoiceGroup legend="Difficulty">
+                {DIFFICULTY_OPTIONS.map((option) => (
+                  <OptionPill
+                    name="difficulty"
+                    key={option.slug}
+                    value={option.slug}
+                    label={option.name}
+                    selected={difficulty === option.slug}
+                    onSelect={setDifficulty}
+                  />
+                ))}
+              </ChoiceGroup>
+              <ChoiceGroup legend="Number of questions">
+                {QUESTION_COUNT_OPTIONS.map((count) => (
+                  <OptionPill
+                    name="count"
+                    key={count}
+                    value={count.toString()}
+                    label={`${count}`}
+                    selected={questionCount === count}
+                    onSelect={() => setQuestionCount(count)}
+                  />
+                ))}
+              </ChoiceGroup>
+              <ChoiceGroup legend="Answer time limit">
+                {TIME_CAP_OPTIONS.map((seconds) => (
+                  <OptionPill
+                    name="cap"
+                    key={seconds}
+                    value={seconds.toString()}
+                    label={seconds >= 60 ? `${seconds / 60} min` : `${seconds}s`}
+                    selected={answerCapS === seconds}
+                    onSelect={() => setAnswerCapS(seconds)}
+                  />
+                ))}
+              </ChoiceGroup>
+              <ChoiceGroup legend="Interview language">
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <OptionPill
+                    name="language"
+                    key={option.code}
+                    value={option.code}
+                    label={option.name}
+                    selected={language === option.code}
+                    onSelect={setLanguage}
+                  />
+                ))}
+              </ChoiceGroup>
+            </div>
+          </div>
+
+          <div hidden={step !== STEP_REVIEW}>
+            <dl className="divide-line divide-y">
+              <ReviewRow
+                label="Role"
+                value={roleName || "Not chosen yet"}
+                onEdit={() => goTo(STEP_JOB)}
+              />
+              {company.trim() ? (
+                <ReviewRow label="Company" value={company.trim()} onEdit={() => goTo(STEP_JOB)} />
+              ) : null}
+              <ReviewRow
+                label="Interview"
+                value={`${modeName} · ${focusName} focus${panel ? " · Panel" : ""}${
+                  interviewerStyle ? ` · ${interviewerStyle} interviewer` : ""
+                }`}
+                onEdit={() => goTo(STEP_INTERVIEW)}
+              />
+              <ReviewRow
+                label="Difficulty"
+                value={`${difficultyName}${experienceName ? ` · ${experienceName}` : ""}`}
+                onEdit={() => goTo(STEP_PREFERENCES)}
+              />
+              <ReviewRow
+                label="Questions"
+                value={`${questionCount} questions · ${capLabel} per answer · ${languageName}`}
+                onEdit={() => goTo(STEP_PREFERENCES)}
+              />
+              <ReviewRow
+                label="Context"
+                value={
+                  [
+                    jobDescription.trim() ? "Job description" : null,
+                    candidateBackground.trim() || skills.trim() ? "Your background" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "None added — questions will use role defaults"
+                }
+                onEdit={() => goTo(STEP_RESUME)}
+              />
+            </dl>
+            <p className="text-muted mt-4 text-sm">
+              Answers take up to {maxMinutes} minutes in total, plus a few seconds of feedback after
+              each one.
             </p>
-          ) : null}
+          </div>
+
           {error ? (
             <p role="alert" className="text-coral text-sm">
               {error}
             </p>
           ) : null}
-          <div className="bg-surface border-line flex flex-col gap-3 border-t py-4">
-            <p className="text-muted text-sm">
-              {questionCount} questions · up to {(questionCount * answerCapS) / 60} minutes of
-              answers, plus feedback time.
-            </p>
-            {!role && !customRole.trim() ? (
-              <p className="text-muted text-xs">Choose a role to begin.</p>
-            ) : null}
+
+          <div className="bg-surface border-line sticky bottom-0 -mx-6 flex flex-col-reverse gap-3 border-t px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:border-0 sm:px-0 sm:py-0">
             <Button
-              type="submit"
-              size="lg"
-              disabled={(!role && !customRole.trim()) || isSubmitting}
+              variant="ghost"
+              disabled={step === STEP_RESUME}
+              onClick={() => goTo(Math.max(step - 1, STEP_RESUME))}
             >
-              {isSubmitting ? "Preparing your question…" : "Start"}
+              Back
             </Button>
+            {step === STEP_REVIEW ? (
+              <Button type="submit" size="lg" loading={isSubmitting} disabled={!roleValue}>
+                {isSubmitting ? "Preparing interview…" : "Start interview"}
+              </Button>
+            ) : (
+              <Button size="lg" onClick={handleNext}>
+                {step === STEP_RESUME ? "Continue" : "Next"}
+              </Button>
+            )}
           </div>
         </fieldset>
       </form>

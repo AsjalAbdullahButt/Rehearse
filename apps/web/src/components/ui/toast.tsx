@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useRef, useState, type ReactNod
 
 import { cn } from "@/lib/utils";
 
-type ToastVariant = "info" | "error" | "success";
+type ToastVariant = "info" | "error" | "success" | "warning";
 
 interface ToastItem {
   id: number;
@@ -21,11 +21,26 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 const VARIANT_CLASSES: Record<ToastVariant, string> = {
   info: "border-line text-text",
-  error: "border-coral/40 text-coral",
-  success: "border-mint/40 text-mint",
+  error: "border-coral/40 text-text",
+  success: "border-mint/40 text-text",
+  warning: "border-amber/40 text-text",
 };
 
-const AUTO_DISMISS_MS = 6000;
+// A glyph per variant so meaning never depends on border colour alone.
+const VARIANT_ICONS: Record<ToastVariant, { glyph: string; className: string }> = {
+  info: { glyph: "i", className: "text-muted" },
+  error: { glyph: "!", className: "text-coral" },
+  success: { glyph: "✓", className: "text-mint" },
+  warning: { glyph: "!", className: "text-amber" },
+};
+
+// Confirmations vanish quickly; problems stay long enough to read and act on.
+const AUTO_DISMISS_MS: Record<ToastVariant, number> = {
+  info: 5000,
+  success: 4000,
+  warning: 8000,
+  error: 10000,
+};
 
 /** Single shared background-notification surface (session expiry, rate limits, unexpected
  * server errors) — mounted once in the root layout so every page (marketing, auth, product)
@@ -43,7 +58,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message: string, variant: ToastVariant = "info") => {
       const id = ++idRef.current;
       setToasts((current) => [...current, { id, message, variant }]);
-      setTimeout(() => dismiss(id), AUTO_DISMISS_MS);
+      setTimeout(() => dismiss(id), AUTO_DISMISS_MS[variant]);
     },
     [dismiss],
   );
@@ -60,7 +75,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           {toasts.map((toast) => (
             <motion.div
               key={toast.id}
-              role="status"
+              role={toast.variant === "error" ? "alert" : "status"}
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, y: 12 }}
@@ -70,6 +85,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 VARIANT_CLASSES[toast.variant],
               )}
             >
+              <span
+                aria-hidden="true"
+                className={cn("mt-px font-bold", VARIANT_ICONS[toast.variant].className)}
+              >
+                {VARIANT_ICONS[toast.variant].glyph}
+              </span>
               <span className="flex-1">{toast.message}</span>
               <button
                 type="button"

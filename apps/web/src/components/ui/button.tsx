@@ -8,6 +8,7 @@ const VARIANT_CLASSES = {
   secondary:
     "bg-surface-2 text-text border border-line hover:bg-surface-2/80 focus-visible:outline-lime",
   ghost: "bg-transparent text-text hover:bg-surface-2 focus-visible:outline-lime",
+  danger: "bg-coral text-ink hover:brightness-110 focus-visible:outline-coral",
 } as const;
 
 const SIZE_CLASSES = {
@@ -22,10 +23,16 @@ export type ButtonSize = keyof typeof SIZE_CLASSES;
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** Disables the button and shows a spinner, so a slow action can't be fired twice. The label
+   * (children) should already describe the in-flight state, e.g. "Preparing interview…". */
+  loading?: boolean;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "primary", size = "md", type = "button", ...props }, ref) => {
+  (
+    { className, variant = "primary", size = "md", type = "button", loading = false, ...props },
+    ref,
+  ) => {
     return (
       <button
         ref={ref}
@@ -37,7 +44,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           className,
         )}
         {...props}
-      />
+        disabled={props.disabled || loading}
+        aria-busy={loading || undefined}
+      >
+        {loading ? (
+          <span
+            aria-hidden="true"
+            className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+          />
+        ) : null}
+        {props.children}
+      </button>
     );
   },
 );
