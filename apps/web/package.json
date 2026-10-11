@@ -19,20 +19,20 @@
     "test:e2e:ui": "playwright test --config playwright.ui.config.ts"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^1.0.1",
+    "@mediapipe/tasks-vision": "^1.1.0",
     "clsx": "^2.1.1",
     "lenis": "^1.3.26",
     "motion": "^13.4.1",
-    "next": "16.3.6",
+    "next": "16.4.0",
     "next-themes": "^0.4.6",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "tailwind-merge": "^3.7.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^7.0.1",
@@ -40,15 +40,15 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-react": "^6.1.2",
     "eslint": "^9",
-    "eslint-config-next": "16.3.6",
-    "jsdom": "^30.1.1",
-    "prettier": "^3.9.8",
+    "eslint-config-next": "16.4.0",
+    "jsdom": "^30.1.2",
+    "prettier": "^3.9.9",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   },
   "packageManager": "pnpm@12.5.1"
 }
